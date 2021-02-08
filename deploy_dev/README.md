@@ -28,3 +28,14 @@ Start / stop:
 sudo systemctl start minikube
 sudo systemctl stop minikube
 ```
+## 2. Deploy Grafana and Prometheus monitoring stack, expose Grafana via Ingress
+Deploy:
+```
+cd deploy_dev/monitoring/
+sh k8s-grafana-stack.sh
+```
+Verify:
+
+http://192.168.49.2
+
+Login credentials: admin / prom-operator
