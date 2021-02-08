@@ -1,0 +1,41 @@
+Vagrant.configure("2") do |config|
+  config.vm.provider :virtualbox do |v|
+    v.memory = 4096
+    v.cpus = 2
+    v.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
+  end
+
+  config.vm.define :ubuntu20 do |master|
+    master.vm.box = "ubuntu/focal64"
+    master.vm.hostname = "ubuntu-20-minicube"
+    master.vm.network :private_network, ip: "192.168.99.11"
+    master.vm.provision :shell, privileged: false, inline: $ssh_access
+    master.vm.provision :shell, privileged: false, path: "minikube/ubuntu-focal64.sh"
+    master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+  end
+  
+  config.vm.define :fedora33 do |master|
+    master.vm.box = "fedora/33-cloud-base"
+    master.vm.hostname = "fedora33-minicube"
+    master.vm.network :private_network, ip: "192.168.99.12"
+    master.vm.provision :shell, privileged: false, inline: $ssh_access
+    master.vm.provision :shell, privileged: false, path: "minikube/fedora-33.sh"
+    master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+  end
+
+  config.vm.define :archlinux do |master|
+    master.vm.box = "archlinux/archlinux"
+    master.vm.hostname = "archlinux-minicube"
+    master.vm.network :private_network, ip: "192.168.99.13"
+    master.vm.provision :shell, privileged: false, inline: $ssh_access
+    master.vm.provision :shell, privileged: false, path: "minikube/archlinux.sh"
+    master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+  end
+
+end
+
+$ssh_access = <<-SHELL
+sudo sed -i "s/PasswordAuthentication.*/PasswordAuthentication yes/g" /etc/ssh/sshd_config
+sudo systemctl restart sshd
+echo 'alias k=kubectl' >>~/.bashrc
+SHELL
