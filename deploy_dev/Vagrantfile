@@ -1,7 +1,8 @@
 Vagrant.configure("2") do |config|
   config.vm.provider :virtualbox do |v|
     v.memory = 4096
-    v.cpus = 2
+    # 6 CPU minimum!
+    v.cpus = 6
     v.customize ["modifyvm", :id, "--nested-hw-virt", "on"]
   end
 
@@ -12,6 +13,7 @@ Vagrant.configure("2") do |config|
     master.vm.provision :shell, privileged: false, inline: $ssh_access
     master.vm.provision :shell, privileged: false, path: "minikube/ubuntu-focal64.sh"
     master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+    master.vm.synced_folder 'foundationdb', '/home/vagrant/foundationdb'
   end
   
   config.vm.define :fedora33 do |master|
@@ -21,6 +23,7 @@ Vagrant.configure("2") do |config|
     master.vm.provision :shell, privileged: false, inline: $ssh_access
     master.vm.provision :shell, privileged: false, path: "minikube/fedora-33.sh"
     master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+    master.vm.synced_folder 'foundationdb', '/home/vagrant/foundationdb'
   end
 
   config.vm.define :archlinux do |master|
@@ -30,6 +33,7 @@ Vagrant.configure("2") do |config|
     master.vm.provision :shell, privileged: false, inline: $ssh_access
     master.vm.provision :shell, privileged: false, path: "minikube/archlinux.sh"
     master.vm.synced_folder 'monitoring', '/home/vagrant/monitoring'
+    master.vm.synced_folder 'foundationdb', '/home/vagrant/foundationdb'
   end
 
 end
