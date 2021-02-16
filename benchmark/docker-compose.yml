@@ -1,0 +1,15 @@
+version: '3'
+services:
+  pg:
+    # connection string: postgresql://htc:htc@localhost:5432/htc
+    image: postgres:13.2-alpine
+    ports:
+      - 5432:5432
+    environment:
+      - POSTGRES_PASSWORD=stroppy
+      - POSTGRES_USER=stroppy
+      - POSTGRES_DB=stroppy
+      - PGDATA=/var/lib/postgresql/data/pgdata
+    volumes:
+      # CHANGE next line
+      - ./_data/postgres.db:/var/lib/postgresql/data/pgdata

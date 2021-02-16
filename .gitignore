@@ -1,3 +1,7 @@
 .vagrant
 *.log
 .*
+
+benchmark/vendor
+benchmark/bin
+benchmark/_*
