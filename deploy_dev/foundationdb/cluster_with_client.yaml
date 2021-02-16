@@ -100,7 +100,7 @@ spec:
             - name: FDB_CLUSTER_FILE
               value: /var/dynamic-conf/fdb.cluster
             - name: FDB_API_VERSION
-              value: "620"
+              value: "610"
             - name: FDB_NETWORK_OPTION_TRACE_LOG_GROUP
               value: sample-cluster-client
             - name: FDB_NETWORK_OPTION_EXTERNAL_CLIENT_DIRECTORY

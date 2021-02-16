@@ -21,6 +21,7 @@ kube-system   storage-provisioner                1/1     Running   0          10
 
 Ready for:
 * ubuntu-focal64
+* ubuntu-bionic64
 * fedora-33
 * archlinux
 
@@ -60,7 +61,7 @@ data:
     - name: default
       protocol: layer2
       addresses:
-      - 192.168.99.50-192.168.99.99
+      - 192.168.49.50-192.168.49.99
 ```
 Check sample-cluster-client pod state is 'Running' (in 3~6 min):
 ```
