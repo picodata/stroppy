@@ -34,14 +34,14 @@ sudo systemctl stop minikube
 Deploy:
 ```
 cd deploy_dev/monitoring/
-sh k8s-grafana-stack.sh
+sh deploy_operator.sh
 ```
 Verify:
 
-http://192.168.49.2
+[http://192.168.49.2](http://192.168.49.2)
 
 Login credentials: admin / prom-operator
-## 3. Deploy FoundationDB
+## 3.1 Deploy FoundationDB
 Deploy:
 ```
 cd deploy_dev/foundationdb/
@@ -128,14 +128,146 @@ Client time: 02/11/21 04:11:38
 ```
 Info about sample-cluster-client OS:
 ```
-cat /etc/os-release 
+cat /etc/os-release | grep PRETTY_NAME
 PRETTY_NAME="Debian GNU/Linux 10 (buster)"
-NAME="Debian GNU/Linux"
-VERSION_ID="10"
-VERSION="10 (buster)"
-VERSION_CODENAME=buster
-ID=debian
-HOME_URL="https://www.debian.org/"
-SUPPORT_URL="https://www.debian.org/support"
-BUG_REPORT_URL="https://bugs.debian.org/"
+```
+Operator monitoring status: [Issue: Expose all status fields via metrics #396](https://github.com/FoundationDB/fdb-kubernetes-operator/issues/396)
+## 3.2 Deploy PosgreSQL
+Deploy:
+
+Check config [postgres/postgres-manifest.yaml](postgres/postgres-manifest.yaml)
+```
+cd deploy_dev/postgres/
+sh deploy_operator.sh
+```
+Verify:
+```
+kubectl exec --stdin --tty acid-postgres-cluster-0 -- /bin/su -- postgres
+postgres@acid-postgres-cluster-0:~$ psql
+psql (13.1 (Ubuntu 13.1-1.pgdg18.04+1))
+Type "help" for help.
+
+postgres=# \du
+                                                                               List of roles
+     Role name      |                         Attributes                         |                                        Member of                                         
+--------------------+------------------------------------------------------------+------------------------------------------------------------------------------------------
+ admin              | Create DB, Cannot login                                    | {bar_owner,zalando,bar_owner_user}
+ bar_data_owner     | Cannot login                                               | {bar_data_reader,bar_data_writer}
+ bar_data_reader    | Cannot login                                               | {}
+ bar_data_writer    | Cannot login                                               | {bar_data_reader}
+ bar_history_owner  | Cannot login                                               | {bar_history_reader,bar_history_writer}
+ bar_history_reader | Cannot login                                               | {}
+ bar_history_writer | Cannot login                                               | {bar_history_reader}
+ bar_owner          | Cannot login                                               | {bar_history_owner,bar_reader,bar_writer,bar_data_owner,bar_reader_user,bar_writer_user}
+ bar_owner_user     |                                                            | {bar_owner}
+ bar_reader         | Cannot login                                               | {}
+ bar_reader_user    |                                                            | {bar_reader}
+ bar_writer         | Cannot login                                               | {bar_reader}
+ bar_writer_user    |                                                            | {bar_writer}
+ postgres           | Superuser, Create role, Create DB, Replication, Bypass RLS | {}
+ robot_zmon         | Cannot login                                               | {}
+ standby            | Replication                                                | {}
+ zalando            | Superuser, Create DB                                       | {}
+ zalandos           | Create DB, Cannot login                                    | {}
+```
+Info about acid-postgres-cluster OS:
+```
+cat /etc/os-release | grep PRETTY_NAME
+PRETTY_NAME="Ubuntu 18.04.5 LTS"
+```
+Get password for manual connection for user: postgres, database: foo
+```
+kubectl get secret postgres.acid-postgres-cluster.credentials.postgresql.acid.zalan.do -o 'jsonpath={.data.password}' | base64 -d
+```
+Get local port via port-forward
+```
+export PGMASTER=$(kubectl get pods -o jsonpath={.items..metadata.name} -l application=spilo,cluster-name=acid-postgres-cluster,spilo-role=master -n default)
+kubectl port-forward $PGMASTER 6432:5432 -n default
+```
+Operator monitoring status: [Monitoring or tuning Postgres is not in scope of the operator in the current state](https://github.com/zalando/postgres-operator/blob/master/docs/index.md#scope)
+
+### Enable pgboncer pooler on 6432 port:
+In `postgres-manifest.yaml` set enableConnectionPooler
+```
+spec.enableConnectionPooler: true
+```
+Verify:
+```
+kubectl get po
+NAME                                            READY   STATUS    RESTARTS   AGE
+acid-postgres-cluster-0                         1/1     Running   0          35s
+acid-postgres-cluster-1                         1/1     Running   0          65s
+acid-postgres-cluster-pooler-6d7d69ffcf-vtmtp   1/1     Running   0          25s
+acid-postgres-cluster-pooler-6d7d69ffcf-zptt4   1/1     Running   0          25s
+postgres-operator-55f599cc9c-hmk9v              1/1     Running   0          4m44
+```
+Operator monitoring status: [Issue: Expose all status fields via metrics #396](https://github.com/FoundationDB/fdb-kubernetes-operator/issues/396)
+## 3.2 Deploy PosgreSQL
+Deploy:
+
+Check config [postgres/postgres-manifest.yaml](postgres/postgres-manifest.yaml)
+```
+cd deploy_dev/postgres/
+sh deploy_operator.sh
+```
+Verify:
+```
+kubectl exec --stdin --tty acid-postgres-cluster-0 -- /bin/su -- postgres
+postgres@acid-postgres-cluster-0:~$ psql
+psql (13.1 (Ubuntu 13.1-1.pgdg18.04+1))
+Type "help" for help.
+
+postgres=# \du
+                                                                               List of roles
+     Role name      |                         Attributes                         |                                        Member of                                         
+--------------------+------------------------------------------------------------+------------------------------------------------------------------------------------------
+ admin              | Create DB, Cannot login                                    | {bar_owner,zalando,bar_owner_user}
+ bar_data_owner     | Cannot login                                               | {bar_data_reader,bar_data_writer}
+ bar_data_reader    | Cannot login                                               | {}
+ bar_data_writer    | Cannot login                                               | {bar_data_reader}
+ bar_history_owner  | Cannot login                                               | {bar_history_reader,bar_history_writer}
+ bar_history_reader | Cannot login                                               | {}
+ bar_history_writer | Cannot login                                               | {bar_history_reader}
+ bar_owner          | Cannot login                                               | {bar_history_owner,bar_reader,bar_writer,bar_data_owner,bar_reader_user,bar_writer_user}
+ bar_owner_user     |                                                            | {bar_owner}
+ bar_reader         | Cannot login                                               | {}
+ bar_reader_user    |                                                            | {bar_reader}
+ bar_writer         | Cannot login                                               | {bar_reader}
+ bar_writer_user    |                                                            | {bar_writer}
+ postgres           | Superuser, Create role, Create DB, Replication, Bypass RLS | {}
+ robot_zmon         | Cannot login                                               | {}
+ standby            | Replication                                                | {}
+ zalando            | Superuser, Create DB                                       | {}
+ zalandos           | Create DB, Cannot login                                    | {}
+```
+Info about acid-postgres-cluster OS:
+```
+cat /etc/os-release | grep PRETTY_NAME
+PRETTY_NAME="Ubuntu 18.04.5 LTS"
+```
+Get password for manual connection for user: postgres, database: foo
+```
+kubectl get secret postgres.acid-postgres-cluster.credentials.postgresql.acid.zalan.do -o 'jsonpath={.data.password}' | base64 -d
+```
+Get local port via port-forward
+```
+export PGMASTER=$(kubectl get pods -o jsonpath={.items..metadata.name} -l application=spilo,cluster-name=acid-postgres-cluster,spilo-role=master -n default)
+kubectl port-forward $PGMASTER 6432:5432 -n default
+```
+Operator monitoring status: [Monitoring or tuning Postgres is not in scope of the operator in the current state](https://github.com/zalando/postgres-operator/blob/master/docs/index.md#scope)
+
+### Enable pgboncer pooler on 6432 port:
+In `postgres-manifest.yaml` set enableConnectionPooler
+```
+spec.enableConnectionPooler: true
+```
+Verify:
+```
+kubectl get po
+NAME                                            READY   STATUS    RESTARTS   AGE
+acid-postgres-cluster-0                         1/1     Running   0          35s
+acid-postgres-cluster-1                         1/1     Running   0          65s
+acid-postgres-cluster-pooler-6d7d69ffcf-vtmtp   1/1     Running   0          25s
+acid-postgres-cluster-pooler-6d7d69ffcf-zptt4   1/1     Running   0          25s
+postgres-operator-55f599cc9c-hmk9v              1/1     Running   0          4m44
 ```
