@@ -92,7 +92,7 @@ bandwidth along the way.`,
 		settings.password,
 		"Cassandra password")
 	rootCmd.PersistentFlags().StringVarP(&settings.databaseType,
-		"database", "db",
+		"database", "d",
 		settings.databaseType,
 		"Database type, postgreSQL if not set.")
 	rootCmd.PersistentFlags().StringVar(&settings.dbURL,
