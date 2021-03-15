@@ -1,0 +1,20 @@
+image: golang:1.16.2-alpine3.13
+
+stages:
+- build
+
+build:
+  stage: build
+  script:
+    - cd benchmark
+    - go build -o bin/stroppy
+  artifacts:
+    paths:
+    - benchmark/bin/
+
+lint:
+  stage: build
+  image: golangci/golangci-lint:v1.38.0
+  script:
+    - cd benchmark
+    - golangci-lint run --new-from-rev=HEAD~

@@ -2,6 +2,8 @@
 *.log
 .*
 
+!*.yml
+
 benchmark/vendor
 benchmark/bin
 benchmark/_*
