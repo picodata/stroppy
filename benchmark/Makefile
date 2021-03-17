@@ -11,3 +11,6 @@ pop:
 
 pay:
 	bin/stroppy pay --url postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable --check --count=100000
+
+lint:
+	golangci-lint run --new-from-rev=HEAD~
