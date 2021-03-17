@@ -90,18 +90,18 @@ func (self *PostgresCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Creating the tables...")
 	_, err := self.pool.Exec(context.Background(), bootstrapScript)
 	if err != nil {
-		return merry.Wrap(err)
+		return merry.Prepend(err, "failed to execute bootstrap script")
 	}
 
 	llog.Infof("Populating settings...")
 	_, err = self.pool.Exec(context.Background(), insertSetting, "count", strconv.Itoa(count))
 	if err != nil {
-		return merry.Wrap(err)
+		return merry.Prepend(err, "failed to populate settings")
 	}
 
 	_, err = self.pool.Exec(context.Background(), insertSetting, "seed", strconv.Itoa(seed))
 	if err != nil {
-		return merry.Wrap(err)
+		return merry.Prepend(err, "failed to save seed")
 	}
 
 	return nil
