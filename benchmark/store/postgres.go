@@ -75,6 +75,17 @@ CREATE TABLE IF NOT EXISTS transfer (
 );
 TRUNCATE transfer;
 
+CREATE TABLE IF NOT EXISTS history (
+	id            UUID PRIMARY KEY, -- history item UUID
+	transfer_id    UUID, -- id of corresponding transfer
+	account_bic    TEXT, -- source bank identification code
+	account_ban    TEXT, -- source bank account number
+	old_balance    DECIMAL, -- old balance value
+	new_balance    DECIMAL, -- new balance value
+	operation_time TIMESTAMP -- time, when balance change operation was performed
+);
+TRUNCATE history;
+
 CREATE TABLE IF NOT EXISTS checksum (
 	name TEXT PRIMARY KEY,
 	amount DECIMAL
@@ -501,14 +512,17 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 		}
 	}()
 
+	sourceAccount := transfer.Acs[0]
+	destAccount := transfer.Acs[1]
+
 	_, err = tx.Exec(
 		ctx,
 		insertTransfer,
 		transfer.Id,
-		transfer.Acs[0].Bic,
-		transfer.Acs[0].Ban,
-		transfer.Acs[1].Bic,
-		transfer.Acs[1].Ban,
+		sourceAccount.Bic,
+		sourceAccount.Ban,
+		destAccount.Bic,
+		destAccount.Ban,
 		transfer.Amount.UnscaledBig().Int64(),
 	)
 	if err != nil {
@@ -524,17 +538,18 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 	row := tx.QueryRow(
 		ctx,
 		`
-		UPDATE account SET balance = balance - $1 WHERE bic = $2 and ban = $3 RETURNING balance;
+		UPDATE account SET balance = balance - $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
+			select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
+		  ) as old_balance, now();
 		`,
 		transfer.Amount.UnscaledBig().Int64(),
-		transfer.Acs[0].Bic,
-		transfer.Acs[0].Ban,
+		sourceAccount.Bic,
+		sourceAccount.Ban,
 	)
-	var balance int64
-	if balance < 0 {
-		return ErrInsufficientFunds
-	}
-	if err := row.Scan(&balance); err != nil {
+	var oldBalance int64
+	var newBalance int64
+	var operationTime time.Time
+	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return ErrTxRollback
@@ -546,29 +561,58 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 		}
 		return merry.Prepend(err, "failed to update first balance")
 	}
+	if newBalance < 0 {
+		return ErrInsufficientFunds
+	}
+	newBalanceDec := inf.NewDec(newBalance, 0)
+	oldBalanceDec := inf.NewDec(oldBalance, 0)
+	sourceHistoryItem := model.NewHistoryItem(
+		transfer.Id,
+		sourceAccount.Bic,
+		sourceAccount.Ban,
+		oldBalanceDec,
+		newBalanceDec,
+		operationTime,
+	)
 
 	// update balance
-	res, err := tx.Exec(
+	row = tx.QueryRow(
 		ctx,
 		`
-		UPDATE account SET balance = balance + $1 WHERE bic = $2 and ban = $3;
+		UPDATE account SET balance = balance + $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
+			select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
+		  ) as old_balance, now();
 		`,
 		transfer.Amount.UnscaledBig().Int64(),
-		transfer.Acs[1].Bic,
-		transfer.Acs[1].Ban,
+		destAccount.Bic,
+		destAccount.Ban,
 	)
-	if err != nil {
+	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return ErrTxRollback
 			}
 		}
-		return merry.Prepend(err, "failed to update second balance")
+		// failed to find first account
+		//nolint:errorlint
+		if err == pgx.ErrNoRows {
+			return ErrNoRows
+		}
+		return merry.Prepend(err, "failed to update first balance")
 	}
-	// failed to find second account
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
+	if newBalance < 0 {
+		return ErrInsufficientFunds
 	}
+	newBalanceDec = inf.NewDec(newBalance, 0)
+	oldBalanceDec = inf.NewDec(oldBalance, 0)
+	destHistoryItem := model.NewHistoryItem(
+		transfer.Id,
+		destAccount.Bic,
+		destAccount.Ban,
+		oldBalanceDec,
+		newBalanceDec,
+		operationTime,
+	)
 
 	err = tx.Commit(ctx)
 	if err != nil {
@@ -578,6 +622,44 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 			}
 		}
 		return merry.Prepend(err, "failed to commit tx")
+	}
+
+	_, err = self.pool.Exec(
+		ctx,
+		`
+		INSERT INTO history (
+			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
+		) VALUES ($1, $2, $3, $4, $5, $6, $7);
+		`,
+		sourceHistoryItem.ID,
+		sourceHistoryItem.TransferID,
+		sourceHistoryItem.AccountBic,
+		sourceHistoryItem.AccountBan,
+		sourceHistoryItem.OldBalance.UnscaledBig().Uint64(),
+		sourceHistoryItem.NewBalance.UnscaledBig().Uint64(),
+		sourceHistoryItem.OperationTime,
+	)
+	if err != nil {
+		return merry.Prepend(err, "failed to insert new history item")
+	}
+
+	_, err = self.pool.Exec(
+		ctx,
+		`
+		INSERT INTO history (
+			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
+		) VALUES ($1, $2, $3, $4, $5, $6, $7);
+		`,
+		destHistoryItem.ID,
+		destHistoryItem.TransferID,
+		destHistoryItem.AccountBic,
+		destHistoryItem.AccountBan,
+		destHistoryItem.OldBalance.UnscaledBig().Uint64(),
+		destHistoryItem.NewBalance.UnscaledBig().Uint64(),
+		destHistoryItem.OperationTime,
+	)
+	if err != nil {
+		return merry.Prepend(err, "failed to insert new history item")
 	}
 
 	return nil
