@@ -594,7 +594,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 			}
 		}
 		// failed to find first account
-		//nolint:errorlint
+		//nolint:errorlint,goerr113
 		if err == pgx.ErrNoRows {
 			return ErrNoRows
 		}
