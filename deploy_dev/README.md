@@ -201,3 +201,45 @@ acid-postgres-cluster-pooler-6d7d69ffcf-vtmtp   1/1     Running   0          25s
 acid-postgres-cluster-pooler-6d7d69ffcf-zptt4   1/1     Running   0          25s
 postgres-operator-55f599cc9c-hmk9v              1/1     Running   0          4m44
 ```
+
+## 3.3 Deploy MongoDB
+Deploy:
+
+Check config [mongodb/mongodb-cluster.yaml](mongodb/mongodb-cluster.yaml)
+```
+cd deploy_dev/mongodb/
+sh deploy_operator.sh
+```
+
+Verify:
+```
+kubectl get mongodbcommunity
+NAME              PHASE     VERSION
+mongodb-cluster   Running
+```
+```
+kubectl get pod -o wide
+NAME                                           READY   STATUS    RESTARTS   AGE   IP           NODE       NOMINATED NODE   READINESS GATES
+mongodb-client                                 1/1     Running   0          54m   172.17.0.5   minikube   <none>           <none>
+mongodb-cluster-0                              2/2     Running   0          66m   172.17.0.2   minikube   <none>           <none>
+mongodb-cluster-1                              2/2     Running   0          66m   172.17.0.3   minikube   <none>           <none>
+mongodb-cluster-2                              2/2     Running   0          65m   172.17.0.4   minikube   <none>           <none>
+mongodb-kubernetes-operator-7cddf7cbd4-n5bnf   1/1     Running   1          23h   172.17.0.8   minikube   <none>           <none>
+```
+Localhost port access. User/pass: mongo/mongo. Database: admin.
+```
+kubectl port-forward mongodb-cluster-0 27017:27017
+```
+Client-in-pod access
+```
+export MGMASTER=$(kubectl get pod mongodb-cluster-0 -o wide --no-headers | awk '{ print $6}')
+kubectl exec -it mongodb-client -- /usr/bin/mongo -u mongo -p mongo $MGMASTER:27017/admin
+```
+Verify access (check that `PRIMARY` in prompt):
+```
+mongodb-cluster:PRIMARY> show dbs
+admin   0.000GB
+config  0.000GB
+local   0.000GB
+```
+[Force a Member to be Primary Using Database Commands](https://docs.mongodb.com/manual/tutorial/force-member-to-be-primary/#force-a-member-to-be-primary-using-database-commands)
