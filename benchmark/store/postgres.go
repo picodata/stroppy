@@ -24,21 +24,21 @@ type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresCluster(dbUrl string) (*PostgresCluster, error) {
-	llog.Infof("Establishing connection to pg on %v", dbUrl)
+func NewPostgresCluster(dbURL string) (*PostgresCluster, func(), error) {
+	llog.Infof("Establishing connection to pg on %v", dbURL)
 
-	poolConfig, err := pgxpool.ParseConfig(dbUrl)
+	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
-		return nil, merry.Wrap(err)
+		return nil, nil, merry.Wrap(err)
 	}
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {
-		return nil, merry.Wrap(err)
+		return nil, nil, merry.Wrap(err)
 	}
 
 	return &PostgresCluster{
 		pgPool,
-	}, nil
+	}, pgPool.Close, nil
 }
 
 func (*PostgresCluster) GetClusterType() DBClusterType {

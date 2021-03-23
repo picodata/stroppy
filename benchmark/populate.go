@@ -38,10 +38,12 @@ func populate(settings *Settings) error {
 	var err error
 	switch settings.databaseType {
 	case "postgres":
-		cluster, err = store.NewPostgresCluster(settings.dbURL)
+		var closeConns func()
+		cluster, closeConns, err = store.NewPostgresCluster(settings.dbURL)
 		if err != nil {
 			return merry.Wrap(err)
 		}
+		defer closeConns()
 	default:
 		return merry.Errorf("unknown database type for setup")
 	}

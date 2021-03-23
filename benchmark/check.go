@@ -19,10 +19,12 @@ func check(settings *Settings, prev *inf.Dec) (*inf.Dec, error) {
 	var someCluster interface{}
 	switch settings.databaseType {
 	case "postgres":
-		someCluster, err = store.NewPostgresCluster(settings.dbURL)
+		var closeConns func()
+		someCluster, closeConns, err = store.NewPostgresCluster(settings.dbURL)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+		defer closeConns()
 	default:
 		return nil, merry.Errorf("unknown database type for setup")
 	}
