@@ -18,17 +18,21 @@ func check(settings *Settings, prev *inf.Dec) (*inf.Dec, error) {
 	var err error
 	var someCluster interface{}
 	switch settings.databaseType {
-	case "postgres":
+	case store.PostgresType:
 		var closeConns func()
 		someCluster, closeConns, err = store.NewPostgresCluster(settings.dbURL)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
 		defer closeConns()
+	case store.FDBType:
+		someCluster, err = store.NewFDBCluster(settings.dbURL)
+		if err != nil {
+			return nil, merry.Wrap(err)
+		}
 	default:
 		return nil, merry.Errorf("unknown database type for setup")
 	}
-
 	cluster, ok := someCluster.(CheckableCluster)
 	if !ok {
 		return nil, merry.Errorf("builtin transactions are not supported for %s cluster", settings.databaseType)

@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/ansel1/merry v1.5.1
+	github.com/apple/foundationdb/bindings/go v0.0.0-20201114170605-569ab46bf638
 	github.com/gocql/gocql v0.0.0-20210129204804-4364a4b9cfdd
 	github.com/google/uuid v1.2.0
 	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect

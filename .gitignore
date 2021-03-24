@@ -1,8 +1,8 @@
+fdb.cluster
 .vagrant
 *.log
 .*
 
-!*.yml
 
 benchmark/vendor
 benchmark/bin

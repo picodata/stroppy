@@ -1,4 +1,4 @@
-image: golang:1.16.2-alpine3.13
+image: registry.gitlab.com/picodata/dockers/stroppy_builder:v2
 
 stages:
 - build
@@ -14,7 +14,11 @@ build:
 
 lint:
   stage: build
-  image: golangci/golangci-lint:v1.38.0
+  variables:
+    # gitlab internally fetches only current HEAD in detached state
+    # add master refspec as fetch arg to make 'git diff master' possible
+    GIT_FETCH_EXTRA_FLAGS: refs/heads/master:refs/remotes/origin/master
+  image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
     - cd benchmark
-    - golangci-lint run --new-from-rev=HEAD~
+    - golangci-lint run --new-from-rev=origin/master
