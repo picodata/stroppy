@@ -28,6 +28,10 @@ type Account struct {
 	Found           bool
 }
 
+func (acc Account) AccountID() string {
+	return acc.Bic + acc.Ban
+}
+
 // A record with data about money transfer from acc1 -> acc2
 type Transfer struct {
 	Id        TransferId

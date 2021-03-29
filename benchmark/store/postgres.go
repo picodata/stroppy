@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -488,6 +489,107 @@ func (self *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
 	return transferIds, nil
 }
 
+func WithdrawMoney(
+	ctx context.Context,
+	tx pgx.Tx,
+	acc model.Account,
+	transfer model.Transfer,
+) (*model.HistoryItem, error) {
+	// update balance
+	row := tx.QueryRow(
+		ctx,
+		`
+	UPDATE account SET balance = balance - $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
+		select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
+	  ) as old_balance, now();
+	`,
+		transfer.Amount.UnscaledBig().Int64(),
+		acc.Bic,
+		acc.Ban,
+	)
+	var oldBalance int64
+	var newBalance int64
+	var operationTime time.Time
+	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
+		//nolint:errorlint
+		if pgErr, ok := err.(*pgconn.PgError); ok {
+			if pgerrcode.IsTransactionRollback(pgErr.Code) {
+				return nil, ErrTxRollback
+			}
+		}
+		// failed to find account
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoRows
+		}
+		return nil, merry.Prepend(err, "failed to update first balance")
+	}
+	if newBalance < 0 {
+		return nil, ErrInsufficientFunds
+	}
+	newBalanceDec := inf.NewDec(newBalance, 0)
+	oldBalanceDec := inf.NewDec(oldBalance, 0)
+
+	history := model.NewHistoryItem(
+		transfer.Id,
+		acc.Bic,
+		acc.Ban,
+		oldBalanceDec,
+		newBalanceDec,
+		operationTime,
+	)
+
+	return &history, nil
+}
+
+func TopUpMoney(
+	ctx context.Context,
+	tx pgx.Tx,
+	acc model.Account,
+	transfer model.Transfer,
+) (*model.HistoryItem, error) {
+	// update balance
+	row := tx.QueryRow(
+		ctx,
+		`
+	UPDATE account SET balance = balance + $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
+		select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
+	  ) as old_balance, now();
+	`,
+		transfer.Amount.UnscaledBig().Int64(),
+		acc.Bic,
+		acc.Ban,
+	)
+	var oldBalance int64
+	var newBalance int64
+	var operationTime time.Time
+	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
+		//nolint:errorlint
+		if pgErr, ok := err.(*pgconn.PgError); ok {
+			if pgerrcode.IsTransactionRollback(pgErr.Code) {
+				return nil, ErrTxRollback
+			}
+		}
+		// failed to find account
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, ErrNoRows
+		}
+		return nil, merry.Prepend(err, "failed to update first balance")
+	}
+	newBalanceDec := inf.NewDec(newBalance, 0)
+	oldBalanceDec := inf.NewDec(oldBalance, 0)
+
+	history := model.NewHistoryItem(
+		transfer.Id,
+		acc.Bic,
+		acc.Ban,
+		oldBalanceDec,
+		newBalanceDec,
+		operationTime,
+	)
+
+	return &history, nil
+}
+
 // MakeAtomicTransfer inserts new transfer (should be used as history in the future) and
 // update corresponding balances in a single SQL transaction
 func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
@@ -534,85 +636,48 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 		return merry.Prepend(err, "failed to insert transfer")
 	}
 
-	// update balance
-	row := tx.QueryRow(
-		ctx,
-		`
-		UPDATE account SET balance = balance - $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
-			select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
-		  ) as old_balance, now();
-		`,
-		transfer.Amount.UnscaledBig().Int64(),
-		sourceAccount.Bic,
-		sourceAccount.Ban,
-	)
-	var oldBalance int64
-	var newBalance int64
-	var operationTime time.Time
-	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
-		if pgErr, ok := err.(*pgconn.PgError); ok {
-			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return ErrTxRollback
-			}
+	//	If we always withdraw money first deadlock may occur.
+	//	Imagine we have concurrent txA (transfer X -> Y) and txB (transfer Y -> X).
+	//	We will see the following timeline:
+	//
+	// 	1. txA locks account X to withdraw money	--- txB locks account Y to withdraw money
+	//	2. txA tries to acquire lock on account Y	--- txB tries to acquire lock on accout X
+	// 	3. PostgreSQL will wait deadlock_timeout (defaults to 1s) to check if we have deadlock (we do) and will abort txB.
+	// 	4. Retry loop
+	//
+	// 	We have to select consistent lock order to avoid such troubles.
+	// 	In that case we have the following timeline:
+	//
+	// 	1. txA locks account X to withdraw money	--- txB tries to acquire lock on account X to withdraw money
+	//	2. txA locks account Y to top up money		--- txB waits for lock on X
+	//  3. txA commits								--- txB acquires lock on X
+	// 	4. 											--- txB acquires lock on Y
+	// 	5.											--- txB commits
+	//
+	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
+	var sourceHistoryItem, destHistoryItem *model.HistoryItem
+	//nolint:nestif
+	if sourceAccount.AccountID() > destAccount.AccountID() {
+		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		if err != nil {
+			return merry.Prepend(err, "failed to withdraw money")
 		}
-		// failed to find first account
-		if err == pgx.ErrNoRows {
-			return ErrNoRows
-		}
-		return merry.Prepend(err, "failed to update first balance")
-	}
-	if newBalance < 0 {
-		return ErrInsufficientFunds
-	}
-	newBalanceDec := inf.NewDec(newBalance, 0)
-	oldBalanceDec := inf.NewDec(oldBalance, 0)
-	sourceHistoryItem := model.NewHistoryItem(
-		transfer.Id,
-		sourceAccount.Bic,
-		sourceAccount.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
 
-	// update balance
-	row = tx.QueryRow(
-		ctx,
-		`
-		UPDATE account SET balance = balance + $1 WHERE bic = $2 and ban = $3 RETURNING balance, (
-			select balance from account where bic = $2 and ban = $3 -- that works only because of READ_COMMITTED isolation level
-		  ) as old_balance, now();
-		`,
-		transfer.Amount.UnscaledBig().Int64(),
-		destAccount.Bic,
-		destAccount.Ban,
-	)
-	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
-		if pgErr, ok := err.(*pgconn.PgError); ok {
-			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return ErrTxRollback
-			}
+		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		if err != nil {
+			return merry.Prepend(err, "failed to top up money")
 		}
-		// failed to find first account
-		//nolint:errorlint,goerr113
-		if err == pgx.ErrNoRows {
-			return ErrNoRows
+	} else {
+		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		if err != nil {
+			return merry.Prepend(err, "failed to withdraw money")
 		}
-		return merry.Prepend(err, "failed to update first balance")
+
+		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		if err != nil {
+			return merry.Prepend(err, "failed to top up money")
+		}
 	}
-	if newBalance < 0 {
-		return ErrInsufficientFunds
-	}
-	newBalanceDec = inf.NewDec(newBalance, 0)
-	oldBalanceDec = inf.NewDec(oldBalance, 0)
-	destHistoryItem := model.NewHistoryItem(
-		transfer.Id,
-		destAccount.Bic,
-		destAccount.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
 
 	err = tx.Commit(ctx)
 	if err != nil {
