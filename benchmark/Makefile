@@ -12,6 +12,9 @@ postgres_pop:
 postgres_pay:
 	bin/stroppy pay --url postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable --check --count=100000
 
+postgres_payz:
+	bin/stroppy pay --url postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable --check --count=100000 -z true
+
 fdb_init:
 	echo "docker:docker@127.0.0.1:4500" > fdb.cluster
 
@@ -20,6 +23,9 @@ fdb_pop:
 
 fdb_pay:
 	bin/stroppy pay --url fdb.cluster --check --count=100000 -d fdb
+
+fdb_payz:
+	bin/stroppy pay --url fdb.cluster --check --count=100000 -d fdb -z true
 
 lint:
 	golangci-lint run --new-from-rev=master
