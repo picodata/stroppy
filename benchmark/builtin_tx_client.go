@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"math/rand"
 	"sync"
 	"sync/atomic"
@@ -54,7 +55,7 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
-			if err == store.ErrTxRollback {
+			if errors.Is(err, store.ErrTxRollback) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
@@ -68,13 +69,13 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 
 				continue
 			}
-			if err == store.ErrInsufficientFunds {
+			if errors.Is(err, store.ErrInsufficientFunds) {
 				atomic.AddUint64(&c.payStats.insufficient_funds, 1)
 				break
 			}
 			// that means one of accounts was not found
 			// and we should proceed to the next transfer
-			if err == store.ErrNoRows {
+			if errors.Is(err, store.ErrNoRows) {
 				atomic.AddUint64(&c.payStats.no_such_account, 1)
 				break
 			}
