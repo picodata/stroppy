@@ -7,3 +7,5 @@ fdb.cluster
 benchmark/vendor
 benchmark/bin
 benchmark/_*
+
+!*/.dockerignore

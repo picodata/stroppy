@@ -2,6 +2,7 @@ image: registry.gitlab.com/picodata/dockers/stroppy_builder:v2
 
 stages:
 - build
+- docker
 
 build:
   stage: build
@@ -22,3 +23,31 @@ lint:
   script:
     - cd benchmark
     - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD)
+
+docker:
+  image: docker:dind
+  stage: docker
+  tags: 
+    - docker
+  services:
+  - docker:dind
+  only:
+    - master
+    - /^staging-.*$/
+    - /^hotfix-.*$/
+    - check-ci
+  artifacts:
+    paths:
+      - benchmark/docker-tag.txt
+    expire_in: 1 month
+  before_script:
+    - cd benchmark
+  script:
+    - CD_DOCKER_TAG=`date +'%Y-%m-%d'`_$CI_COMMIT_SHA
+    - echo $CD_DOCKER_TAG > docker-tag.txt
+    - CD_DOCKER_IMAGE=$CI_REGISTRY_IMAGE:$CD_DOCKER_TAG
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - DOCKER_LATEST=$CI_REGISTRY_IMAGE:latest
+    - docker build -t $CD_DOCKER_IMAGE -t $DOCKER_LATEST --build-arg COMMIT_HASH=$CI_COMMIT_SHA .
+    - docker push $CD_DOCKER_IMAGE
+    - docker push $DOCKER_LATEST
