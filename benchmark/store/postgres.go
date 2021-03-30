@@ -104,7 +104,6 @@ func (self *PostgresCluster) BootstrapDB(count int, seed int) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to execute bootstrap script")
 	}
-
 	llog.Infof("Populating settings...")
 	_, err = self.pool.Exec(context.Background(), insertSetting, "count", strconv.Itoa(count))
 	if err != nil {
@@ -119,11 +118,46 @@ func (self *PostgresCluster) BootstrapDB(count int, seed int) error {
 	return nil
 }
 
+const fetchSettings = `SELECT value FROM setting WHERE KEY in ('count', 'seed');`
+
+const timeOutSettings = 5
+
 func (self *PostgresCluster) FetchSettings() (ClusterSettings, error) {
-	return ClusterSettings{
-		Count: 100,
-		Seed:  100,
-	}, nil
+	ctx, cancel := context.WithTimeout(context.Background(), timeOutSettings*time.Second)
+	defer cancel()
+	rows, err := self.pool.Query(ctx, fetchSettings)
+	if err != nil {
+		return ClusterSettings{
+			Count: 0,
+			Seed:  0,
+		}, merry.Prepend(err, "failed to fetch settings")
+	}
+	var clusterSettings ClusterSettings
+	var fetchSettings []string
+	for rows.Next() {
+		var clusterSetting string
+		if err := rows.Scan(&clusterSetting); err != nil {
+			return clusterSettings, merry.Prepend(err, "failed to scan setting for FetchSettings")
+		}
+		fetchSettings = append(fetchSettings, clusterSetting)
+	}
+	clusterSettings.Count, err = strconv.Atoi(fetchSettings[0])
+	if err != nil {
+		return ClusterSettings{
+				Count: 0,
+				Seed:  0,
+			},
+			merry.Prepend(err, "failed to get count setting for FetchSettings")
+	}
+	clusterSettings.Seed, err = strconv.Atoi(fetchSettings[1])
+	if err != nil {
+		return ClusterSettings{
+				Count: 0,
+				Seed:  0,
+			},
+			merry.Prepend(err, "failed to get seed setting for FetchSettings")
+	}
+	return clusterSettings, nil
 }
 
 const upsertAccount = `
