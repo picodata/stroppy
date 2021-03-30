@@ -21,4 +21,4 @@ lint:
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
     - cd benchmark
-    - golangci-lint run --new-from-rev=origin/master
+    - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD)
