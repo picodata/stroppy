@@ -13,7 +13,7 @@ spec:
   teamId: "acid"
   numberOfInstances: 2
   users:  # Application/Robot users
-    zalando:
+    stroppy:
     - superuser
     - createdb
   enableMasterLoadBalancer: false
@@ -23,7 +23,7 @@ spec:
   allowedSourceRanges:  # load balancers' source ranges for both master and replica services
   - 127.0.0.1/32
   databases:
-    foo: zalando
+    stroppy: stroppy
   preparedDatabases:
     bar:
       defaultUsers: true
@@ -37,55 +37,47 @@ spec:
           defaultUsers: false
   postgresql:
     version: "13"
-    parameters:  # Used generator: http://pgconfigurator.cybertec.at
+    parameters:
       # Connectivity
       max_connections: '100'
       superuser_reserved_connections: '3'
-
       # Memory Settings
       shared_buffers: '256 MB'
       work_mem: '32 MB'
       maintenance_work_mem: '320 MB'
       huge_pages: 'off'
       effective_cache_size: '1 GB'
-      effective_io_concurrency: '100'   # concurrent IO only really activated if OS supports posix_fadvise function
-      random_page_cost: '1.25' # speed of random disk access relative to sequential access (1.0)
-
+      effective_io_concurrency: '100'
+      random_page_cost: '1.25'
       # Monitoring
-      shared_preload_libraries: 'pg_stat_statements'    # per statement resource usage stats
-      track_io_timing: 'on'        # measure exact block IO times
-      track_functions: pl        # track execution times of pl-language procedures if any
-
+      shared_preload_libraries: 'pg_stat_statements'
+      track_io_timing: 'on'
+      track_functions: pl
       # Replication
-      wal_level: replica		# consider using at least 'replica'
+      wal_level: replica
       max_wal_senders: '0'
       synchronous_commit: 'on'
-
       # Checkpointing: 
       checkpoint_timeout : '15 min' 
       checkpoint_completion_target: '0.9'
       max_wal_size: '1024 MB'
       min_wal_size: '512 MB'
-
       # WAL writing
       wal_compression: 'on'
-      wal_buffers: '-1'    # auto-tuned by Postgres till maximum of segment size (16MB by default)
+      wal_buffers: '-1'
       wal_writer_delay: 200ms
       wal_writer_flush_after: 1MB
-
       # Background writer
       bgwriter_delay: 200ms
       bgwriter_lru_maxpages: '100'
       bgwriter_lru_multiplier: '2.0'
       bgwriter_flush_after: '0'
-
       # Parallel queries: 
       max_worker_processes: '1'
       max_parallel_workers_per_gather: '0'
       max_parallel_maintenance_workers: '0'
       max_parallel_workers: '1'
       parallel_leader_participation: 'on'
-
       # Advanced features 
       enable_partitionwise_join: 'on'
       enable_partitionwise_aggregate: 'on'
@@ -134,19 +126,29 @@ spec:
 #    effect: NoSchedule
   resources:
     requests:
-      cpu: 1000m
+      cpu: 2000m
       memory: 1000Mi
     limits:
-      cpu: 1000m
+      cpu: 2000m
       memory: 1000Mi
   patroni:
     initdb:
       encoding: "UTF8"
       locale: "en_US.UTF-8"
       data-checksums: "true"
-#    pg_hba:
-#      - hostssl all all 0.0.0.0/0 md5
-#      - host    all all 0.0.0.0/0 md5
+    pg_hba:
+    - local      all          all                         trust
+    - hostssl    all          +zalandos    127.0.0.1/32   pam
+    - host       all          all          127.0.0.1/32   md5
+    - host       all          all          172.17.0.1/16  md5
+    - hostssl    all          +zalandos    ::1/128        pam
+    - host       all          all          ::1/128        md5
+    - hostssl    replication  standby      all            md5
+    - hostnossl  all          all          all            reject
+    - hostssl    all          +zalandos    all            pam
+    - hostssl    all          all          all            md5
+#    - hostssl all all 0.0.0.0/0 md5
+#    - host    all all 0.0.0.0/0 md5
 #    slots:
 #      permanent_physical_1:
 #        type: physical
