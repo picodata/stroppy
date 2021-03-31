@@ -153,6 +153,13 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		keyAccount := cluster.getAccountKey(acc)
+		checkUniq, err := tx.Get(keyAccount).Get()
+		if checkUniq != nil {
+			return nil, ErrDuplicateKey
+		}
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to check account for existence")
+		}
 		var valueAccount accountValue
 		valueAccount.Balance = acc.Balance
 		valueAccountSet, err := serializeValue(valueAccount)
@@ -164,6 +171,9 @@ func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 		return nil, err
 	})
 	if err != nil {
+		if errors.Is(err, ErrDuplicateKey) {
+			return ErrDuplicateKey
+		}
 		return merry.Prepend(err, "failed to insert account")
 	}
 	return nil
