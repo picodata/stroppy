@@ -184,6 +184,19 @@ Get local port via port-forward
 export PGMASTER=$(kubectl get pods -o jsonpath={.items..metadata.name} -l application=spilo,cluster-name=acid-postgres-cluster,spilo-role=master -n default)
 kubectl port-forward $PGMASTER 6432:5432 -n default
 ```
+Connect to localhost:6432 db: stroppy user: postgres: password: <from kubectl get secret ...>
+```
+ALTER USER stroppy PASSWORD 'stroppy';
+```
+Run stroppy
+```
+kubectl run -i --tty stroppy-client --image=ghoru/stroppy -- /bin/bash
+```
+Run benchmark inside pod stroppy-client
+```
+bin/stroppy pop --url postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable --count 5000
+bin/stroppy pay --url postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable --check --count=100000
+```
 Operator monitoring status: [Monitoring or tuning Postgres is not in scope of the operator in the current state](https://github.com/zalando/postgres-operator/blob/master/docs/index.md#scope)
 
 ### Enable pgboncer pooler on 6432 port:
