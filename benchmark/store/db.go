@@ -20,6 +20,9 @@ var ErrNoRows = errors.New("cluster: no rows in result set")
 // ErrTimeoutExceeded is ...TODO: transform into any transient error.
 var ErrTimeoutExceeded = errors.New("cluster: query timeout exceeded")
 
+// ErrDuplicateKey is returned then there already such unique key
+var ErrDuplicateKey = errors.New("cluster: duplicate unique key")
+
 // DBClusterType is type for choose ClusterType.
 type DBClusterType int
 

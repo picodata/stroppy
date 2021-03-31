@@ -1,13 +1,13 @@
 package main
 
 import (
+	"errors"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/ansel1/merry"
-	"github.com/jackc/pgx"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/benchmark/stroppy/fixed_random_source"
 	"gitlab.com/picodata/benchmark/stroppy/model"
@@ -85,23 +85,21 @@ func populate(settings *Settings) error {
 			}
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
 			for {
-				applied := true
 				err := cluster.InsertAccount(acc)
 				if err != nil {
-					atomic.AddUint64(&stats.errors, 1)
-					pgErr, isPgError := err.(pgx.PgError)
-					if isPgError {
-						llog.Errorf("Retrying after request error: %v", pgErr)
-						time.Sleep(time.Millisecond)
-					} else {
-						llog.Fatalf("Fatal error: %+v", err)
+					if errors.Is(err, store.ErrDuplicateKey) {
+						atomic.AddUint64(&stats.duplicates, 1)
+						break
 					}
-				} else if applied {
+					atomic.AddUint64(&stats.errors, 1)
+					if errors.Is(err, store.ErrTimeoutExceeded) {
+						llog.Errorf("Retrying after request error: %v", err)
+						time.Sleep(time.Millisecond)
+					}
+					llog.Fatalf("Fatal error: %+v", err)
+				} else {
 					i++
 					StatsRequestEnd(cookie)
-					break
-				} else {
-					atomic.AddUint64(&stats.duplicates, 1)
 					break
 				}
 			}

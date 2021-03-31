@@ -7,10 +7,8 @@ require (
 	github.com/apple/foundationdb/bindings/go v0.0.0-20201114170605-569ab46bf638
 	github.com/gocql/gocql v0.0.0-20210129204804-4364a4b9cfdd
 	github.com/google/uuid v1.2.0
-	github.com/jackc/fake v0.0.0-20150926172116-812a484cc733 // indirect
 	github.com/jackc/pgconn v1.8.0
 	github.com/jackc/pgerrcode v0.0.0-20201024163028-a0d42d470451
-	github.com/jackc/pgx v3.6.2+incompatible
 	github.com/jackc/pgx/v4 v4.10.1
 	github.com/lib/pq v1.9.0 // indirect
 	github.com/sirupsen/logrus v1.7.0

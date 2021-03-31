@@ -161,19 +161,20 @@ func (self *PostgresCluster) FetchSettings() (ClusterSettings, error) {
 }
 
 const upsertAccount = `
-	INSERT INTO account (bic, ban, balance, pending_amount) ` +
-	`VALUES ($1, $2, $3, 0) ON CONFLICT (bic, ban) DO UPDATE ` +
-	`SET balance = excluded.balance, pending_amount = 0;
+	INSERT INTO account (bic, ban, balance, pending_amount) VALUES ($1, $2, $3, 0);
 `
 
 func (self *PostgresCluster) InsertAccount(acc model.Account) error {
-	res, err := self.pool.Exec(context.Background(), upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
+	_, err := self.pool.Exec(context.Background(), upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
 	if err != nil {
-		return merry.Wrap(err)
-	}
+		//nolint:errorlint
+		if pgErr, ok := err.(*pgconn.PgError); ok {
+			if pgErr.Code == pgerrcode.UniqueViolation {
+				return merry.Wrap(ErrDuplicateKey)
+			}
+		}
 
-	if res.RowsAffected() != 1 {
-		return merry.New("insertAccount res.RowsAffected() != 1")
+		return merry.Wrap(err)
 	}
 
 	return nil
