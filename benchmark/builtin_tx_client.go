@@ -90,6 +90,7 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 }
 
 func payWorkerBuiltinTx(
+	settings Settings,
 	n_transfers int,
 	zipfian bool,
 	dbCluster BuiltinTxTranfer,
@@ -107,8 +108,7 @@ func payWorkerBuiltinTx(
 		llog.Fatalf("Got a fatal error fetching cluster settings: %v", err)
 	}
 
-	randSource.Init(clusterSettings.Count, clusterSettings.Seed)
-
+	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.banRangeMultiplier)
 	for i := 0; i < n_transfers; {
 		t := new(model.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
@@ -144,7 +144,7 @@ func payBuiltinTx(settings *Settings, cluster BuiltinTxTranfer, oracle *Oracle) 
 		if i < remainder {
 			n_transfers++
 		}
-		go payWorkerBuiltinTx(n_transfers, settings.zipfian, cluster, oracle, &payStats, &wg)
+		go payWorkerBuiltinTx(*settings, n_transfers, settings.zipfian, cluster, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()

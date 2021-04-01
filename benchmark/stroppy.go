@@ -23,9 +23,10 @@ type Settings struct {
 	oracle  bool
 	check   bool
 	// TODO: add type validation in cli
-	databaseType string
-	dbURL        string
-	useCustomTx  bool
+	databaseType       string
+	dbURL              string
+	useCustomTx        bool
+	banRangeMultiplier float64
 }
 
 func Defaults() Settings {
@@ -42,6 +43,7 @@ func Defaults() Settings {
 	s.databaseType = "postgres"
 	s.dbURL = ""
 	s.useCustomTx = false
+	s.banRangeMultiplier = 1.1
 	return s
 }
 
@@ -86,11 +88,11 @@ bandwidth along the way.`,
 	rootCmd.PersistentFlags().StringVarP(&settings.user,
 		"user", "u",
 		settings.user,
-		"Cassandra user")
+		"Database user")
 	rootCmd.PersistentFlags().StringVarP(&settings.password,
 		"password", "p",
 		settings.password,
-		"Cassandra password")
+		"Database password")
 	rootCmd.PersistentFlags().StringVarP(&settings.databaseType,
 		"database", "d",
 		settings.databaseType,
@@ -99,6 +101,19 @@ bandwidth along the way.`,
 		"url",
 		settings.dbURL,
 		"Connection string, required flag")
+	rootCmd.PersistentFlags().Float64VarP(&settings.banRangeMultiplier,
+		"banRangeMultiplier", "brm",
+		settings.banRangeMultiplier,
+		`
+ban range multiplier (next brm) is a number that defines
+the ratio of BAN (bank Identifier Number) per BIC (Bank Identifier Code). 
+The number of generated BICs is approximately equal to the square root of 'count'. 
+The count of BANs is defined by the following formula: Nban = (Nbic * brm)/square(count). 
+If Nban * Nbic > count we generate more (BIC, BAN) combinations 
+than we saved during DB population process (that is achieved if brm > 1).
+The recommended range of brm is from 1.01 to 1.1. 
+The default value of banRangeMultipluer is 1.1.`)
+
 	if err := rootCmd.MarkPersistentFlagRequired("url"); err != nil {
 		panic(fmt.Errorf("failed to mark flag \"url\" required, err: %s", err))
 	}

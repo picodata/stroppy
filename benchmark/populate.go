@@ -69,7 +69,7 @@ func populate(settings *Settings) error {
 		defer wg.Done()
 
 		var rand fixed_random_source.FixedRandomSource
-		rand.Init(clusterSettings.Count, clusterSettings.Seed)
+		rand.Init(clusterSettings.Count, clusterSettings.Seed, settings.banRangeMultiplier)
 
 		llog.Tracef("Worker %d inserting %d accounts", id, n_accounts)
 		for i := 0; i < n_accounts; {

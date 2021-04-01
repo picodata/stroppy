@@ -305,6 +305,7 @@ func (c *ClientCustomTx) DeleteTransfer(transferId model.TransferId) error {
 }
 
 func payWorkerCustomTx(
+	settings Settings,
 	n_transfers int, zipfian bool, dbCluster CustomTxTransfer,
 	oracle *Oracle, payStats *PayStats,
 	wg *sync.WaitGroup) {
@@ -319,7 +320,7 @@ func payWorkerCustomTx(
 		llog.Fatalf("Got a fatal error fetching cluster settings: %v", err)
 	}
 
-	randSource.Init(clusterSettings.Count, clusterSettings.Seed)
+	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.banRangeMultiplier)
 
 	for i := 0; i < n_transfers; {
 
@@ -365,7 +366,7 @@ func payCustomTx(settings *Settings, cluster CustomTxTransfer, oracle *Oracle) (
 		if i < remainder {
 			n_transfers++
 		}
-		go payWorkerCustomTx(n_transfers, settings.zipfian, clusterCustomTx, oracle, &payStats, &wg)
+		go payWorkerCustomTx(*settings, n_transfers, settings.zipfian, clusterCustomTx, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()

@@ -11,9 +11,8 @@ import (
 
 // Generate a string which looks like a real bank identifier code
 func createRandomBic(rand *mathrand.Rand) string {
-
-	var letters = []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-	var digits = []rune("0123456789")
+	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	digits := []rune("0123456789")
 
 	bic := make([]rune, 8)
 	i := 0
@@ -33,11 +32,9 @@ func createRandomBic(rand *mathrand.Rand) string {
 
 // Generate a string which looks like a bank account number
 func createRandomBan(rand int) string {
-
-	var digits = []rune("0123456789")
-
+	digits := []rune("0123456789")
 	ban := make([]rune, 14)
-	for i, _ := range ban {
+	for i := range ban {
 		next := rand / 10
 		ban[i] = digits[rand-next*10]
 		rand = next
@@ -46,17 +43,17 @@ func createRandomBan(rand int) string {
 }
 
 type RandomSettings struct {
-	bics         []string
-	seed         int64
-	accounts     int
-	bans_per_bic int
+	bics       []string
+	seed       int64
+	accounts   int
+	bansPerBic int
 }
 
 var once sync.Once
 var rs *RandomSettings
 
-func randomSettings(count int, seed int) *RandomSettings {
-
+//nolint:gosec
+func randomSettings(count int, seed int, banRangeMultiplier float64) *RandomSettings {
 	generateBics := func(rs *RandomSettings) {
 		rand := mathrand.New(mathrand.NewSource(rs.seed))
 		for i := 0; i < len(rs.bics); i++ {
@@ -78,7 +75,7 @@ func randomSettings(count int, seed int) *RandomSettings {
 		}
 		rs.bics = make([]string, bics, bics)
 		generateBics(rs)
-		rs.bans_per_bic = int(float64(rs.accounts) * 1.1 / float64(bics))
+		rs.bansPerBic = int(float64(rs.accounts) * banRangeMultiplier / float64(bics))
 	}
 	once.Do(fetchSettings)
 	return rs
@@ -92,49 +89,63 @@ func randomSettings(count int, seed int) *RandomSettings {
 //
 // This data structure is not goroutine safe.
 
+// линтер ругается на offset, который пока не используется
+
 type FixedRandomSource struct {
-	rs     *RandomSettings
-	offset int // Current account counter, wraps arround accounts
-	rand   *mathrand.Rand
-	zipf   *mathrand.Zipf
+	rs *RandomSettings
+	// Current account counter, wraps around accounts.Not yet in use
+	// offset int
+	rand *mathrand.Rand
+	zipf *mathrand.Zipf
 }
 
-func (r *FixedRandomSource) Init(count int, seed int) {
-
+func (r *FixedRandomSource) Init(count int, seed int, random float64) {
 	// Each worker gorotuine uses its own instance of FixedRandomSource,
 	// but they share the data about existing BICs.
-	r.rs = randomSettings(count, seed)
+	r.rs = randomSettings(count, seed, random)
+	//nolint:gosec
 	r.rand = mathrand.New(mathrand.NewSource(mathrand.Int63()))
-	r.zipf = mathrand.NewZipf(r.rand, 3, 1, uint64(r.rs.bans_per_bic))
+	r.zipf = mathrand.NewZipf(r.rand, 3, 1, uint64(r.rs.bansPerBic))
 }
 
 // Return a globally unique identifier
 // to ensure no client id conflicts
-func (r *FixedRandomSource) NewClientId() gocql.UUID {
+func (r *FixedRandomSource) NewClientID() gocql.UUID {
 	return gocql.TimeUUID()
 }
 
 // Return a globally unique identifier, each transfer
 // is unique
-func (r *FixedRandomSource) NewTransferId() gocql.UUID {
+func (r *FixedRandomSource) NewTransferID() gocql.UUID {
 	return gocql.TimeUUID()
 }
 
 // Create a new BIC and BAN pair
 func (r *FixedRandomSource) NewBicAndBan() (string, string) {
 	bic := r.rs.bics[r.rand.Intn(len(r.rs.bics))]
-	ban := createRandomBan(r.rand.Intn(r.rs.bans_per_bic))
+	ban := createRandomBan(r.rand.Intn(r.rs.bansPerBic))
 	return bic, ban
 }
 
+// for linter
+const rangeBalance = 1000000
+
 // Create a new random start balance
+//nolint:gosec
 func (r *FixedRandomSource) NewStartBalance() *inf.Dec {
-	return inf.NewDec(mathrand.Int63n(100000), 0)
+	// use 1 million because it gives bigger range for balances and
+	// reduce overdraft errors
+	return inf.NewDec(mathrand.Int63n(rangeBalance), 0)
 }
 
-// Crate a new random transfer
+const rangeTransfer = 10000
+
+const rangeTransferScale = 3
+
+// Create a new random transfer
+//nolint:gosec
 func (r *FixedRandomSource) NewTransferAmount() *inf.Dec {
-	return inf.NewDec(mathrand.Int63n(10000), inf.Scale(mathrand.Int63n(3)))
+	return inf.NewDec(mathrand.Int63n(rangeTransfer), inf.Scale(mathrand.Int63n(rangeTransferScale)))
 }
 
 // Find an existing BIC and BAN pair for transaction.
@@ -144,7 +155,7 @@ func (r *FixedRandomSource) NewTransferAmount() *inf.Dec {
 func (r *FixedRandomSource) BicAndBan(src ...string) (string, string) {
 	for {
 		bic := r.rs.bics[r.rand.Intn(len(r.rs.bics))]
-		ban := createRandomBan(r.rand.Intn(r.rs.bans_per_bic))
+		ban := createRandomBan(r.rand.Intn(r.rs.bansPerBic))
 		if len(src) < 1 || bic != src[0] || len(src) < 2 || ban != src[1] {
 			return bic, ban
 		}
