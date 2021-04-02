@@ -49,6 +49,7 @@ func (c *ClientBuiltinTx) Init(cluster BuiltinTxTranfer, oracle *Oracle, payStat
 	c.payStats = payStats
 }
 
+//nolint:gosec
 func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 

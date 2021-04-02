@@ -102,11 +102,11 @@ bandwidth along the way.`,
 		settings.dbURL,
 		"Connection string, required flag")
 	rootCmd.PersistentFlags().Float64VarP(&settings.banRangeMultiplier,
-		"banRangeMultiplier", "brm",
+		"banRangeMultiplier", "m",
 		settings.banRangeMultiplier,
 		`
 ban range multiplier (next brm) is a number that defines
-the ratio of BAN (bank Identifier Number) per BIC (Bank Identifier Code). 
+the ratio of BAN (Bank Identifier Number) per BIC (Bank Identifier Code). 
 The number of generated BICs is approximately equal to the square root of 'count'. 
 The count of BANs is defined by the following formula: Nban = (Nbic * brm)/square(count). 
 If Nban * Nbic > count we generate more (BIC, BAN) combinations 
