@@ -1,16 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"runtime"
 	"time"
 
+	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
-type Settings struct {
+type DatabaseSettings struct {
 	log_level string
 	workers   int
 	count     int
@@ -29,10 +29,26 @@ type Settings struct {
 	banRangeMultiplier float64
 }
 
-func Defaults() Settings {
-	s := Settings{}
+type DeploySettings struct {
+	provider string
+}
+
+const defaultCountCPU = 4
+
+// линтер требует указания всех полей структуры при присвоении переменной
+//nolint:exhaustivestruct
+func DefaultsDeploy() DeploySettings {
+	d := DeploySettings{}
+	d.provider = "yandex"
+	return d
+}
+
+// линтер требует указания всех полей структуры при присвоении переменной
+//nolint:exhaustivestruct
+func Defaults() DatabaseSettings {
+	s := DatabaseSettings{}
 	s.log_level = llog.InfoLevel.String()
-	s.workers = 4 * runtime.NumCPU()
+	s.workers = defaultCountCPU * runtime.NumCPU()
 	s.count = 10000
 	s.user = ""
 	s.password = ""
@@ -58,9 +74,10 @@ func main() {
 	formatter.ForceColors = true
 	llog.SetFormatter(formatter)
 	settings := Defaults()
+	deploySettings := DefaultsDeploy()
 
 	var rootCmd = &cobra.Command{
-		Use:   "lightest [pop|pay]",
+		Use:   "lightest [pop|pay|deploy]",
 		Short: "lightest - a sample LWT application implementing an account ledger",
 		Long: `
 This program models an automatic banking system.  It implements 3 model
@@ -70,7 +87,7 @@ bandwidth along the way.`,
 		Version: "0.9",
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if l, err := llog.ParseLevel(settings.log_level); err != nil {
-				return err
+				return merry.Wrap(err)
 			} else {
 				llog.SetLevel(l)
 			}
@@ -102,7 +119,7 @@ bandwidth along the way.`,
 		settings.dbURL,
 		"Connection string, required flag")
 	rootCmd.PersistentFlags().Float64VarP(&settings.banRangeMultiplier,
-		"banRangeMultiplier", "m",
+		"banRangeMultiplier", "r",
 		settings.banRangeMultiplier,
 		`
 ban range multiplier (next brm) is a number that defines
@@ -113,10 +130,10 @@ If Nban * Nbic > count we generate more (BIC, BAN) combinations
 than we saved during DB population process (that is achieved if brm > 1).
 The recommended range of brm is from 1.01 to 1.1. 
 The default value of banRangeMultipluer is 1.1.`)
-
-	if err := rootCmd.MarkPersistentFlagRequired("url"); err != nil {
-		panic(fmt.Errorf("failed to mark flag \"url\" required, err: %s", err))
-	}
+	// для deploy флаг url не требуется
+	/*if err := rootCmd.MarkPersistentFlagRequired("url"); err != nil {
+		panic(fmt.Errorf("failed to mark flag \"url\" required, err: %w", err))
+	}*/
 	rootCmd.PersistentFlags().IntVarP(&settings.workers,
 		"workers", "w",
 		settings.workers,
@@ -144,6 +161,58 @@ The default value of banRangeMultipluer is 1.1.`)
 		"count", "n",
 		settings.count,
 		"Number of accounts to create")
+	// заполняем все поля, для неиспользуемых указвыаем nil, согласно требованиям линтера
+	//nolint:gofumpt
+	var deployCmd = &cobra.Command{
+		Use:                    "dep",
+		Aliases:                []string{"deploy"},
+		SuggestFor:             []string{},
+		Short:                  "Deploy infrastructure for tests",
+		Long:                   "",
+		Example:                "",
+		ValidArgs:              []string{},
+		ValidArgsFunction:      nil,
+		Args:                   nil,
+		ArgAliases:             []string{},
+		BashCompletionFunction: "",
+		Deprecated:             "",
+		Annotations:            map[string]string{},
+		Version:                "",
+		PersistentPreRun: func(cmd *cobra.Command, args []string) {
+		},
+		PersistentPreRunE: nil,
+		PreRun: func(cmd *cobra.Command, args []string) {
+		},
+		PreRunE: nil,
+		Run: func(cmd *cobra.Command, args []string) {
+			if err := deploy(deploySettings); err != nil {
+				llog.Fatalf("status of exit: %v", err)
+			}
+			llog.Infoln("status of exit: success")
+		},
+		RunE:               nil,
+		PostRun:            nil,
+		PostRunE:           nil,
+		PersistentPostRun:  nil,
+		PersistentPostRunE: nil,
+		FParseErrWhitelist: cobra.FParseErrWhitelist{
+			UnknownFlags: false,
+		},
+		TraverseChildren:           false,
+		Hidden:                     false,
+		SilenceErrors:              false,
+		SilenceUsage:               false,
+		DisableFlagParsing:         false,
+		DisableAutoGenTag:          false,
+		DisableFlagsInUseLine:      false,
+		DisableSuggestions:         false,
+		SuggestionsMinimumDistance: 0,
+	}
+
+	deployCmd.PersistentFlags().StringVar(&deploySettings.provider,
+		"cloud",
+		deploySettings.provider,
+		"name of cloud provider")
 
 	var payCmd = &cobra.Command{
 		Use:     "pay",
@@ -184,7 +253,7 @@ The default value of banRangeMultipluer is 1.1.`)
 	payCmd.PersistentFlags().BoolVarP(&settings.useCustomTx,
 		"tx", "t", settings.useCustomTx,
 		"Use custom implementation of atomic transactions (workaround for dbs without built-in ACID transactions).")
-	rootCmd.AddCommand(popCmd, payCmd)
+	rootCmd.AddCommand(popCmd, payCmd, deployCmd)
 	StatsInit()
 	_ = rootCmd.Execute()
 }

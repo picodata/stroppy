@@ -33,7 +33,7 @@ type PopStats struct {
 	duplicates uint64
 }
 
-func populate(settings *Settings) error {
+func populate(settings *DatabaseSettings) error {
 	var cluster ClusterPopulatable
 	var err error
 	switch settings.databaseType {

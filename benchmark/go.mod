@@ -5,6 +5,7 @@ go 1.15
 require (
 	github.com/ansel1/merry v1.5.1
 	github.com/apple/foundationdb/bindings/go v0.0.0-20201114170605-569ab46bf638
+	github.com/bramvdbogaerde/go-scp v0.0.0-20210327204631-70ee53679fc9
 	github.com/gocql/gocql v0.0.0-20210129204804-4364a4b9cfdd
 	github.com/google/uuid v1.2.0
 	github.com/jackc/pgconn v1.8.0
@@ -14,5 +15,7 @@ require (
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spenczar/tdigest v2.1.0+incompatible
 	github.com/spf13/cobra v1.1.3
+	github.com/tidwall/gjson v1.7.4
+	golang.org/x/crypto v0.0.0-20200622213623-75b288015ac9
 	gopkg.in/inf.v0 v0.9.1
 )

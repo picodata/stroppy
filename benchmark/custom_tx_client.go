@@ -305,7 +305,7 @@ func (c *ClientCustomTx) DeleteTransfer(transferId model.TransferId) error {
 }
 
 func payWorkerCustomTx(
-	settings Settings,
+	settings DatabaseSettings,
 	n_transfers int, zipfian bool, dbCluster CustomTxTransfer,
 	oracle *Oracle, payStats *PayStats,
 	wg *sync.WaitGroup) {
@@ -346,7 +346,8 @@ func payWorkerCustomTx(
 	}
 }
 
-func payCustomTx(settings *Settings, cluster CustomTxTransfer, oracle *Oracle) (*PayStats, error) {
+//nolint:unparam
+func payCustomTx(settings *DatabaseSettings, cluster CustomTxTransfer, oracle *Oracle) (*PayStats, error) {
 	var wg sync.WaitGroup
 	var payStats PayStats
 

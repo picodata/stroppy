@@ -9,7 +9,6 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-
 	"gitlab.com/picodata/benchmark/stroppy/fixed_random_source"
 	"gitlab.com/picodata/benchmark/stroppy/model"
 	"gitlab.com/picodata/benchmark/stroppy/store"
@@ -52,7 +51,6 @@ func (c *ClientBuiltinTx) Init(cluster BuiltinTxTranfer, oracle *Oracle, payStat
 //nolint:gosec
 func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
-
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
@@ -91,7 +89,7 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 }
 
 func payWorkerBuiltinTx(
-	settings Settings,
+	settings DatabaseSettings,
 	n_transfers int,
 	zipfian bool,
 	dbCluster BuiltinTxTranfer,
@@ -129,7 +127,9 @@ func payWorkerBuiltinTx(
 	}
 }
 
-func payBuiltinTx(settings *Settings, cluster BuiltinTxTranfer, oracle *Oracle) (*PayStats, error) {
+// TO DO: расширить логику, либо убрать err в выходных параметрах
+//nolint:unparam
+func payBuiltinTx(settings *DatabaseSettings, cluster BuiltinTxTranfer, oracle *Oracle) (*PayStats, error) {
 	var wg sync.WaitGroup
 	var payStats PayStats
 

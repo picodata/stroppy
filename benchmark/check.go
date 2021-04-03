@@ -14,7 +14,7 @@ type CheckableCluster interface {
 	PersistTotal(total inf.Dec) error
 }
 
-func check(settings *Settings, prev *inf.Dec) (*inf.Dec, error) {
+func check(settings *DatabaseSettings, prev *inf.Dec) (*inf.Dec, error) {
 	var err error
 	var someCluster interface{}
 	switch settings.databaseType {

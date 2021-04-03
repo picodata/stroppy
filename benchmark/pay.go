@@ -28,7 +28,7 @@ type PayStats struct {
 	recoveries         uint64
 }
 
-func pay(settings *Settings) error {
+func pay(settings *DatabaseSettings) error {
 	llog.Infof("Establishing connection to the cluster")
 	var err error
 	var cluster interface{}
