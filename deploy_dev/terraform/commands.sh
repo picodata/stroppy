@@ -18,24 +18,27 @@ terraform init
 terraform apply -auto-approve
 
 cat terraform.tfstate | grep ip_address
-                "ip_address": "172.16.1.13",
-                "nat_ip_address": "130.193.50.201",
+                "ip_address": "172.16.1.10",
+                "nat_ip_address": "130.193.39.175",
+                    "ip_address": "172.16.1.6",
+                    "nat_ip_address": "84.201.173.126",
+                    "ip_address": "172.16.1.23",
+                    "nat_ip_address": "130.193.48.181",
                     "ip_address": "172.16.1.7",
-                    "nat_ip_address": "130.193.49.226",
-                    "ip_address": "172.16.1.30",
-                    "nat_ip_address": "84.201.156.125",
-                    "ip_address": "172.16.1.29",
-                    "nat_ip_address": "130.193.49.45",
+                    "nat_ip_address": "130.193.38.140",
 
 # copy id_rsa to master for managing other nodes from master
-scp -i id_rsa -o StrictHostKeyChecking=no id_rsa ubuntu@130.193.50.201:/home/ubuntu/.ssh
-ssh -i id_rsa ubuntu@130.193.50.201
+scp -i id_rsa -o StrictHostKeyChecking=no id_rsa ubuntu@130.193.39.175:/home/ubuntu/.ssh
+scp -i id_rsa -o StrictHostKeyChecking=no metrics-server.yaml ubuntu@130.193.39.175:/home/ubuntu/metrics-server.yaml
+scp -i id_rsa -o StrictHostKeyChecking=no ingress-grafana.yaml ubuntu@130.193.39.175:/home/ubuntu/ingress-grafana.yaml
+scp -i id_rsa -o StrictHostKeyChecking=no postgres-manifest.yaml ubuntu@130.193.39.175:/home/ubuntu/postgres-manifest.yaml
+ssh -i id_rsa ubuntu@130.193.39.175
 
 
 ### REMOTE (~20 min):
 tee deploy_kubernetes.sh<<EOO
 sudo apt-get update
-sudo apt-get install -y sshpass python3-pip git
+sudo apt-get install -y sshpass python3-pip git htop sysstat
 curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
 sudo apt-get install apt-transport-https --yes
 echo "deb https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
@@ -48,24 +51,24 @@ rm inventory/local/hosts.ini
 
 tee inventory/local/hosts.ini<<EOF
 [all]
-node1 ansible_host=172.16.1.13 ip=172.16.1.13 etcd_member_name=etcd1
-node2 ansible_host=172.16.1.7 ip=172.16.1.7 etcd_member_name=etcd2
-node3 ansible_host=172.16.1.30 ip=172.16.1.30 etcd_member_name=etcd3
-node4 ansible_host=172.16.1.29 ip=172.16.1.29 etcd_member_name=etcd4
+master ansible_host=172.16.1.10 ip=172.16.1.10 etcd_member_name=etcd1
+worker-1 ansible_host=172.16.1.6 ip=172.16.1.6 etcd_member_name=etcd2
+worker-2 ansible_host=172.16.1.23 ip=172.16.1.23 etcd_member_name=etcd3
+worker-3 ansible_host=172.16.1.7 ip=172.16.1.7 etcd_member_name=etcd4
 
 [kube-master]
-node1
+master
 
 [etcd]
-node1
-node2
-node3
-node4
+master
+worker-1
+worker-2
+worker-3
 
 [kube-node]
-node2
-node3
-node4
+worker-1
+worker-2
+worker-3
 
 [k8s-cluster:children]
 kube-master
@@ -73,8 +76,6 @@ kube-node
 EOF
 
 sudo sed -i "s/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g" inventory/local/group_vars/k8s-cluster/addons.yml
-sudo sed -i "s/local_volume_provisioner_enabled: false/local_volume_provisioner_enabled: true/g" inventory/local/group_vars/k8s-cluster/addons.yml
-sudo sed -i "s/local_volume_provisioner_enabled: false/local_volume_provisioner_enabled: true/g" inventory/local/group_vars/k8s-cluster/k8s-cluster.yml
 echo "docker_dns_servers_strict: no" >> inventory/local/group_vars/k8s-cluster/k8s-cluster.yml
 # nano inventory/local/group_vars/k8s-cluster/addons.yml (!!!)
 ansible-playbook -b -e ignore_assert_errors=yes -i inventory/local/hosts.ini cluster.yml
@@ -83,11 +84,14 @@ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
 # monitoring
+kubectl create namespace monitoring
+helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install grafana-stack prometheus-community/kube-prometheus-stack
-kubectl apply -f metrics-server.yaml
-kubectl apply -f ingress-grafana.yaml
+helm install loki grafana/loki-stack --namespace monitoring
+helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
+kubectl apply -f /home/ubuntu/metrics-server.yaml
+kubectl apply -f /home/ubuntu/ingress-grafana.yaml
 EOO
 chmod +x deploy_kubernetes.sh
 ./deploy_kubernetes.sh
@@ -95,16 +99,16 @@ chmod +x deploy_kubernetes.sh
 
 ### LOCAL:
 # ssh tunnel for kubectl
-ssh -i id_rsa -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -N -L 6443:localhost:6443 -N ubuntu@130.193.50.201
+ssh -i id_rsa -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -N -L 6443:localhost:6443 -N ubuntu@130.193.39.175
 
 ### LOCAL2:
 # copy kube config from master
-scp -i id_rsa -o StrictHostKeyChecking=no ubuntu@130.193.50.201:/home/ubuntu/.kube/config .
-sed -i 's/172.16.1.13/localhost/g' config
+scp -i id_rsa -o StrictHostKeyChecking=no ubuntu@130.193.39.175:/home/ubuntu/.kube/config .
+sed -i 's/172.16.1.10/localhost/g' config
 export KUBECONFIG=$(pwd)/config
 
 # GRAFANA ACCESS ON localhost:8080 (admin/prom-operator)
-kubectl port-forward deployment/grafana-stack 8080:3000
+kubectl port-forward deployment/grafana-stack 8080:3000 -n monitoring
 
 ### DESTROY CLUSTER (LOCAL)
 # terraform destroy -force
