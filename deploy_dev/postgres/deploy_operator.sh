@@ -8,6 +8,7 @@
 wget https://github.com/zalando/postgres-operator/archive/refs/tags/v1.6.0.zip
 unzip v1.6.0.zip
 mv postgres-operator-1.6.0 postgres-operator
+sleep 1
 helm install postgres-operator postgres-operator/charts/postgres-operator
 echo "Waiting postgres operator for 60 seconds..."
 sleep 60

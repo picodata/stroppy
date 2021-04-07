@@ -84,7 +84,7 @@ spec:
       jit: 'on'
   volume:
     size: 1Gi
-#    storageClass: my-sc
+    storageClass: local-path
 #    iops: 1000  # for EBS gp3
 #    throughput: 250  # in MB/s for EBS gp3
   additionalVolumes:
