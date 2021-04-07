@@ -141,6 +141,7 @@ spec:
     - hostssl    all          +zalandos    127.0.0.1/32   pam
     - host       all          all          127.0.0.1/32   md5
     - host       all          all          172.17.0.1/16  md5
+    - host       all          all          10.0.0.0/8     md5
     - hostssl    all          +zalandos    ::1/128        pam
     - host       all          all          ::1/128        md5
     - hostssl    replication  standby      all            md5
