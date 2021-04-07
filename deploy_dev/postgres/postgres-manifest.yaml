@@ -11,7 +11,7 @@ metadata:
 spec:
   dockerImage: registry.opensource.zalan.do/acid/spilo-13:2.0-p2
   teamId: "acid"
-  numberOfInstances: 2
+  numberOfInstances: 3
   users:  # Application/Robot users
     stroppy:
     - superuser
