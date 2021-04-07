@@ -92,6 +92,7 @@ helm install loki grafana/loki-stack --namespace monitoring
 helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
 kubectl apply -f /home/ubuntu/metrics-server.yaml
 kubectl apply -f /home/ubuntu/ingress-grafana.yaml
+kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
 EOO
 chmod +x deploy_kubernetes.sh
 ./deploy_kubernetes.sh
