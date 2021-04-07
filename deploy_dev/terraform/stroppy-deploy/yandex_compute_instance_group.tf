@@ -48,7 +48,7 @@ resource "yandex_compute_instance_group" "workers_1" {
     platform_id = "standard-v2" # --platform-id
     resources {
       memory = 4 # --ram
-      cores  = 2 # --cpu-count
+      cores  = 4 # --cpu-count
       # Platform "standard-v1" allowed core number: 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32
       # Platform "standard-v2" allowed core number: 2, 4, 6, 8, 10, 12, 14, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60, 64, 68, 72, 76, 80
     }
