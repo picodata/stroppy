@@ -140,7 +140,7 @@ Check config [postgres/postgres-manifest.yaml](postgres/postgres-manifest.yaml)
 cd deploy_dev/postgres/
 sh deploy_operator.sh
 ```
-Verify:
+Verify and change password for user stroppy:
 ```
 kubectl exec --stdin --tty acid-postgres-cluster-0 -- /bin/su -- postgres
 postgres@acid-postgres-cluster-0:~$ psql
@@ -151,14 +151,14 @@ postgres=# \du
                                                                                List of roles
      Role name      |                         Attributes                         |                                        Member of                                         
 --------------------+------------------------------------------------------------+------------------------------------------------------------------------------------------
- admin              | Create DB, Cannot login                                    | {bar_owner,zalando,bar_owner_user}
+ admin              | Create DB, Cannot login                                    | {stroppy,bar_owner,bar_owner_user}
  bar_data_owner     | Cannot login                                               | {bar_data_reader,bar_data_writer}
  bar_data_reader    | Cannot login                                               | {}
  bar_data_writer    | Cannot login                                               | {bar_data_reader}
  bar_history_owner  | Cannot login                                               | {bar_history_reader,bar_history_writer}
  bar_history_reader | Cannot login                                               | {}
  bar_history_writer | Cannot login                                               | {bar_history_reader}
- bar_owner          | Cannot login                                               | {bar_history_owner,bar_reader,bar_writer,bar_data_owner,bar_reader_user,bar_writer_user}
+ bar_owner          | Cannot login                                               | {bar_data_owner,bar_history_owner,bar_reader,bar_reader_user,bar_writer,bar_writer_user}
  bar_owner_user     |                                                            | {bar_owner}
  bar_reader         | Cannot login                                               | {}
  bar_reader_user    |                                                            | {bar_reader}
@@ -167,8 +167,14 @@ postgres=# \du
  postgres           | Superuser, Create role, Create DB, Replication, Bypass RLS | {}
  robot_zmon         | Cannot login                                               | {}
  standby            | Replication                                                | {}
- zalando            | Superuser, Create DB                                       | {}
+ stroppy            | Superuser, Create DB                                       | {}
  zalandos           | Create DB, Cannot login                                    | {}
+
+postgres=# \c stroppy
+You are now connected to database "stroppy" as user "postgres".
+
+stroppy=# ALTER USER stroppy PASSWORD 'stroppy';
+ALTER ROLE
 ```
 Info about acid-postgres-cluster OS:
 ```
@@ -185,9 +191,7 @@ export PGMASTER=$(kubectl get pods -o jsonpath={.items..metadata.name} -l applic
 kubectl port-forward $PGMASTER 6432:5432 -n default
 ```
 Connect to localhost:6432 db: stroppy user: postgres: password: <from kubectl get secret ...>
-```
-ALTER USER stroppy PASSWORD 'stroppy';
-```
+
 Run stroppy
 ```
 kubectl run -i --tty stroppy-client --image=ghoru/stroppy -- /bin/bash
