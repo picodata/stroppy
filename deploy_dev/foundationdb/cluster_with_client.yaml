@@ -6,11 +6,9 @@
 apiVersion: apps.foundationdb.org/v1beta1
 kind: FoundationDBCluster
 metadata:
-  labels:
-    controller-tools.k8s.io: "1.0"
   name: sample-cluster
 spec:
-  version: 6.2.20
+  version: 6.2.30
   faultDomain:
     key: foundationdb.org/none
   services:
@@ -26,18 +24,16 @@ spec:
           resources:
             requests:
               storage: "16G"
+          storageClassName: local-path
       podTemplate:
         spec:
-          securityContext:
-            fsGroup: 0
           containers:
             - name: foundationdb
-              securityContext:
-                runAsUser: 0
               resources:
                 requests:
                   cpu: 250m
                   memory: 128Mi
+              storageClassName: local-path
             - name: foundationdb-kubernetes-sidecar
               resources:
                 requests:
@@ -46,8 +42,6 @@ spec:
                 limits:
                   cpu: 100m
                   memory: 128Mi
-              securityContext:
-                runAsUser: 0
           initContainers:
             - name: foundationdb-kubernetes-init
               resources:
@@ -57,8 +51,6 @@ spec:
                 limits:
                   cpu: 100m
                   memory: 128Mi
-              securityContext:
-                runAsUser: 0
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -82,6 +74,8 @@ spec:
           args:
             - "--copy-file"
             - "fdb.cluster"
+            - "--copy-library"
+            - "6.1"
             - "--copy-library"
             - "6.2"
             - "--init-mode"
@@ -114,9 +108,6 @@ spec:
             requests:
               cpu: 250m
               memory: 128Mi
-          securityContext:
-            runAsGroup: 0
-            runAsUser: 0
           volumeMounts:
             - name: dynamic-conf
               mountPath: /var/dynamic-conf
