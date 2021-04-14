@@ -23,6 +23,8 @@ const terraformDeployDir = "../deploy_dev/terraform/"
 
 const terraformWorkDir = "../deploy_dev/terraform/stroppy-deploy"
 
+const configFile = "config.json"
+
 // кол-во попыток подключения при ошибке
 const repeatConnect = 3
 
@@ -31,6 +33,11 @@ const delayForCommand = 2
 
 // размер ответа terraform show при незапущенном кластере
 const linesNotInitTerraformShow = 13
+
+// кол-во подов при успешном деплое k8s в master-ноде
+const countPodsRunning = 41
+
+const sshNotFoundCode = 127
 
 type mapAddresses struct {
 	masterExternalIP   string
@@ -53,6 +60,7 @@ type chanPortForward struct {
 	err error
 }
 
+// installTerraform - установить terraform, если не установлен
 func installTerraform() error {
 	llog.Infoln("Preparing the installation terraform...")
 	downloadArchiveCmd := exec.Command("curl", "-O",
@@ -92,6 +100,7 @@ func installTerraform() error {
 	return nil
 }
 
+// terraformInit - подготовить среду для развертывания
 func terraformInit() error {
 	initCmd := exec.Command("terraform", "init")
 	initCmd.Dir = terraformWorkDir
@@ -104,6 +113,7 @@ func terraformInit() error {
 	return nil
 }
 
+// terraformApply - развернуть кластер
 func terraformApply() error {
 	checkLaunchTerraform := exec.Command("terraform", "show")
 	checkLaunchTerraform.Dir = terraformWorkDir
@@ -128,6 +138,7 @@ func terraformApply() error {
 	return nil
 }
 
+// terraformDestroy - уничтожить кластер
 func terraformDestroy() error {
 	destroyCmd := exec.Command("terraform", "destroy", "-force")
 	destroyCmd.Dir = terraformWorkDir
@@ -212,7 +223,11 @@ func getClientSSH(ipAddress string) (*ssh.Client, error) {
 	return client, nil
 }
 
+/*copyToMaster - скопировать на мастер-ноду ключ id_rsa для работы мастера с воркерами
+и файлы для развертывания мониторинга и postgres
+*/
 func copyToMaster() error {
+	/**/
 	mapIP, err := mappingIP()
 	if err != nil {
 		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
@@ -286,6 +301,21 @@ func copyToMaster() error {
 	postgresManifestFile.Close()
 	client.Close()
 	llog.Infoln("copying postgres-manifest.yaml: success")
+	client = scp.NewClient(masterAddressPort, &clientConfig)
+	err = client.Connect()
+	if err != nil {
+		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	}
+	fdbClusterClientFileDir := fmt.Sprintf("%s/cluster_with_client.yaml", terraformWorkDir)
+	fdbClusterClientFile, _ := os.Open(fdbClusterClientFileDir)
+	err = client.CopyFile(fdbClusterClientFile, "/home/ubuntu/cluster_with_client.yaml", "0664")
+	if err != nil {
+		fdbClusterClientFile.Close()
+		return merry.Prepend(err, "error while copying file postgres-manifest.yaml")
+	}
+	fdbClusterClientFile.Close()
+	client.Close()
+	llog.Infoln("copying cluster_with_client.yaml: success")
 	return nil
 }
 
@@ -308,6 +338,7 @@ sudo pip3 install -r requirements.txt
 rm inventory/local/hosts.ini" | tee deploy_kubernetes.sh
 `
 
+//nolint:lll
 const deployk8sThirdStepCmd = `echo \
 "sudo sed -i 's/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g' \
 inventory/local/group_vars/k8s-cluster/addons.yml
@@ -325,6 +356,17 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo update
 helm install loki grafana/loki-stack --namespace monitoring
 helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
+kubectl apply -f \
+https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbclusters.yaml
+kubectl apply -f \
+https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbbackups.yaml
+kubectl apply -f \
+https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbrestores.yaml
+kubectl apply -f \
+https://raw.githubusercontent.com/foundationdb/fdb-kubernetes-operator/v0.31.1/config/samples/deployment.yaml
+echo "Waiting foundationdb deploy for 60 seconds..."
+sleep 60
+kubectl apply -f /home/ubuntu/cluster_with_client.yaml
 kubectl apply -f /home/ubuntu/metrics-server.yaml
 kubectl apply -f /home/ubuntu/ingress-grafana.yaml
 kubectl apply -f \
@@ -341,6 +383,14 @@ func deployKuberneters() error {
 		3-й шаг - добавляем вторую часть команд (deployk8sThirdStepCmd)
 		4-й шаг - выдаем файлу права на выполнение и выполняем
 	*/
+	checkDeploy, err := checkDeployMaster()
+	if err != nil {
+		return merry.Prepend(err, "failed to check deploy k8s in master node")
+	}
+	if checkDeploy {
+		llog.Infoln("k8s already success deployed")
+		return nil
+	}
 	mapIP, err := mappingIP()
 	if err != nil {
 		return merry.Prepend(err, "failed to get IP addresses for deploy k8s")
@@ -507,31 +557,32 @@ func portForwardKubectl(portForwardChan chan chanPortForward) {
 	llog.Infof(portForwardCmd.String())
 	portForwardCmd.Dir = terraformWorkDir
 	if err := portForwardCmd.Start(); err != nil {
-		log.Printf("failed to execute command  port-forward kubectl:%v ", err)
+		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
 		portForwardChan <- chanPortForward{nil, err}
 	}
 	portForwardChan <- chanPortForward{portForwardCmd, nil}
 }
 
+// readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
 func readCommandFromInput(sshTunnelStruct chanSSHTunnel, portForwardStruct chanPortForward,
-	errorExit chan error, successExit chan bool) {
+	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
 	for {
 		sc := bufio.NewScanner(os.Stdin)
-		llog.Printf(">")
 		for sc.Scan() {
 			consoleCmd := sc.Text()
+			StatsInit()
 			switch consoleCmd {
 			case "quit":
 				llog.Println("Exiting...")
 				for sshTunnelStruct.cmd.ProcessState != nil && portForwardStruct.cmd.ProcessState != nil {
 					err := sshTunnelStruct.cmd.Process.Kill()
 					if err != nil {
-						llog.Printf("failed to kill process ssh tunel %v. \n Repeat...", err.Error())
+						llog.Errorf("failed to kill process ssh tunel %v. \n Repeat...", err.Error())
 						continue
 					}
 					err = portForwardStruct.cmd.Process.Kill()
 					if err != nil {
-						llog.Printf("failed to kill process port forward %v. \n Repeat...", err.Error())
+						llog.Errorf("failed to kill process port forward %v. \n Repeat...", err.Error())
 						continue
 					}
 					break
@@ -542,11 +593,158 @@ func readCommandFromInput(sshTunnelStruct chanSSHTunnel, portForwardStruct chanP
 				} else {
 					successExit <- true
 				}
+			case "postgres pop":
+				{
+					llog.Println("Starting accounts populating for postgres...")
+					err := executePop(consoleCmd, "postgres")
+					if err != nil {
+						popChan <- err
+					} else {
+						llog.Println("Populating of accounts in postgres successed")
+						llog.Println("Waiting enter command:")
+					}
+				}
+			case "postgres pay":
+				{
+					llog.Println("Starting transfer tests for postgres...")
+					err := executePay(consoleCmd, "postgres")
+					if err != nil {
+						payChan <- err
+					} else {
+						llog.Println("Transfers test in postgres successed")
+						llog.Println("Waiting enter command:")
+					}
+				}
+			case "fdb pop":
+				{
+					llog.Println("Starting accounts populating for fdb...")
+					err := executePop(consoleCmd, "fdb")
+					if err != nil {
+						popChan <- err
+					} else {
+						llog.Println("Populating of accounts in fdb successed")
+						llog.Println("Waiting enter command:")
+					}
+				}
+			case "fdb pay":
+				{
+					llog.Println("Starting transfer tests for fdb...")
+					err := executePay(consoleCmd, "fdb")
+					if err != nil {
+						payChan <- err
+					} else {
+						llog.Println("Transfers test in fdb successed")
+						llog.Println("Waiting enter command:")
+					}
+				}
 			default:
 				llog.Printf("You entered: %v. Expected quit \n", consoleCmd)
 			}
 		}
 	}
+}
+
+// executePop - выполнить загрузку счетов в указанную БД
+func executePop(cmdType string, databaseType string) error {
+	settings, err := readConfig(cmdType, databaseType)
+	if err != nil {
+		return merry.Prepend(err, "failed to read config")
+	}
+	if err := populate(settings); err != nil {
+		llog.Errorf("%v", err)
+	}
+	balance, err := check(settings, nil)
+	if err != nil {
+		llog.Errorf("%v", err)
+	}
+	llog.Infof("Total balance: %v", balance)
+	return nil
+}
+
+// executePay - выполнить тест переводов
+func executePay(cmdType string, databaseType string) error {
+	settings, err := readConfig(cmdType, databaseType)
+	if err != nil {
+		return merry.Prepend(err, "failed to read config")
+	}
+	sum, err := check(settings, nil)
+	if err != nil {
+		llog.Errorf("%v", err)
+	}
+
+	llog.Infof("Initial balance: %v", sum)
+
+	if err := pay(settings); err != nil {
+		llog.Errorf("%v", err)
+	}
+	if settings.check {
+		balance, err := check(settings, sum)
+		if err != nil {
+			llog.Errorf("%v", err)
+		}
+		llog.Infof("Final balance: %v", balance)
+	}
+	return nil
+}
+
+func readConfig(cmdType string, databaseType string) (*DatabaseSettings, error) {
+	settings := Defaults()
+	data, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to read config file")
+	}
+	settings.log_level = gjson.Parse(string(data)).Get("log_level").Str
+	settings.banRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
+	settings.databaseType = databaseType
+	if databaseType == "postgres" {
+		settings.dbURL = "postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable"
+	} else if databaseType == "fdb" {
+		settings.dbURL = "fdb.cluster"
+	}
+	if (cmdType == "postgres pop") || (cmdType == "fdb pop") {
+		settings.count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
+	} else if (cmdType == "postgres pay") || (cmdType == "fdb pay") {
+		settings.count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
+		settings.check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("check").Bool()
+		settings.zipfian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
+		settings.oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
+	}
+	return &settings, nil
+}
+
+func checkDeployMaster() (bool, error) {
+	mapIP, err := mappingIP()
+	if err != nil {
+		return false, merry.Prepend(err, "failed to get IP addresses for copy from master")
+	}
+	masterExternalIP := mapIP.masterExternalIP
+	client, err := getClientSSH(masterExternalIP)
+	if err != nil {
+		return false, merry.Prepend(err, "failed to create ssh connection for check deploy")
+	}
+	checkSession, err := client.NewSession()
+	if err != nil {
+		return false, merry.Prepend(err, "failed to open ssh connection for check deploy")
+	}
+	checkCmd := "kubectl get pods --all-namespaces"
+	resultCheckCmd, err := checkSession.CombinedOutput(checkCmd)
+	if err != nil {
+		//nolint:errorlint
+		e, ok := err.(*ssh.ExitError)
+		if !ok {
+			return false, merry.Prepend(err, "failed сheck deploy k8s")
+		}
+		// если вернулся not found(код 127), это норм, если что-то другое - лучше проверить
+		if e.ExitStatus() == sshNotFoundCode {
+			return false, nil
+		}
+	}
+	countPods := strings.Count(string(resultCheckCmd), "Running")
+	if countPods < countPodsRunning {
+		return false, nil
+	}
+	checkSession.Close()
+	return true, nil
 }
 
 func deploy(settings DeploySettings) error {
@@ -596,7 +794,11 @@ func deploy(settings DeploySettings) error {
 	log.Println(`Started ssh tunnel on ports 6443 for postgres and port-forward for monitoring.
 	For access to Grafana use address localhost:8080.
 	For access to postgres use address localhost:6443.
-	Press quit to exit stroppy and destroy cluster.
+	Enter quit to exit stroppy and destroy cluster.
+	Enter "postgres pop" to start accounts populating in postgres.
+	Enter "postgres pay" to start transfers test in postgres.
+	Enter "fdb pop" to start accounts populating in fdb.
+	Enter "fdb pay" to start transfers test in fdb.
 	For use kubectl in another console execute command for set KUBECONFIG before using:
 	"export KUBECONFIG=$(pwd)/config", where $(pwd) - path where was copyed config`)
 	sshTunnelStruct := <-sshTunnelChan
@@ -607,15 +809,23 @@ func deploy(settings DeploySettings) error {
 	if portForwardStruct.err != nil {
 		return merry.Prepend(portForwardStruct.err, "failed to port forward")
 	}
-	errorExit := make(chan error)
-	successExit := make(chan bool)
-	go readCommandFromInput(sshTunnelStruct, portForwardStruct, errorExit, successExit)
+	errorExitChan := make(chan error)
+	successExitChan := make(chan bool)
+	popChan := make(chan error)
+	payChan := make(chan error)
+	go readCommandFromInput(sshTunnelStruct, portForwardStruct, errorExitChan, successExitChan, popChan, payChan)
 	select {
-	case err = <-errorExit:
+	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
 		return err
-	case success := <-successExit:
+	case success := <-successExitChan:
 		llog.Infof("destroy cluster %v", success)
 		return nil
 	}
+	/*err = terraformDestroy()
+	if err != nil {
+		return merry.Prepend(err, "failed to destroy terraform")
+	} else {
+		return nil
+	}*/
 }

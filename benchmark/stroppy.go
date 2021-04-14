@@ -35,6 +35,7 @@ type DeploySettings struct {
 
 const defaultCountCPU = 4
 
+// DefaultsDeploy - заполнить параметры деплоя значениями по умолчанию.
 // линтер требует указания всех полей структуры при присвоении переменной
 //nolint:exhaustivestruct
 func DefaultsDeploy() DeploySettings {
@@ -43,6 +44,7 @@ func DefaultsDeploy() DeploySettings {
 	return d
 }
 
+// Defaults - заполнить параметры для запуска тестов значениями по умолчанию
 // линтер требует указания всех полей структуры при присвоении переменной
 //nolint:exhaustivestruct
 func Defaults() DatabaseSettings {
