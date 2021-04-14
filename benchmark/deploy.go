@@ -460,6 +460,14 @@ func copyConfigFromMaster() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
 	}
+	cmdForSed := fmt.Sprintf("s/%v/localhost/g", mapIP.masterInternalIP)
+	replaceCMD := exec.Command("sed", "-i", cmdForSed, "config")
+	llog.Infoln(replaceCMD.String())
+	replaceCMD.Dir = terraformWorkDir
+	_, err = replaceCMD.CombinedOutput()
+	if err != nil {
+		return merry.Prepend(err, "failed to execute command for sed kube config")
+	}
 	return nil
 }
 
