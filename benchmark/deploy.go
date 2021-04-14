@@ -302,7 +302,7 @@ sudo apt-get install dialog apt-utils
 echo 'sudo debconf debconf/frontend select Noninteractive' | debconf-set-selections
 #end add by @nik_sav
 sudo apt-get update
-git clone https://github.com/kubernetes-incubator/kubespray
+git clone --branch v2.15.0 https://github.com/kubernetes-sigs/kubespray.git
 cd kubespray
 sudo pip3 install -r requirements.txt
 rm inventory/local/hosts.ini" | tee deploy_kubernetes.sh
