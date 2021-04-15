@@ -31,6 +31,8 @@ type DatabaseSettings struct {
 
 type DeploySettings struct {
 	provider string
+	flavor   string
+	nodes    int
 }
 
 const defaultCountCPU = 4
@@ -45,7 +47,7 @@ func DefaultsDeploy() DeploySettings {
 }
 
 // Defaults - заполнить параметры для запуска тестов значениями по умолчанию
-// линтер требует указания всех полей структуры при присвоении переменной
+//линтер требует указания всех полей структуры при присвоении переменной
 //nolint:exhaustivestruct
 func Defaults() DatabaseSettings {
 	s := DatabaseSettings{}
@@ -215,6 +217,14 @@ The default value of banRangeMultipluer is 1.1.`)
 		"cloud",
 		deploySettings.provider,
 		"name of cloud provider")
+	deployCmd.PersistentFlags().StringVar(&deploySettings.flavor,
+		"flavor",
+		deploySettings.flavor,
+		"name of cluster configuration from templates.yml")
+	deployCmd.PersistentFlags().IntVar(&deploySettings.nodes,
+		"nodes",
+		deploySettings.nodes,
+		"count nodes of cluster")
 
 	var payCmd = &cobra.Command{
 		Use:     "pay",

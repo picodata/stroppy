@@ -2,6 +2,9 @@ fdb.cluster
 .vagrant
 *.log
 .*
+id_rsa.* 
+id_rsa
+config
 
 
 benchmark/vendor

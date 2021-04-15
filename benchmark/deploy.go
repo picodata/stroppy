@@ -17,13 +17,12 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
+	"gopkg.in/yaml.v2"
 )
 
-const terraformDeployDir = "../deploy_dev/terraform/"
+const terraformWorkDir = "deploy/"
 
-const terraformWorkDir = "../deploy_dev/terraform/stroppy-deploy"
-
-const configFile = "config.json"
+const configFile = "deploy/test_config.json"
 
 // кол-во попыток подключения при ошибке
 const repeatConnect = 3
@@ -33,6 +32,8 @@ const delayForCommand = 2
 
 // размер ответа terraform show при незапущенном кластере
 const linesNotInitTerraformShow = 13
+
+const templatesFile = "deploy/templates.yml"
 
 // кол-во подов при успешном деплое k8s в master-ноде
 const countPodsRunning = 41
@@ -60,39 +61,60 @@ type chanPortForward struct {
 	err error
 }
 
+type TemplatesConfig struct {
+	Yandex Configurations
+}
+
+type Configurations struct {
+	Small    []ConfigurationUnitParams
+	Standard []ConfigurationUnitParams
+	Large    []ConfigurationUnitParams
+	Xlarge   []ConfigurationUnitParams
+	Xxlarge  []ConfigurationUnitParams
+	Maximum  []ConfigurationUnitParams
+}
+
+type ConfigurationUnitParams struct {
+	Description string
+	Platform    string
+	CPU         int
+	RAM         int
+	Disk        int
+}
+
 // installTerraform - установить terraform, если не установлен
 func installTerraform() error {
 	llog.Infoln("Preparing the installation terraform...")
 	downloadArchiveCmd := exec.Command("curl", "-O",
 		"https://releases.hashicorp.com/terraform/0.14.7/terraform_0.14.7_linux_amd64.zip")
-	downloadArchiveCmd.Dir = terraformDeployDir
+	downloadArchiveCmd.Dir = terraformWorkDir
 	err := downloadArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to download archive of terraform")
 	}
 	unzipArchiveCmd := exec.Command("unzip", "terraform_0.14.7_linux_amd64.zip")
 	llog.Infoln(unzipArchiveCmd.String())
-	unzipArchiveCmd.Dir = terraformDeployDir
+	unzipArchiveCmd.Dir = terraformWorkDir
 	err = unzipArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to unzip archive of terraform")
 	}
 	rmArchiveCmd := exec.Command("rm", "terraform_0.14.7_linux_amd64.zip")
-	rmArchiveCmd.Dir = terraformDeployDir
+	rmArchiveCmd.Dir = terraformWorkDir
 	err = rmArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to remove archive of terraform")
 	}
 	installCmd := exec.Command("sudo", "install", "terraform", "/usr/bin/terraform")
 	llog.Infoln(installCmd.String())
-	installCmd.Dir = terraformDeployDir
+	installCmd.Dir = terraformWorkDir
 	err = installCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to install terraform")
 	}
 	tabCompleteCmd := exec.Command("terraform", "-install-autocomplete")
 	llog.Infoln(tabCompleteCmd.String())
-	tabCompleteCmd.Dir = terraformDeployDir
+	tabCompleteCmd.Dir = terraformWorkDir
 	err = tabCompleteCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to add Tab complete to terraform")
@@ -110,6 +132,34 @@ func terraformInit() error {
 		return merry.Wrap(initCmdResult)
 	}
 	llog.Infoln("Terraform initialized")
+	return nil
+}
+
+var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
+
+// terraformPrepare - заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
+func terraformPrepare(templatesConfig TemplatesConfig, settings DeploySettings) error {
+	var templatesInit []ConfigurationUnitParams
+	flavor := settings.flavor
+	switch flavor {
+	case "small":
+		templatesInit = templatesConfig.Yandex.Small
+	case "standard":
+		templatesInit = templatesConfig.Yandex.Standard
+	case "large":
+		templatesInit = templatesConfig.Yandex.Large
+	case "xlarge":
+		templatesInit = templatesConfig.Yandex.Xlarge
+	case "xxlarge":
+		templatesInit = templatesConfig.Yandex.Xxlarge
+	default:
+		return merry.Wrap(errChooseConfig)
+	}
+	err := prepare(templatesInit[2].CPU, templatesInit[3].RAM,
+		templatesInit[4].Disk, templatesInit[1].Platform, settings.nodes)
+	if err != nil {
+		return merry.Wrap(err)
+	}
 	return nil
 }
 
@@ -652,6 +702,19 @@ func readCommandFromInput(sshTunnelStruct chanSSHTunnel, portForwardStruct chanP
 	}
 }
 
+func readTemplates() (*TemplatesConfig, error) {
+	var templatesConfig TemplatesConfig
+	data, err := ioutil.ReadFile(templatesFile)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to read templates.yml")
+	}
+	err = yaml.Unmarshal(data, &templatesConfig)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to unmarshall templates.yml")
+	}
+	return &templatesConfig, nil
+}
+
 // executePop - выполнить загрузку счетов в указанную БД
 func executePop(cmdType string, databaseType string) error {
 	settings, err := readConfig(cmdType, databaseType)
@@ -771,6 +834,15 @@ func deploy(settings DeploySettings) error {
 	}
 	if strings.Contains(string(checkVersionCmd), "version") {
 		log.Printf("Founded version %v", string(checkVersionCmd[:17]))
+	}
+	templatesConfig, err := readTemplates()
+	if err != nil {
+		return merry.Prepend(err, "failed to read templates.yml")
+	}
+	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform (пока yandex)
+	err = terraformPrepare(*templatesConfig, settings)
+	if err != nil {
+		return merry.Prepend(err, "failed to prepare terraform")
 	}
 	err = terraformInit()
 	if err != nil {
