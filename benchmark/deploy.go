@@ -232,6 +232,15 @@ func copyToMaster() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
 	}
+	// проверяем наличие файла id_rsa
+	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
+	_, err = os.Stat(privateKeyFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return merry.Prepend(err, "private key file not found. Create it, please.")
+		}
+		return merry.Prepend(err, "failed to find private key file")
+	}
 	masterExternalIP := mapIP.masterExternalIP
 	connectMasterString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
 	copyMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", "id_rsa", connectMasterString)
@@ -251,8 +260,7 @@ func copyToMaster() error {
 		llog.Tracef("result of copy RSA: %v \n", string(resultcopyMasterCmd))
 		break
 	}
-	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
-	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение
+	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
 	//nolint:gosec
 	clientConfig, _ := auth.PrivateKey("ubuntu", privateKeyFile, ssh.InsecureIgnoreHostKey())
 	masterAddressPort := fmt.Sprintf("%v:22", masterExternalIP)

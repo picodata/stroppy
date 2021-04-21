@@ -124,3 +124,4 @@ resource "yandex_compute_instance" "master" {
     ssh-keys = "ubuntu:${file("id_rsa.pub")}"
   }
 }
+
