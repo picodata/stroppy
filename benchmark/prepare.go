@@ -163,18 +163,19 @@ func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 	netInterfaseWorkersBody.SetAttributeTraversal("subnet_ids", vpcSubNet)
 	netInterfaseWorkersBody.SetAttributeValue("nat", cty.BoolVal(true))
 	instanceTemplateWorkersBody.SetAttributeTraversal("metadata", stringSSHKeys)
+	providerFileBody.AppendNewline()
 	scalePolicyWorkersBlock := workersBody.AppendNewBlock("scale_policy", nil)
 	fixedScaleWorkersBlock := scalePolicyWorkersBlock.Body().AppendNewBlock("fixed_scale", nil)
 	fixedScaleBody := fixedScaleWorkersBlock.Body()
 	// здесь задается кол-во workers
 	fixedScaleBody.SetAttributeValue("size", cty.NumberIntVal(int64(nodes)))
-
+	providerFileBody.AppendNewline()
 	allocPolicyWorkersBlock := workersBody.AppendNewBlock("allocation_policy", nil)
 	allocPolicyWorkersBody := allocPolicyWorkersBlock.Body()
 	var zones []cty.Value
 	zones = append(zones, cty.StringVal("ru-central1-a"))
 	allocPolicyWorkersBody.SetAttributeValue("zones", cty.ListVal(zones))
-
+	providerFileBody.AppendNewline()
 	deployPolicyWorkersBlock := workersBody.AppendNewBlock("deploy_policy", nil)
 	deployPolicyWorkersBody := deployPolicyWorkersBlock.Body()
 	deployPolicyWorkersBody.SetAttributeValue("max_unavailable", cty.NumberIntVal(1))
@@ -186,10 +187,10 @@ func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 	//nolint:exhaustivestruct
 	dependsOn := hcl.Traversal{
 		hcl.TraverseRoot{
-			Name: "\n   [yandex_resourcemanager_folder_iam_binding",
+			Name: " [yandex_resourcemanager_folder_iam_binding",
 		},
 		hcl.TraverseAttr{
-			Name: "editor, \n]",
+			Name: "editor, ]",
 		},
 	}
 	workersBody.SetAttributeTraversal("depends_on", dependsOn)
@@ -249,8 +250,8 @@ func prepare(cpu int, ram int, disk int, platform string, nodes int) error {
 	чтобы не усложнять код преобразованиями из hcl в cty*/
 	//nolint:exhaustivestruct
 	stringSSHKeys := hcl.Traversal{
-		hcl.TraverseRoot{Name: "\n   { ssh-keys = \"ubuntu:${file(\"id_rsa"},
-		hcl.TraverseAttr{Name: "pub\")}\""},
+		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"id_rsa"},
+		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
 	}
 	setTerraformBlock(providerFileBody)
 	setIamServiceAccountBlock(providerFileBody)
