@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 	"github.com/tidwall/gjson"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
+	"k8s.io/client-go/tools/clientcmd"
 )
 
 const terraformWorkDir = "deploy/"
@@ -25,10 +28,10 @@ const terraformWorkDir = "deploy/"
 const configFile = "deploy/test_config.json"
 
 // кол-во попыток подключения при ошибке
-const repeatConnect = 3
+const connectionRetryCount = 3
 
 // задержка для случаев ожидания переповтора или соблюдения порядка запуска
-const delayForCommand = 2
+const execTimeout = 5
 
 // размер ответа terraform show при незапущенном кластере
 const linesNotInitTerraformShow = 13
@@ -36,9 +39,17 @@ const linesNotInitTerraformShow = 13
 const templatesFile = "deploy/templates.yml"
 
 // кол-во подов при успешном деплое k8s в master-ноде
-const countPodsRunning = 41
+const runningPodsCount = 41
 
 const sshNotFoundCode = 127
+
+const clusterMonitoringPort = 8080
+
+const reserveClusterMonitoringPort = 8081
+
+const clusterK8sPort = 6443
+
+const reserveClusterK8sPort = 6444
 
 type mapAddresses struct {
 	masterExternalIP   string
@@ -51,15 +62,19 @@ type mapAddresses struct {
 	postgresInternalIP string
 }
 
-type chanSSHTunnel struct {
-	cmd *exec.Cmd
-	err error
+/*
+структура хранит результат открытия туннеля (shh или port-forward) к кластеру:
+cmd - структура, которая хранит атрибуты команды, которая запустила туннель
+err - возможная ошибка при открытии туннеля
+localPort - порт локальной машины для туннеля
+*/
+type tunnelToCluster struct {
+	cmd       *exec.Cmd
+	err       error
+	localPort *int
 }
 
-type chanPortForward struct {
-	cmd *exec.Cmd
-	err error
-}
+var errPortCheck = errors.New("ports check failed")
 
 type TemplatesConfig struct {
 	Yandex Configurations
@@ -192,16 +207,25 @@ func terraformApply() error {
 func terraformDestroy() error {
 	destroyCmd := exec.Command("terraform", "destroy", "-force")
 	destroyCmd.Dir = terraformWorkDir
+
+	stdout, err := destroyCmd.StdoutPipe()
+	if err != nil {
+		return merry.Prepend(err, "failed creating command stdoutpipe")
+	}
+	stdoutReader := bufio.NewReader(stdout)
+	go handleReader(stdoutReader)
+
 	llog.Infoln("Destroying terraform...")
 	initCmdResult := destroyCmd.Run()
 	if initCmdResult != nil {
 		return merry.Wrap(initCmdResult)
 	}
+
 	llog.Infoln("Terraform destroyed")
 	return nil
 }
 
-func mappingIP() (mapAddresses, error) {
+func getIPMapping() (mapAddresses, error) {
 	/*
 		Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 		 своя пара - внешний (NAT) и внутренний ip.
@@ -277,11 +301,11 @@ func getClientSSH(ipAddress string) (*ssh.Client, error) {
 и файлы для развертывания мониторинга и postgres
 */
 func copyToMaster() error {
-	/**/
-	mapIP, err := mappingIP()
+	mapIP, err := getIPMapping()
 	if err != nil {
 		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
 	}
+
 	// проверяем наличие файла id_rsa
 	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
 	_, err = os.Stat(privateKeyFile)
@@ -291,30 +315,52 @@ func copyToMaster() error {
 		}
 		return merry.Prepend(err, "failed to find private key file")
 	}
+
+	/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
+	если кластер пока не готов*/
 	masterExternalIP := mapIP.masterExternalIP
-	connectMasterString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
-	copyMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", "id_rsa", connectMasterString)
-	llog.Infof(copyMasterCmd.String())
-	copyMasterCmd.Dir = terraformWorkDir
-	i := 0
+	llog.Infoln("Checking status of port 22 on the cluster's master...")
+	var masterPortAvailable bool
+	for i := 0; i <= connectionRetryCount; i++ {
+		masterPortAvailable = isRemotePortOpen(masterExternalIP, 22)
+		if !masterPortAvailable {
+			llog.Infof("status of check the master port:%v. Repeat #%v", errPortCheck, i)
+			time.Sleep(execTimeout * time.Second)
+		} else {
+			break
+		}
+	}
+	if !masterPortAvailable {
+		return merry.Prepend(errPortCheck, "master's port 22 is not available")
+	}
+
+	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
+	copyPrivateKeyCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
+		"id_rsa", mastersConnectionString)
+	llog.Infof(copyPrivateKeyCmd.String())
+	copyPrivateKeyCmd.Dir = terraformWorkDir
+
 	// делаем переповтор на случай проблем с кластером
-	for i <= repeatConnect {
-		resultcopyMasterCmd, err := copyMasterCmd.CombinedOutput()
+	// TODO: протестить вариант по аналогии с командами ниже
+	for i := 0; i <= connectionRetryCount; i++ {
+		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("falied to connect for copy RSA: %v %v \n", string(resultcopyMasterCmd), err)
-			i++
-			copyMasterCmd = exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", "id_rsa", connectMasterString)
-			time.Sleep(delayForCommand * time.Second)
+			llog.Errorf("failed to copy RSA key onto master: %v %v \n", string(copyMasterCmdResult), err)
+			copyPrivateKeyCmd = exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
+				"id_rsa", mastersConnectionString)
+			time.Sleep(execTimeout * time.Second)
 			continue
 		}
-		llog.Tracef("result of copy RSA: %v \n", string(resultcopyMasterCmd))
+		llog.Tracef("result of copy RSA: %v \n", string(copyMasterCmdResult))
 		break
 	}
+
 	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
 	//nolint:gosec
-	clientConfig, _ := auth.PrivateKey("ubuntu", privateKeyFile, ssh.InsecureIgnoreHostKey())
+	clientSSHConfig, _ := auth.PrivateKey("ubuntu", privateKeyFile, ssh.InsecureIgnoreHostKey())
 	masterAddressPort := fmt.Sprintf("%v:22", masterExternalIP)
-	client := scp.NewClient(masterAddressPort, &clientConfig)
+
+	client := scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -329,7 +375,8 @@ func copyToMaster() error {
 	metricsServerFile.Close()
 	client.Close()
 	llog.Infoln("copying metrics-server.yaml: success")
-	client = scp.NewClient(masterAddressPort, &clientConfig)
+
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -344,7 +391,8 @@ func copyToMaster() error {
 	ingressGrafanaFile.Close()
 	client.Close()
 	llog.Infoln("copying ingress-grafana.yaml: success")
-	client = scp.NewClient(masterAddressPort, &clientConfig)
+
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -359,7 +407,8 @@ func copyToMaster() error {
 	postgresManifestFile.Close()
 	client.Close()
 	llog.Infoln("copying postgres-manifest.yaml: success")
-	client = scp.NewClient(masterAddressPort, &clientConfig)
+
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -374,6 +423,7 @@ func copyToMaster() error {
 	fdbClusterClientFile.Close()
 	client.Close()
 	llog.Infoln("copying cluster_with_client.yaml: success")
+
 	return nil
 }
 
@@ -432,6 +482,7 @@ https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/l
  | tee -a deploy_kubernetes.sh
 `
 
+// deployKuberneters - развернуть k8s внутри кластера в cloud
 func deployKuberneters() error {
 	/*
 		Последовательно формируем файл deploy_kubernetes.sh,
@@ -449,7 +500,7 @@ func deployKuberneters() error {
 		llog.Infoln("k8s already success deployed")
 		return nil
 	}
-	mapIP, err := mappingIP()
+	mapIP, err := getIPMapping()
 	if err != nil {
 		return merry.Prepend(err, "failed to get IP addresses for deploy k8s")
 	}
@@ -556,10 +607,11 @@ func handleReader(reader *bufio.Reader) {
 
 // copyConfigFromMaster - скопировать файд kube config c мастер-инстанса кластера и применить для использования
 func copyConfigFromMaster() error {
-	mapIP, err := mappingIP()
+	mapIP, err := getIPMapping()
 	if err != nil {
 		return merry.Prepend(err, "failed to get IP addresses for copy from master")
 	}
+
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", mapIP.masterExternalIP)
 	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	llog.Infoln(copyFromMasterCmd.String())
@@ -568,61 +620,93 @@ func copyConfigFromMaster() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
 	}
-	cmdForSed := fmt.Sprintf("s/%v/localhost/g", mapIP.masterInternalIP)
-	replaceCMD := exec.Command("sed", "-i", cmdForSed, "config")
-	llog.Infoln(replaceCMD.String())
-	replaceCMD.Dir = terraformWorkDir
-	_, err = replaceCMD.CombinedOutput()
+
+	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
+	clusterUrl := "https://localhost:6443"
+	err = editClusterUrl(clusterUrl)
 	if err != nil {
-		return merry.Prepend(err, "failed to execute command for sed kube config")
+		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
+
 	return nil
 }
 
 // openSSHTunnel - открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func openSSHTunnel(sshTunnelChan chan chanSSHTunnel) {
-	mapIP, err := mappingIP()
+func openSSHTunnel(sshTunnelChan chan tunnelToCluster) {
+	mapIP, err := getIPMapping()
 	if err != nil {
 		log.Printf("failed to get IP addresses for open ssh tunnel:%v ", err)
-		sshTunnelChan <- chanSSHTunnel{nil, err}
+		sshTunnelChan <- tunnelToCluster{nil, err, nil}
 	}
-	connectString := fmt.Sprintf("ubuntu@%v", mapIP.masterExternalIP)
-	openSSHTunnel := exec.Command("ssh", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
-		"-o", "ServerAliveInterval=60", "-N", "-L", "6443:localhost:6443", "-N", connectString)
-	llog.Infof(openSSHTunnel.String())
-	openSSHTunnel.Dir = terraformWorkDir
-	stdout, err := openSSHTunnel.StdoutPipe()
-	if err != nil {
-		llog.Error("Failed creating command stdoutpipe: ", err)
-		sshTunnelChan <- chanSSHTunnel{nil, err}
+	mastersConnectionString := fmt.Sprintf("ubuntu@%v", mapIP.masterExternalIP)
+
+	/*	проверяем доступность портов для postgres на локальной машине */
+	llog.Infoln("Checking the status of port 6443 of the localhost for k8s...")
+	k8sPort := clusterK8sPort
+	if !isLocalPortOpen(k8sPort) {
+		llog.Infoln("Checking the status of port 6444 of the localhost for k8s...")
+		// проверяем резервный порт в случае недоступности основного
+		k8sPort = reserveClusterK8sPort
+		if !isLocalPortOpen(k8sPort) {
+			sshTunnelChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available"), nil}
+		}
+
+		// подменяем порт в kubeconfig на локальной машине
+		clusterUrl := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
+		err = editClusterUrl(clusterUrl)
+		if err != nil {
+			llog.Infof("failed to replace port: %v", err)
+			sshTunnelChan <- tunnelToCluster{nil, err, nil}
+		}
 	}
-	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
-	err = openSSHTunnel.Start()
-	if err != nil {
-		log.Printf("failed to execute command open ssh tunnel: %v", err)
-		sshTunnelChan <- chanSSHTunnel{nil, err}
+
+	// формируем строку с указанием портов для ssh-туннеля
+	portForwardSpec := fmt.Sprintf("%v:localhost:6443", k8sPort)
+	openSSHTunnelCmd := exec.Command("ssh", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
+		"-o", "ServerAliveInterval=60", "-N", "-L", portForwardSpec, "-N", mastersConnectionString, "2>sshtunnel_errors.log")
+	llog.Infof(openSSHTunnelCmd.String())
+	openSSHTunnelCmd.Dir = terraformWorkDir
+
+	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
+	if err = openSSHTunnelCmd.Start(); err != nil {
+		llog.Infof("failed to execute command open ssh tunnel: %v", err)
+		sshTunnelChan <- tunnelToCluster{nil, err, nil}
 	}
-	sshTunnelChan <- chanSSHTunnel{openSSHTunnel, err}
+
+	sshTunnelChan <- tunnelToCluster{openSSHTunnelCmd, nil, &k8sPort}
 }
 
 // portForwardKubectl - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func portForwardKubectl(portForwardChan chan chanPortForward) {
-	/* указываем конфиг напрямую, без задания отдельной переменной, т.к. есть проблемы с заданием переменных среды
-	через exec используя команду export*/
-	portForwardCmd := exec.Command("kubectl", "port-forward", "--kubeconfig=config",
-		"deployment/grafana-stack", "8080:3000", "-n", "monitoring")
+func portForwardKubectl(portForwardChan chan tunnelToCluster) {
+	// проверяем доступность портов 8080 и 8081 на локальной машине
+	llog.Infoln("Checking the status of port 8080 of the localhost for monitoring...")
+	monitoringPort := clusterMonitoringPort
+	if !isLocalPortOpen(monitoringPort) {
+		llog.Infoln("Checking the status of port 8081 of the localhost for monitoring...")
+		// проверяем доступность резервного порта
+		monitoringPort = reserveClusterMonitoringPort
+		if !isLocalPortOpen(monitoringPort) {
+			portForwardChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"), nil}
+		}
+	}
+	// формируем строку с указанием портов для port-forward
+	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
+	// уровень --v=4 соответствует debug
+	portForwardCmd := exec.Command("kubectl", "port-forward", "--kubeconfig=config", "--log-file=portforward.log",
+		"--v=4", "deployment/grafana-stack", portForwardSpec, "-n", "monitoring")
 	llog.Infof(portForwardCmd.String())
 	portForwardCmd.Dir = terraformWorkDir
+
+	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
 	if err := portForwardCmd.Start(); err != nil {
 		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
-		portForwardChan <- chanPortForward{nil, err}
+		portForwardChan <- tunnelToCluster{nil, err, nil}
 	}
-	portForwardChan <- chanPortForward{portForwardCmd, nil}
+	portForwardChan <- tunnelToCluster{portForwardCmd, nil, &monitoringPort}
 }
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
-func readCommandFromInput(sshTunnelStruct chanSSHTunnel, portForwardStruct chanPortForward,
+func readCommandFromInput(sshTunnelStruct tunnelToCluster, portForwardStruct tunnelToCluster,
 	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
 	for {
 		sc := bufio.NewScanner(os.Stdin)
@@ -758,6 +842,7 @@ func executePay(cmdType string, databaseType string) error {
 	return nil
 }
 
+// readConfig - прочитать конфигурационный файл test_config.json
 func readConfig(cmdType string, databaseType string) (*DatabaseSettings, error) {
 	settings := Defaults()
 	data, err := ioutil.ReadFile(configFile)
@@ -783,8 +868,9 @@ func readConfig(cmdType string, databaseType string) (*DatabaseSettings, error) 
 	return &settings, nil
 }
 
+// checkDeployMaster - проверить, что все поды k8s доступны, что подтверждает успешность деплоя k8s
 func checkDeployMaster() (bool, error) {
-	mapIP, err := mappingIP()
+	mapIP, err := getIPMapping()
 	if err != nil {
 		return false, merry.Prepend(err, "failed to get IP addresses for copy from master")
 	}
@@ -811,11 +897,63 @@ func checkDeployMaster() (bool, error) {
 		}
 	}
 	countPods := strings.Count(string(resultCheckCmd), "Running")
-	if countPods < countPodsRunning {
+	if countPods < runningPodsCount {
 		return false, nil
 	}
 	checkSession.Close()
 	return true, nil
+}
+
+// isLocalPortOpen - проверить доступность порта на localhost
+func isLocalPortOpen(port int) bool {
+	address := "localhost:" + strconv.Itoa(port)
+	conn, err := net.Listen("tcp", address)
+	if err != nil {
+		llog.Errorf("port %v at localhost is not available \n", port)
+		return false
+	}
+	defer conn.Close()
+
+	return true
+}
+
+// isRemotePortOpen - проверить доступность порта на удаленной машине кластера
+func isRemotePortOpen(hostname string, port int) bool {
+	address := hostname + ":" + strconv.Itoa(port)
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		llog.Errorf("port %v at %v is not available: %v \n", port, hostname, err)
+		return false
+	}
+	defer conn.Close()
+
+	return true
+}
+
+func editClusterUrl(url string) error {
+	kubeConfigPath := "deploy/config"
+	kubeConfig, err := clientcmd.LoadFromFile(kubeConfigPath)
+	if err != nil {
+		merry.Prepend(err, "failed to load kubeconfig")
+	}
+	// меняем значение адреса кластера внутри kubeconfig
+	kubeConfig.Clusters["cluster.local"].Server = url
+
+	err = clientcmd.WriteToFile(*kubeConfig, kubeConfigPath)
+	if err != nil {
+		merry.Prepend(err, "failed to write kubeconfig")
+	}
+
+	return nil
+}
+
+func closePortForward(portForward tunnelToCluster) {
+	closeStatus, err := portForward.cmd.Process.Wait()
+	if err != nil {
+		llog.Infoln("failed to stop port-forward channel")
+	}
+	llog.Infof("Status of close port-forward:%v", closeStatus.ExitCode())
+
 }
 
 func deploy(settings DeploySettings) error {
@@ -864,36 +1002,44 @@ func deploy(settings DeploySettings) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from Master")
 	}
-	sshTunnelChan := make(chan chanSSHTunnel)
+
+	sshTunnelChan := make(chan tunnelToCluster)
+	portForwardChan := make(chan tunnelToCluster)
+
 	go openSSHTunnel(sshTunnelChan)
-	time.Sleep(delayForCommand * time.Second)
-	portForwardChan := make(chan chanPortForward)
+	sshTunnel := <-sshTunnelChan
+	if sshTunnel.err != nil {
+		return merry.Prepend(sshTunnel.err, "failed to create ssh tunnel")
+	}
+
 	go portForwardKubectl(portForwardChan)
-	// добавляем задержку для корректного порядка вывода сообщений
-	time.Sleep(delayForCommand * time.Second)
-	log.Println(`Started ssh tunnel on ports 6443 for postgres and port-forward for monitoring.
-	For access to Grafana use address localhost:8080.
-	For access to postgres use address localhost:6443.
-	Enter quit to exit stroppy and destroy cluster.
-	Enter "postgres pop" to start accounts populating in postgres.
-	Enter "postgres pay" to start transfers test in postgres.
-	Enter "fdb pop" to start accounts populating in fdb.
-	Enter "fdb pay" to start transfers test in fdb.
-	For use kubectl in another console execute command for set KUBECONFIG before using:
-	"export KUBECONFIG=$(pwd)/config", where $(pwd) - path where was copyed config`)
-	sshTunnelStruct := <-sshTunnelChan
-	if sshTunnelStruct.err != nil {
-		return merry.Prepend(sshTunnelStruct.err, "failed to create ssh tunnel")
+	portForward := <-portForwardChan
+	llog.Println(portForward)
+	if portForward.err != nil {
+		return merry.Prepend(portForward.err, "failed to port forward")
 	}
-	portForwardStruct := <-portForwardChan
-	if portForwardStruct.err != nil {
-		return merry.Prepend(portForwardStruct.err, "failed to port forward")
-	}
+
+	defer closePortForward(portForward)
+
+	log.Printf(
+		`Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
+	To access Grafana use address localhost:%v.
+	To access to kubernetes cluster in cloud use address localhost:%v.
+	Enter "quit" to exit stroppy and destroy cluster.
+	Enter "postgres pop" to start populating PostgreSQL with accounts.
+	Enter "postgres pay" to start transfers test in PostgreSQL.
+	Enter "fdb pop" to start populating FoundationDB with accounts.
+	Enter "fdb pay" to start transfers test in FoundationDB.
+	To use kubectl for access kubernetes cluster in another console 
+	execute command for set enviroment variables KUBECONFIG before using:
+	"export KUBECONFIG=$(pwd)/config"`,
+		*portForward.localPort, *sshTunnel.localPort)
+
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)
 	popChan := make(chan error)
 	payChan := make(chan error)
-	go readCommandFromInput(sshTunnelStruct, portForwardStruct, errorExitChan, successExitChan, popChan, payChan)
+	go readCommandFromInput(sshTunnel, portForward, errorExitChan, successExitChan, popChan, payChan)
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
