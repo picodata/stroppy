@@ -43,6 +43,8 @@ const defaultCountCPU = 4
 func DefaultsDeploy() DeploySettings {
 	d := DeploySettings{}
 	d.provider = "yandex"
+	d.flavor = "small"
+	d.nodes = 3
 	return d
 }
 
