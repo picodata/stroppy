@@ -5,6 +5,7 @@ fdb.cluster
 id_rsa.* 
 id_rsa
 config
+*.tf
 
 
 benchmark/vendor
