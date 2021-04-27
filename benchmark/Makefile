@@ -31,4 +31,4 @@ lint:
 	golangci-lint run --new-from-rev=master
 
 deploy_yandex:
-	bin/stroppy deploy --cloud yandex
+	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
