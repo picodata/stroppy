@@ -902,10 +902,4 @@ func deploy(settings DeploySettings) error {
 		llog.Infof("destroy cluster %v", success)
 		return nil
 	}
-	/*err = terraformDestroy()
-	if err != nil {
-		return merry.Prepend(err, "failed to destroy terraform")
-	} else {
-		return nil
-	}*/
 }

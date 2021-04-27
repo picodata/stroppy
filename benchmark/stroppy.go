@@ -134,10 +134,6 @@ If Nban * Nbic > count we generate more (BIC, BAN) combinations
 than we saved during DB population process (that is achieved if brm > 1).
 The recommended range of brm is from 1.01 to 1.1. 
 The default value of banRangeMultipluer is 1.1.`)
-	// для deploy флаг url не требуется
-	/*if err := rootCmd.MarkPersistentFlagRequired("url"); err != nil {
-		panic(fmt.Errorf("failed to mark flag \"url\" required, err: %w", err))
-	}*/
 	rootCmd.PersistentFlags().IntVarP(&settings.workers,
 		"workers", "w",
 		settings.workers,
