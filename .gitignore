@@ -5,7 +5,9 @@ fdb.cluster
 id_rsa.* 
 id_rsa
 config
-*.tf
+yandex_compute_instance_group.tf
+*.tfstate
+*.tfstate.backup
 
 
 benchmark/vendor
