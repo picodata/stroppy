@@ -465,17 +465,6 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo update
 helm install loki grafana/loki-stack --namespace monitoring
 helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbclusters.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbbackups.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbrestores.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/foundationdb/fdb-kubernetes-operator/v0.31.1/config/samples/deployment.yaml
-echo "Waiting foundationdb deploy for 60 seconds..."
-sleep 60
-kubectl apply -f /home/ubuntu/cluster_with_client.yaml
 kubectl apply -f /home/ubuntu/metrics-server.yaml
 kubectl apply -f /home/ubuntu/ingress-grafana.yaml
 kubectl apply -f \
