@@ -308,6 +308,7 @@ func copyToMaster() error {
 	}
 
 	// проверяем наличие файла id_rsa
+
 	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
 	_, err = os.Stat(privateKeyFile)
 	if err != nil {
@@ -409,7 +410,23 @@ func copyToMaster() error {
 	client.Close()
 	llog.Infoln("copying postgres-manifest.yaml: success")
 
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
+	client = scp.NewClient(masterAddressPort, &clientConfig)
+	err = client.Connect()
+	if err != nil {
+		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	}
+	postgresDeployFileDir := fmt.Sprintf("%s/deploy_operator.sh", terraformWorkDir)
+	postgresDeployFile, _ := os.Open(postgresDeployFileDir)
+	err = client.CopyFile(postgresDeployFile, "/home/ubuntu/deploy_operator.sh", "0664")
+	if err != nil {
+		postgresManifestFile.Close()
+		return merry.Prepend(err, "error while copying file deploy_operator.sh")
+	}
+	postgresManifestFile.Close()
+	client.Close()
+	llog.Infoln("copying deploy_operator.sh: success")
+
+	client = scp.NewClient(masterAddressPort, &clientConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -419,7 +436,7 @@ func copyToMaster() error {
 	err = client.CopyFile(fdbClusterClientFile, "/home/ubuntu/cluster_with_client.yaml", "0664")
 	if err != nil {
 		fdbClusterClientFile.Close()
-		return merry.Prepend(err, "error while copying file postgres-manifest.yaml")
+		return merry.Prepend(err, "error while copying file cluster_with_client.yaml")
 	}
 	fdbClusterClientFile.Close()
 	client.Close()
@@ -595,6 +612,104 @@ func handleReader(reader *bufio.Reader) {
 	}
 }
 
+func deployPostgres() error {
+	llog.Infoln("Prepare deploy of postgres")
+	mapIP, err := mappingIP()
+	if err != nil {
+		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
+	}
+	masterExternalIP := mapIP.masterExternalIP
+
+	sshClient, err := getClientSSH(masterExternalIP)
+	if err != nil {
+		return merry.Prepend(err, "failed to create ssh connection for deploy of postgres")
+	}
+
+	sshSession, err := sshClient.NewSession()
+	if err != nil {
+		return merry.Prepend(err, "failed to open ssh connection for deploy of postgres")
+	}
+	defer sshSession.Close()
+
+	llog.Infoln("Starting deploy of postgres")
+	deployCmd := "chmod +x deploy_operator.sh && ./deploy_operator.sh"
+	stdout, err := sshSession.StdoutPipe()
+	if err != nil {
+		return merry.Prepend(err, "failed creating command stdoutpipe")
+	}
+	stdoutReader := bufio.NewReader(stdout)
+	go handleReader(stdoutReader)
+	_, err = sshSession.CombinedOutput(deployCmd)
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	llog.Infoln("Finished deploy of postgres")
+	return nil
+}
+
+func checkDeployPostgres() error {
+	llog.Infoln("Checking of deploy postgres")
+	checkCmd := exec.Command("kubectl", "exec", "--stdin", "--tty", "acid-postgres-cluster-0",
+		"-- /bin/su -- postgres && psql -c '\\c stroppy'")
+
+	stdout, err := checkCmd.StdoutPipe()
+	if err != nil {
+		return merry.Prepend(err, "failed creating command stdoutpipe in checkDeployPostgres")
+	}
+	stdoutReader := bufio.NewReader(stdout)
+	go handleReader(stdoutReader)
+
+	llog.Println(checkCmd)
+	err = checkCmd.Run()
+	if err != nil {
+		return merry.Prepend(err, "failed to check of deploy postgres")
+	}
+	llog.Infoln("Сhecking of deploy postgres: success")
+
+	return nil
+}
+
+func changePasswordInPostgres() error {
+	llog.Infoln("Starting of set a password on a stroppy in postgres")
+	changeCmd := exec.Command("psql", "-d", "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable",
+		"-c", "'ALTER USER stroppy PASSWORD 'stroppy''")
+
+	stdout, err := changeCmd.StdoutPipe()
+	if err != nil {
+		return merry.Prepend(err, "failed creating command stdoutpipe in changePasswordInPostgres")
+	}
+	stdoutReader := bufio.NewReader(stdout)
+	go handleReader(stdoutReader)
+
+	err = changeCmd.Run()
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	llog.Infoln("Finished set a password on a stroppy in postgres")
+
+	return nil
+}
+
+/*func runPodStroppy() error {
+	return nil
+}*/
+
+/*func openPostgresPortForward() error {
+	llog.Infoln("Starting of port-forward for postgres")
+	postgresPodSpec := `$(kubectl get pods -o jsonpath={.items..metadata.name} \
+	-l application=spilo,cluster-name=acid-postgres-cluster,spilo-role=master -n default)`
+	openPortForwardCmd := exec.Command("kubectl", "port-forward", postgresPodSpec, "6432:5432", "-n", "default")
+	llog.Infoln(openPortForwardCmd.String())
+	openPortForwardCmd.Dir = terraformWorkDir
+
+	_, err := openPortForwardCmd.CombinedOutput()
+	if err != nil {
+		return merry.Prepend(err, "failed to execute command for sed kube config")
+	}
+
+	return nil
+}*/
+
 // copyConfigFromMaster - скопировать файд kube config c мастер-инстанса кластера и применить для использования
 func copyConfigFromMaster() error {
 	mapIP, err := getIPMapping()
@@ -606,6 +721,7 @@ func copyConfigFromMaster() error {
 	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	llog.Infoln(copyFromMasterCmd.String())
 	copyFromMasterCmd.Dir = terraformWorkDir
+
 	_, err = copyFromMasterCmd.CombinedOutput()
 	if err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
@@ -614,6 +730,7 @@ func copyConfigFromMaster() error {
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
 	clusterURL := "https://localhost:6443"
 	err = editClusterURL(clusterURL)
+
 	if err != nil {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
@@ -691,7 +808,7 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 }
 
 // portForwardKubectl - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func portForwardKubectl(portForwardChan chan tunnelToCluster) {
+func openMonitoringPortForward(portForwardChan chan tunnelToCluster) {
 	// проверяем доступность портов 8080 и 8081 на локальной машине
 	llog.Infoln("Checking the status of port 8080 of the localhost for monitoring...")
 	monitoringPort := clusterMonitoringPort
@@ -703,6 +820,7 @@ func portForwardKubectl(portForwardChan chan tunnelToCluster) {
 			portForwardChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"), nil}
 		}
 	}
+
 	// формируем строку с указанием портов для port-forward
 	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
 	// уровень --v=4 соответствует debug
@@ -1024,26 +1142,41 @@ func deploy(settings DeploySettings) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
+
 	err = copyConfigFromMaster()
 	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from Master")
 	}
-
-	sshTunnelChan := make(chan sshResult)
-	portForwardChan := make(chan tunnelToCluster)
-
+	sshTunnelChan := make(chan chanSSHTunnel)
 	go openSSHTunnel(sshTunnelChan)
-	sshTunnel := <-sshTunnelChan
-	if sshTunnel.Err != nil {
-		return merry.Prepend(sshTunnel.Err, "failed to create ssh tunnel")
-	}
-	defer sshTunnel.Tunnel.Close()
+	time.Sleep(delayForCommand * time.Second)
+	portForwardChan := make(chan chanPortForward)
+	go openMonitoringPortForward(portForwardChan)
+	// добавляем задержку для корректного порядка вывода сообщений
+	time.Sleep(delayForCommand * time.Second)
 
-	go portForwardKubectl(portForwardChan)
-	portForward := <-portForwardChan
-	llog.Println(portForward)
-	if portForward.err != nil {
-		return merry.Prepend(portForward.err, "failed to port forward")
+	if settings.dbtype == "postgres" {
+		err = deployPostgres()
+		if err != nil {
+			return merry.Prepend(err, "failed to deploy of postgres")
+		}
+		err = checkDeployPostgres()
+		if err != nil {
+			return merry.Prepend(err, "failed to check deploy of postgres")
+		}
+		stopPortForwardPostgres := make(chan struct{})
+		readyPortForwardPostgres := make(chan struct{})
+		errorPortForwardPostgres := make(chan error)
+		go openPostgresPortForward(stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
+		select {
+		case <-readyPortForwardPostgres:
+			llog.Infof("Port-forwarding for postgres is started success\n")
+		case errPortForwardPostgres := <-errorPortForwardPostgres:
+			llog.Errorf("Port-forwarding for postgres is started failed\n")
+			return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
+		}
+
+		defer close(stopPortForwardPostgres)
 	}
 
 	defer closePortForward(portForward)

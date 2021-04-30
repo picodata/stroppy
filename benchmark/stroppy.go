@@ -33,6 +33,7 @@ type DeploySettings struct {
 	provider string
 	flavor   string
 	nodes    int
+	dbtype   string
 }
 
 const defaultCountCPU = 4
@@ -45,6 +46,7 @@ func DefaultsDeploy() DeploySettings {
 	d.provider = "yandex"
 	d.flavor = "small"
 	d.nodes = 3
+	d.dbtype = "postgres"
 	return d
 }
 
@@ -223,6 +225,10 @@ The default value of banRangeMultipluer is 1.1.`)
 		"nodes",
 		deploySettings.nodes,
 		"count nodes of cluster")
+	deployCmd.PersistentFlags().StringVar(&deploySettings.dbtype,
+		"dbtype",
+		deploySettings.dbtype,
+		"database type for deploy")
 
 	var payCmd = &cobra.Command{
 		Use:     "pay",
