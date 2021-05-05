@@ -18,6 +18,7 @@ import (
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/benchmark/stroppy/sshtunnel"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/tools/clientcmd"
@@ -631,12 +632,18 @@ func copyConfigFromMaster() error {
 	return nil
 }
 
+type sshResult struct {
+	Port   int
+	Tunnel *sshtunnel.SSHTunnel
+	Err    error
+}
+
 // openSSHTunnel - открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func openSSHTunnel(sshTunnelChan chan tunnelToCluster) {
+func openSSHTunnel(sshTunnelChan chan sshResult) {
 	mapIP, err := getIPMapping()
 	if err != nil {
 		log.Printf("failed to get IP addresses for open ssh tunnel:%v ", err)
-		sshTunnelChan <- tunnelToCluster{nil, err, nil}
+		sshTunnelChan <- sshResult{0, nil, err}
 	}
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v", mapIP.masterExternalIP)
 
@@ -648,7 +655,7 @@ func openSSHTunnel(sshTunnelChan chan tunnelToCluster) {
 		// проверяем резервный порт в случае недоступности основного
 		k8sPort = reserveClusterK8sPort
 		if !isLocalPortOpen(k8sPort) {
-			sshTunnelChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available"), nil}
+			sshTunnelChan <- sshResult{0, nil, merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available")}
 		}
 
 		// подменяем порт в kubeconfig на локальной машине
@@ -656,24 +663,41 @@ func openSSHTunnel(sshTunnelChan chan tunnelToCluster) {
 		err = editClusterUrl(clusterUrl)
 		if err != nil {
 			llog.Infof("failed to replace port: %v", err)
-			sshTunnelChan <- tunnelToCluster{nil, err, nil}
+			sshTunnelChan <- sshResult{0, nil, err}
 		}
 	}
 
-	// формируем строку с указанием портов для ssh-туннеля
-	portForwardSpec := fmt.Sprintf("%v:localhost:6443", k8sPort)
-	openSSHTunnelCmd := exec.Command("ssh", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
-		"-o", "ServerAliveInterval=60", "-N", "-L", portForwardSpec, "-N", mastersConnectionString, "2>sshtunnel_errors.log")
-	llog.Infof(openSSHTunnelCmd.String())
-	openSSHTunnelCmd.Dir = terraformWorkDir
-
-	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
-	if err = openSSHTunnelCmd.Start(); err != nil {
-		llog.Infof("failed to execute command open ssh tunnel: %v", err)
-		sshTunnelChan <- tunnelToCluster{nil, err, nil}
+	authMethod, err := sshtunnel.PrivateKeyFile("deploy/id_rsa")
+	if err != nil {
+		llog.Infof("failed to use private key file: %v", err)
+		sshTunnelChan <- sshResult{0, nil, err}
+	}
+	// Setup the tunnel, but do not yet start it yet.
+	tunnel, err := sshtunnel.NewSSHTunnel(
+		mastersConnectionString,
+		"localhost:6443",
+		k8sPort,
+		authMethod,
+	)
+	if err != nil {
+		sshTunnelChan <- sshResult{0, nil, merry.Prepend(err, "failed to create tunnel")}
 	}
 
-	sshTunnelChan <- tunnelToCluster{openSSHTunnelCmd, nil, &k8sPort}
+	// You can provide a logger for debugging, or remove this line to
+	// make it silent.
+	tunnel.Log = log.New(os.Stdout, "SSH tunnel ", log.Flags())
+
+	tunnelStartedChan := make(chan error, 1)
+	go tunnel.Start(tunnelStartedChan)
+	tunnelStarted := <-tunnelStartedChan
+	close(tunnelStartedChan)
+
+	if tunnelStarted != nil {
+		sshTunnelChan <- sshResult{0, nil, merry.Prepend(err, "failed to start tunnel")}
+		return
+	}
+
+	sshTunnelChan <- sshResult{k8sPort, tunnel, nil}
 }
 
 // portForwardKubectl - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
@@ -706,7 +730,7 @@ func portForwardKubectl(portForwardChan chan tunnelToCluster) {
 }
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
-func readCommandFromInput(sshTunnelStruct tunnelToCluster, portForwardStruct tunnelToCluster,
+func readCommandFromInput(portForwardStruct tunnelToCluster,
 	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
 	for {
 		sc := bufio.NewScanner(os.Stdin)
@@ -716,20 +740,13 @@ func readCommandFromInput(sshTunnelStruct tunnelToCluster, portForwardStruct tun
 			switch consoleCmd {
 			case "quit":
 				llog.Println("Exiting...")
-				for sshTunnelStruct.cmd.ProcessState != nil && portForwardStruct.cmd.ProcessState != nil {
-					err := sshTunnelStruct.cmd.Process.Kill()
-					if err != nil {
-						llog.Errorf("failed to kill process ssh tunel %v. \n Repeat...", err.Error())
-						continue
-					}
-					err = portForwardStruct.cmd.Process.Kill()
-					if err != nil {
-						llog.Errorf("failed to kill process port forward %v. \n Repeat...", err.Error())
-						continue
-					}
-					break
+
+				err := portForwardStruct.cmd.Process.Kill()
+				if err != nil {
+					llog.Errorf("failed to kill process port forward %v. \n Repeat...", err.Error())
 				}
-				err := terraformDestroy()
+
+				err = terraformDestroy()
 				if err != nil {
 					errorExit <- merry.Prepend(err, "failed to destroy terraform")
 				} else {
@@ -1003,14 +1020,15 @@ func deploy(settings DeploySettings) error {
 		return merry.Prepend(err, "failed to copy kube config from Master")
 	}
 
-	sshTunnelChan := make(chan tunnelToCluster)
+	sshTunnelChan := make(chan sshResult)
 	portForwardChan := make(chan tunnelToCluster)
 
 	go openSSHTunnel(sshTunnelChan)
 	sshTunnel := <-sshTunnelChan
-	if sshTunnel.err != nil {
-		return merry.Prepend(sshTunnel.err, "failed to create ssh tunnel")
+	if sshTunnel.Err != nil {
+		return merry.Prepend(sshTunnel.Err, "failed to create ssh tunnel")
 	}
+	defer sshTunnel.Tunnel.Close()
 
 	go portForwardKubectl(portForwardChan)
 	portForward := <-portForwardChan
@@ -1033,13 +1051,13 @@ func deploy(settings DeploySettings) error {
 	To use kubectl for access kubernetes cluster in another console 
 	execute command for set enviroment variables KUBECONFIG before using:
 	"export KUBECONFIG=$(pwd)/config"`,
-		*portForward.localPort, *sshTunnel.localPort)
+		*portForward.localPort, sshTunnel.Port)
 
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)
 	popChan := make(chan error)
 	payChan := make(chan error)
-	go readCommandFromInput(sshTunnel, portForward, errorExitChan, successExitChan, popChan, payChan)
+	go readCommandFromInput(portForward, errorExitChan, successExitChan, popChan, payChan)
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
