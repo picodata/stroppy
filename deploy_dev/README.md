@@ -45,6 +45,10 @@ Login credentials: admin / prom-operator
 Deploy:
 ```
 cd deploy_dev/foundationdb/
+
+Set `spec.process.general.volumeClaimTemplate.spec.resources.storageClassName` in cluster_with_client.yaml
+to `standard` to deploy in minikube
+
 sh deploy_operator.sh
 kubectl edit configmap config -n metallb-system
 ```

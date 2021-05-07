@@ -23,8 +23,9 @@ spec:
         spec:
           resources:
             requests:
-              storage: "16G"
-          storageClassName: local-path
+              storage: "1G"
+          # use `storageClassName: standard` to run in minikube
+          storageClassName: standard
       podTemplate:
         spec:
           containers:
