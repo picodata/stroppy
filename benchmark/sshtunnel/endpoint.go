@@ -25,6 +25,8 @@ func NewLocalEndpoint(port int, user string) *Endpoint {
 func NewEndpoint(s string) (*Endpoint, error) {
 	endpoint := &Endpoint{
 		Host: s,
+		Port: 0,
+		User: "",
 	}
 
 	if parts := strings.Split(endpoint.Host, "@"); len(parts) > 1 {

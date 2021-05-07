@@ -131,7 +131,7 @@ func NewSSHTunnel(tunnel string, destination string, localport int, sshTunnelAut
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create remote endpoint")
 	}
-
+	//nolint:exhaustivestruct
 	sshTunnel := &SSHTunnel{
 		Config: &ssh.ClientConfig{
 			User: serverEndpoint.User,

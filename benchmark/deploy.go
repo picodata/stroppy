@@ -64,7 +64,7 @@ type mapAddresses struct {
 }
 
 /*
-структура хранит результат открытия туннеля (shh или port-forward) к кластеру:
+структура хранит результат открытия port-forward туннеля к кластеру:
 cmd - структура, которая хранит атрибуты команды, которая запустила туннель
 err - возможная ошибка при открытии туннеля
 localPort - порт локальной машины для туннеля
@@ -75,7 +75,7 @@ type tunnelToCluster struct {
 	localPort *int
 }
 
-var errPortCheck = errors.New("ports check failed")
+var errPortCheck = errors.New("port check failed")
 
 type TemplatesConfig struct {
 	Yandex Configurations
@@ -211,7 +211,7 @@ func terraformDestroy() error {
 
 	stdout, err := destroyCmd.StdoutPipe()
 	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe")
+		return merry.Prepend(err, "failed creating command stdoutpipe for logging destroy of cluster")
 	}
 	stdoutReader := bufio.NewReader(stdout)
 	go handleReader(stdoutReader)
@@ -325,7 +325,7 @@ func copyToMaster() error {
 	for i := 0; i <= connectionRetryCount; i++ {
 		masterPortAvailable = isRemotePortOpen(masterExternalIP, 22)
 		if !masterPortAvailable {
-			llog.Infof("status of check the master port:%v. Repeat #%v", errPortCheck, i)
+			llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
 			time.Sleep(execTimeout * time.Second)
 		} else {
 			break
@@ -342,7 +342,7 @@ func copyToMaster() error {
 	copyPrivateKeyCmd.Dir = terraformWorkDir
 
 	// делаем переповтор на случай проблем с кластером
-	// TODO: протестить вариант по аналогии с командами ниже
+	// TO DO: https://gitlab.com/picodata/stroppy/-/issues/4
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
@@ -577,7 +577,7 @@ EOF" | tee -a deploy_kubernetes.sh
 	deployFooStepCmd := "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
 	stdout, err := deployFooStep.StdoutPipe()
 	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe")
+		return merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
 	}
 	stdoutReader := bufio.NewReader(stdout)
 	go handleReader(stdoutReader)
@@ -623,8 +623,8 @@ func copyConfigFromMaster() error {
 	}
 
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
-	clusterUrl := "https://localhost:6443"
-	err = editClusterUrl(clusterUrl)
+	clusterURL := "https://localhost:6443"
+	err = editClusterURL(clusterURL)
 	if err != nil {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
@@ -659,8 +659,8 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 		}
 
 		// подменяем порт в kubeconfig на локальной машине
-		clusterUrl := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
-		err = editClusterUrl(clusterUrl)
+		clusterURL := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
+		err = editClusterURL(clusterURL)
 		if err != nil {
 			llog.Infof("failed to replace port: %v", err)
 			sshTunnelChan <- sshResult{0, nil, err}
@@ -673,9 +673,10 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 		sshTunnelChan <- sshResult{0, nil, err}
 	}
 	// Setup the tunnel, but do not yet start it yet.
+	destinationServerString := fmt.Sprintf("localhost:%v", k8sPort)
 	tunnel, err := sshtunnel.NewSSHTunnel(
 		mastersConnectionString,
-		"localhost:6443",
+		destinationServerString,
 		k8sPort,
 		authMethod,
 	)
@@ -885,7 +886,7 @@ func readConfig(cmdType string, databaseType string) (*DatabaseSettings, error) 
 	return &settings, nil
 }
 
-// checkDeployMaster - проверить, что все поды k8s доступны, что подтверждает успешность деплоя k8s
+// checkDeployMaster - проверить, что все поды k8s в running, что подтверждает успешность деплоя k8s
 func checkDeployMaster() (bool, error) {
 	mapIP, err := getIPMapping()
 	if err != nil {
@@ -947,18 +948,18 @@ func isRemotePortOpen(hostname string, port int) bool {
 	return true
 }
 
-func editClusterUrl(url string) error {
+func editClusterURL(url string) error {
 	kubeConfigPath := "deploy/config"
 	kubeConfig, err := clientcmd.LoadFromFile(kubeConfigPath)
 	if err != nil {
-		merry.Prepend(err, "failed to load kubeconfig")
+		return merry.Prepend(err, "failed to load kubeconfig")
 	}
 	// меняем значение адреса кластера внутри kubeconfig
 	kubeConfig.Clusters["cluster.local"].Server = url
 
 	err = clientcmd.WriteToFile(*kubeConfig, kubeConfigPath)
 	if err != nil {
-		merry.Prepend(err, "failed to write kubeconfig")
+		return merry.Prepend(err, "failed to write kubeconfig")
 	}
 
 	return nil
@@ -967,10 +968,17 @@ func editClusterUrl(url string) error {
 func closePortForward(portForward tunnelToCluster) {
 	closeStatus, err := portForward.cmd.Process.Wait()
 	if err != nil {
-		llog.Infoln("failed to stop port-forward channel")
+		llog.Infoln("failed to close port-forward channel")
 	}
 	llog.Infof("Status of close port-forward:%v", closeStatus.ExitCode())
-
+	for !closeStatus.Exited() {
+		llog.Errorf("port-forward is not closed. Executing kill...")
+		err = portForward.cmd.Process.Kill()
+		if err != nil {
+			log.Printf("status of port-forward's kill: %v", err)
+		}
+		time.Sleep(execTimeout * time.Second)
+	}
 }
 
 func deploy(settings DeploySettings) error {
@@ -1049,7 +1057,7 @@ func deploy(settings DeploySettings) error {
 	Enter "fdb pop" to start populating FoundationDB with accounts.
 	Enter "fdb pay" to start transfers test in FoundationDB.
 	To use kubectl for access kubernetes cluster in another console 
-	execute command for set enviroment variables KUBECONFIG before using:
+	execute command for set environment variables KUBECONFIG before using:
 	"export KUBECONFIG=$(pwd)/config"`,
 		*portForward.localPort, sshTunnel.Port)
 
