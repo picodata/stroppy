@@ -22,7 +22,7 @@ lint:
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
     - cd benchmark
-    - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD)
+    - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 1m30s
 
 docker:
   image: docker:dind
