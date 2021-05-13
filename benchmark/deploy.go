@@ -976,7 +976,7 @@ func closePortForward(portForward tunnelToCluster) {
 	}
 
 	// если вдруг что-то пошло не так, то kill принудительно до победного либо до истечения кол-ва попыток
-	for i := 0; closeStatus.ExitCode() != -1 && i < connectionRetryCount; i++ {
+	for i := 0; closeStatus.ExitCode() != -1 || i < connectionRetryCount; i++ {
 		llog.Errorf("port-forward is not closed. Executing kill...")
 		err = portForward.cmd.Process.Kill()
 		if err != nil {

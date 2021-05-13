@@ -1,25 +1,25 @@
 yandex:
   small:
   - description: "Minimal configuration: 4 CPU Xeon E5-2660 v4, 4 Gb RAM, 15 Gb disk"
-  - platform: "standard-v1"
+  - platform: "standard-v2"
   - cpu: 4
   - ram: 4
   - disk: 15
   standard:
   - description: "Standard configuration: 8 CPU Xeon E5-2660 v4, 8 Gb RAM, 50 Gb disk"
-  - platform: "standard-v1"
+  - platform: "standard-v2"
   - cpu: 8
   - ram: 8
   - disk: 50
   large:
   - description: "Large configuration: 16 CPU Xeon E5-2660 v4, 16 Gb RAM, 200 Gb disk"
-  - platform: "standard-v1"
+  - platform: "standard-v2"
   - cpu: 16
   - ram: 16
   - disk: 200
   xlarge:
   - description: "Extra large configuration: 32 CPU Xeon E5-2660 v4, 64 Gb RAM, 1 Tb disk"
-  - platform: "standard-v1"
+  - platform: "standard-v2"
   - cpu: 32
   - ram: 64
   - disk: 1024
