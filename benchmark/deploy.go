@@ -966,19 +966,31 @@ func editClusterURL(url string) error {
 }
 
 func closePortForward(portForward tunnelToCluster) {
+	llog.Infof("Closing of port-forward...")
+	/* в нормальном случае wait вернет -1, т.к. после дестроя кластера до завершения stroppy
+	процесс port-forward зависает как зомби и wait делает его kill
+	*/
 	closeStatus, err := portForward.cmd.Process.Wait()
 	if err != nil {
-		llog.Infoln("failed to close port-forward channel")
+		llog.Infof("failed to close port-forward channel: %v", err)
 	}
-	llog.Infof("Status of close port-forward:%v", closeStatus.ExitCode())
-	for !closeStatus.Exited() {
+
+	// если вдруг что-то пошло не так, то kill принудительно до победного либо до истечения кол-ва попыток
+	for i := 0; closeStatus.ExitCode() != -1 && i < connectionRetryCount; i++ {
 		llog.Errorf("port-forward is not closed. Executing kill...")
 		err = portForward.cmd.Process.Kill()
 		if err != nil {
-			log.Printf("status of port-forward's kill: %v", err)
+			// если процесс уже убит
+			if errors.Is(err, os.ErrProcessDone) {
+				llog.Infoln("status of port-forward's kill: success")
+				break
+			}
+			log.Printf("status of port-forward's kill: %v. Repeat...", err)
 		}
 		time.Sleep(execTimeout * time.Second)
 	}
+
+	llog.Infoln("status of port-forward's close: success")
 }
 
 func deploy(settings DeploySettings) error {
