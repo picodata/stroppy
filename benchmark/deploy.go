@@ -2,11 +2,13 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -18,10 +20,18 @@ import (
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"gitlab.com/picodata/benchmark/stroppy/sshtunnel"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 )
 
 const terraformWorkDir = "deploy/"
@@ -51,6 +61,12 @@ const reserveClusterMonitoringPort = 8081
 const clusterK8sPort = 6443
 
 const reserveClusterK8sPort = 6444
+
+const RunningPodStatus = "Running"
+
+const successPostgresPodsCount = 3
+
+const notFoundPodsCount = 5
 
 type mapAddresses struct {
 	masterExternalIP   string
@@ -410,7 +426,7 @@ func copyToMaster() error {
 	client.Close()
 	llog.Infoln("copying postgres-manifest.yaml: success")
 
-	client = scp.NewClient(masterAddressPort, &clientConfig)
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -426,7 +442,7 @@ func copyToMaster() error {
 	client.Close()
 	llog.Infoln("copying deploy_operator.sh: success")
 
-	client = scp.NewClient(masterAddressPort, &clientConfig)
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
 	err = client.Connect()
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
@@ -612,9 +628,33 @@ func handleReader(reader *bufio.Reader) {
 	}
 }
 
+// getKubeConfig - получить конфигурацию k8s
+func getKubeConfig() (*rest.Config, error) {
+	kubeConfig := "deploy/config"
+	config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to get config for check deploy of postgres")
+	}
+	return config, nil
+}
+
+func getClientSet() (*kubernetes.Clientset, error) {
+	config, err := getKubeConfig()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to get kubeconfig for clientset")
+	}
+	// clientset - клиент для обращения к группам сущностей k8s
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to create clientset")
+	}
+	return clientset, nil
+}
+
+// deployPostgres - развернуть postgres в кластере
 func deployPostgres() error {
 	llog.Infoln("Prepare deploy of postgres")
-	mapIP, err := mappingIP()
+	mapIP, err := getIPMapping()
 	if err != nil {
 		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
 	}
@@ -647,68 +687,145 @@ func deployPostgres() error {
 	return nil
 }
 
+// getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
+func getPostgresPodsCount() (*int32, error) {
+	manifestFile, err := ioutil.ReadFile("deploy/postgres-manifest.yaml")
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to read postgres-manifest.yaml")
+	}
+
+	//nolint:exhaustivestruct
+	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode(manifestFile, nil, &v1.Postgresql{})
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to decode postgres-manifest.yaml")
+	}
+	postgresSQLconfig, ok := obj.(*v1.Postgresql)
+	if !ok {
+		return nil, merry.Prepend(err, "failed to check format postgres-manifest.yaml")
+	}
+
+	podsCount := postgresSQLconfig.Spec.NumberOfInstances
+
+	return &podsCount, nil
+}
+
+// checkDeployPostgres - проверить, что все поды postgres в running
 func checkDeployPostgres() error {
-	llog.Infoln("Checking of deploy postgres")
-	checkCmd := exec.Command("kubectl", "exec", "--stdin", "--tty", "acid-postgres-cluster-0",
-		"-- /bin/su -- postgres && psql -c '\\c stroppy'")
+	llog.Infoln("Checking of deploy postgres...")
 
-	stdout, err := checkCmd.StdoutPipe()
+	successPodsCount := 0
+
+	errorsPodsCount := 0
+
+	notFoundCount := 0
+
+	clientset, err := getClientSet()
 	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe in checkDeployPostgres")
+		return merry.Prepend(err, "failed to get clienset for check deploy of postgres")
 	}
-	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
 
-	llog.Println(checkCmd)
-	err = checkCmd.Run()
+	postgresPodsCount, err := getPostgresPodsCount()
 	if err != nil {
-		return merry.Prepend(err, "failed to check of deploy postgres")
+		return merry.Prepend(err, "failed to get postgres pods count")
 	}
-	llog.Infoln("Сhecking of deploy postgres: success")
+	for successPodsCount < int(*postgresPodsCount) && errorsPodsCount < 1 && notFoundCount < notFoundPodsCount {
+		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
+		//nolint:exhaustivestruct
+		acidPostgresZeroPod, err := clientset.CoreV1().Pods("default").Get(context.TODO(),
+			podNumber, metav1.GetOptions{
+				TypeMeta:        metav1.TypeMeta{},
+				ResourceVersion: "",
+			})
+		switch {
+		case k8s_errors.IsNotFound(err):
+			llog.Infof("Pod %v not found in default namespace\n", podNumber)
+		case k8s_errors.IsInternalError(err):
+			llog.Infof("Error getting pod %v: %v\n", podNumber, err.Error())
+			errorsPodsCount++
+		case err != nil:
+			llog.Infof("Unknown error getting pod %v: %v", podNumber, err.Error())
+			errorsPodsCount++
+		case err == nil:
+			llog.Infof("Found pod %v in default namespace\n", podNumber)
+		}
+		llog.Infof("status of pod %v: %v\n", podNumber, acidPostgresZeroPod.Status.Phase)
+		// Status.Phase - текущий статус пода
+		if acidPostgresZeroPod.Status.Phase == RunningPodStatus {
+			successPodsCount++
+		}
 
+		// чтобы не ждать до следующей итерации
+		if successPodsCount >= successPostgresPodsCount {
+			llog.Infoln("Сhecking of deploy postgres: success")
+			break
+		} else if errorsPodsCount > 0 {
+			llog.Errorf("one or more pods did not start or started with an error")
+			return merry.Prepend(err, "one or more pods did not start or started with an error")
+		}
+
+		llog.Infof("waiting for checking %v minutes...\n", execTimeout)
+		time.Sleep(execTimeout * time.Minute)
+	}
 	return nil
 }
 
-func changePasswordInPostgres() error {
-	llog.Infoln("Starting of set a password on a stroppy in postgres")
-	changeCmd := exec.Command("psql", "-d", "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable",
-		"-c", "'ALTER USER stroppy PASSWORD 'stroppy''")
+// openPostgresPortForward - открыть port-forward туннель для postgres
+func openPostgresPortForward(stopPortForwardPostgres chan struct{}, readyPortForwardPostgres chan struct{},
+	errorPortForwardPostgres chan error) {
+	llog.Println("Opening of port-forward...")
 
-	stdout, err := changeCmd.StdoutPipe()
+	/*mapIP, err := mappingIP()
 	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe in changePasswordInPostgres")
-	}
-	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
+		llog.Errorf("failed to map IP addresses in terraform.tfstate: %v\n", err)
+		errorPortForwardPostgres <- err
+	}*/
 
-	err = changeCmd.Run()
+	config, err := getKubeConfig()
 	if err != nil {
-		return merry.Wrap(err)
+		llog.Errorf("failed to get kubeconfig for open port-forward of postgres: %v", err)
+		errorPortForwardPostgres <- err
 	}
-	llog.Infoln("Finished set a password on a stroppy in postgres")
+	clientset, err := getClientSet()
+	if err != nil {
+		llog.Errorf("failed to get clientset for open port-forward of postgres: %v", err)
+		errorPortForwardPostgres <- err
+	}
 
-	return nil
+	// reqURL - текущий url запроса к сущности k8s в runtime
+	reqURL := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace("default").
+		Name("acid-postgres-cluster-0").
+		SubResource("portforward").URL()
+
+	httpTransaction, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		llog.Errorf("failed to create http transction for port-forward of postgres: %v\n", err)
+		errorPortForwardPostgres <- err
+	}
+
+	portForwardLog, err := os.OpenFile("portForwardPostgres.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		llog.Errorf("failed to create or open log file for port-forward of postgres: %v", err)
+		errorPortForwardPostgres <- err
+	}
+	defer portForwardLog.Close()
+
+	//nolint:exhaustivestruct
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: httpTransaction}, http.MethodPost, reqURL)
+	portForward, err := portforward.New(dialer, []string{"6432:5432"},
+		stopPortForwardPostgres, readyPortForwardPostgres, portForwardLog, portForwardLog)
+	if err != nil {
+		llog.Errorf("failed to get port-forwarder of postgres: %v\n", err)
+		errorPortForwardPostgres <- err
+	}
+
+	err = portForward.ForwardPorts()
+	if err != nil {
+		llog.Errorf("failed to open port-forward of postgres: %v\n", err)
+		errorPortForwardPostgres <- err
+	}
 }
-
-/*func runPodStroppy() error {
-	return nil
-}*/
-
-/*func openPostgresPortForward() error {
-	llog.Infoln("Starting of port-forward for postgres")
-	postgresPodSpec := `$(kubectl get pods -o jsonpath={.items..metadata.name} \
-	-l application=spilo,cluster-name=acid-postgres-cluster,spilo-role=master -n default)`
-	openPortForwardCmd := exec.Command("kubectl", "port-forward", postgresPodSpec, "6432:5432", "-n", "default")
-	llog.Infoln(openPortForwardCmd.String())
-	openPortForwardCmd.Dir = terraformWorkDir
-
-	_, err := openPortForwardCmd.CombinedOutput()
-	if err != nil {
-		return merry.Prepend(err, "failed to execute command for sed kube config")
-	}
-
-	return nil
-}*/
 
 // copyConfigFromMaster - скопировать файд kube config c мастер-инстанса кластера и применить для использования
 func copyConfigFromMaster() error {
@@ -905,7 +1022,7 @@ func readCommandFromInput(portForwardStruct tunnelToCluster,
 					}
 				}
 			default:
-				llog.Printf("You entered: %v. Expected quit \n", consoleCmd)
+				llog.Infof("You entered: %v. Expected quit \n", consoleCmd)
 			}
 		}
 	}
@@ -1108,14 +1225,15 @@ func deploy(settings DeploySettings) error {
 		if errors.Is(err, exec.ErrNotFound) {
 			err := installTerraform()
 			if err != nil {
-				log.Fatalf("Deploy terraform status: %v ", err)
+				llog.Fatalf("Failed to install terraform: %v ", err)
+				return merry.Prepend(err, "failed to install terraform")
 			} else {
-				log.Printf("Deploy terraform status: success")
+				llog.Infof("Terraform install status: success")
 			}
 		}
 	}
 	if strings.Contains(string(checkVersionCmd), "version") {
-		log.Printf("Founded version %v", string(checkVersionCmd[:17]))
+		llog.Infof("Founded version %v", string(checkVersionCmd[:17]))
 	}
 	templatesConfig, err := readTemplates()
 	if err != nil {
@@ -1147,13 +1265,24 @@ func deploy(settings DeploySettings) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from Master")
 	}
-	sshTunnelChan := make(chan chanSSHTunnel)
+	sshTunnelChan := make(chan sshResult)
+	portForwardChan := make(chan tunnelToCluster)
+
 	go openSSHTunnel(sshTunnelChan)
-	time.Sleep(delayForCommand * time.Second)
-	portForwardChan := make(chan chanPortForward)
+	sshTunnel := <-sshTunnelChan
+	if sshTunnel.Err != nil {
+		return merry.Prepend(sshTunnel.Err, "failed to create ssh tunnel")
+	}
+	defer sshTunnel.Tunnel.Close()
+
 	go openMonitoringPortForward(portForwardChan)
-	// добавляем задержку для корректного порядка вывода сообщений
-	time.Sleep(delayForCommand * time.Second)
+	portForward := <-portForwardChan
+	llog.Println(portForward)
+	if portForward.err != nil {
+		return merry.Prepend(portForward.err, "failed to port forward")
+	}
+
+	defer closePortForward(portForward)
 
 	if settings.dbtype == "postgres" {
 		err = deployPostgres()
@@ -1164,6 +1293,7 @@ func deploy(settings DeploySettings) error {
 		if err != nil {
 			return merry.Prepend(err, "failed to check deploy of postgres")
 		}
+
 		stopPortForwardPostgres := make(chan struct{})
 		readyPortForwardPostgres := make(chan struct{})
 		errorPortForwardPostgres := make(chan error)
@@ -1178,8 +1308,6 @@ func deploy(settings DeploySettings) error {
 
 		defer close(stopPortForwardPostgres)
 	}
-
-	defer closePortForward(portForward)
 
 	log.Printf(
 		`Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
@@ -1203,7 +1331,7 @@ func deploy(settings DeploySettings) error {
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
-		return err
+		return merry.Wrap(err)
 	case success := <-successExitChan:
 		llog.Infof("destroy cluster %v", success)
 		return nil

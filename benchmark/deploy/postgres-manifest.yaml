@@ -11,7 +11,7 @@ metadata:
 spec:
   dockerImage: registry.opensource.zalan.do/acid/spilo-13:2.0-p2
   teamId: "acid"
-  numberOfInstances: 2
+  numberOfInstances: 3
   users:  # Application/Robot users
     stroppy:
     - superuser
@@ -84,7 +84,7 @@ spec:
       jit: 'on'
   volume:
     size: 1Gi
-#    storageClass: my-sc
+    storageClass: local-path
 #    iops: 1000  # for EBS gp3
 #    throughput: 250  # in MB/s for EBS gp3
   additionalVolumes:
@@ -141,6 +141,7 @@ spec:
     - hostssl    all          +zalandos    127.0.0.1/32   pam
     - host       all          all          127.0.0.1/32   md5
     - host       all          all          172.17.0.1/16  md5
+    - host       all          all          10.0.0.0/8     md5
     - hostssl    all          +zalandos    ::1/128        pam
     - host       all          all          ::1/128        md5
     - hostssl    replication  standby      all            md5
@@ -236,3 +237,18 @@ spec:
 #              operator: In
 #              values:
 #                - enabled
+
+---
+apiVersion: v1
+data:
+  # stroppy
+  password: c3Ryb3BweQ==
+  username: c3Ryb3BweQ==
+kind: Secret
+metadata:
+  labels:
+    application: spilo
+    cluster-name: acid-postgres-cluster
+    team: acid
+  name: stroppy.acid-postgres-cluster.credentials.postgresql.acid.zalan.do
+type: Opaqu
