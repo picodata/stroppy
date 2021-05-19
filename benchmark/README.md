@@ -23,7 +23,11 @@ make deploy_yandex
 
 # Предварительные условия перед построением проекта на macOS:
 
-перед выполнением команды make all необходимо:
+Перед выполнением команды make all необходимо:
+
+Установить, если не установлены macports по инструкции по ссылке:
+
+[MacPorts Quckstart](https://www.macports.org/install.php)
 
 1. установить в систему библиотеку foundationdb, для чего выполнить команду port install foundationdb
 2. добавить символические ссылки на каталоги включаемых файлов и библиотек в общесистемную директорию:
@@ -58,4 +62,3 @@ make all
 make fdb_init  
 make fdb_pop  
 make fdb_pay  
-
