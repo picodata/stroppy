@@ -35,6 +35,8 @@ linters:
     - interfacer
     - godox
     - godot
+    - gochecknoglobals
+    - exhaustivestruct
 
 issues:
   # Maximum issues count per one linter. Set to 0 to disable. Default is 50.

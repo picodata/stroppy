@@ -1,26 +1,28 @@
-package main
+package funcs
 
 import (
 	"sync"
 
+	"gitlab.com/picodata/benchmark/stroppy/internal/database"
+	"gitlab.com/picodata/benchmark/stroppy/internal/model"
+
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/benchmark/stroppy/model"
 )
 
-func recoveryWorker(cluster CustomTxTransfer, oracle *Oracle, payStats *PayStats,
+func recoveryWorker(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats,
 	wg *sync.WaitGroup) {
 	defer wg.Done()
 
-	var c = ClientCustomTx{}
+	c := ClientCustomTx{}
 	c.Init(cluster, oracle, payStats)
 
 loop:
 	for {
-		transfer_id, more := <-q.queue
+		transferId, more := <-q.queue
 		if !more {
 			break loop
 		}
-		c.RecoverTransfer(transfer_id)
+		c.RecoverTransfer(transferId)
 	}
 }
 
@@ -28,17 +30,19 @@ type RecoveryQueue struct {
 	queue    chan model.TransferId
 	wg       sync.WaitGroup
 	cluster  CustomTxTransfer
-	oracle   *Oracle
+	oracle   *database.Oracle
 	payStats *PayStats
 }
 
-func (q *RecoveryQueue) Init(cluster CustomTxTransfer, oracle *Oracle, payStats *PayStats) {
+func (q *RecoveryQueue) Init(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	q.cluster = cluster
 	q.oracle = oracle
 	q.payStats = payStats
+
 	// Recovery is recursive, create the channels first
 	// what kind of magic number 4096000 is?
-	q.queue = make(chan model.TransferId, 4096000)
+	const queueCapacity = 4096000
+	q.queue = make(chan model.TransferId, queueCapacity)
 }
 
 func (q *RecoveryQueue) StartRecoveryWorker() {
@@ -58,7 +62,7 @@ func RecoverTransfer(transferId model.TransferId) {
 }
 
 func Recover() {
-	var c = ClientCustomTx{}
+	c := ClientCustomTx{}
 	c.Init(q.cluster, q.oracle, q.payStats)
 
 	llog.Infof("Fetching dead transfers")
@@ -75,8 +79,7 @@ func Recover() {
 	}
 }
 
-func RecoveryStart(cluster CustomTxTransfer, oracle *Oracle, payStats *PayStats) {
-
+func RecoveryStart(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	q.Init(cluster, oracle, payStats)
 
 	// Start background fiber working on the queue to

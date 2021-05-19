@@ -1,4 +1,4 @@
-package main
+package funcs
 
 import (
 	"io/ioutil"
@@ -240,12 +240,14 @@ func setMasterBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal, pl
 	masterBody.SetAttributeTraversal("metadata", stringSSHKeys)
 }
 
-// prepare - сформировать файл конфигурации для провайдера
-func prepare(cpu int, ram int, disk int, platform string, nodes int) error {
+// Prepare - сформировать файл конфигурации для провайдера
+func Prepare(cpu int, ram int, disk int, platform string, nodes int) error {
 	llog.Infoln("Starting generation provider configuration file")
+
 	providerFile := hcl2.NewEmptyFile()
 	providerFileBody := providerFile.Body()
 	providerFileBody.AppendNewline()
+
 	/* формируем строку вида { ssh-keys = "ubuntu:${file("id_rsa.pub")}"},
 	чтобы не усложнять код преобразованиями из hcl в cty*/
 	//nolint:exhaustivestruct
@@ -253,6 +255,7 @@ func prepare(cpu int, ram int, disk int, platform string, nodes int) error {
 		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"id_rsa"},
 		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
 	}
+
 	setTerraformBlock(providerFileBody)
 	setIamServiceAccountBlock(providerFileBody)
 	setResourceManagerBlock(providerFileBody)
@@ -261,10 +264,12 @@ func prepare(cpu int, ram int, disk int, platform string, nodes int) error {
 	setComputeImageBlock(providerFileBody)
 	setWorkersBlock(providerFileBody, stringSSHKeys, cpu, ram, disk, platform, nodes)
 	setMasterBlock(providerFileBody, stringSSHKeys, platform)
-	err := ioutil.WriteFile(providerFilePath, providerFile.Bytes(), 0600)
+
+	err := ioutil.WriteFile(providerFilePath, providerFile.Bytes(), 0o600)
 	if err != nil {
 		return merry.Prepend(err, "failed to write provider configuration file")
 	}
+
 	llog.Infoln("Generation provider configuration file: success")
 	return nil
 }

@@ -1,4 +1,4 @@
-package main
+package funcs
 
 import (
 	"bufio"
@@ -13,12 +13,15 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	"gitlab.com/picodata/benchmark/stroppy/pkg/sshtunnel"
+	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+
 	"github.com/ansel1/merry"
 	scp "github.com/bramvdbogaerde/go-scp"
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
-	"gitlab.com/picodata/benchmark/stroppy/sshtunnel"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	"k8s.io/client-go/tools/clientcmd"
@@ -75,7 +78,7 @@ type tunnelToCluster struct {
 	localPort *int
 }
 
-var errPortCheck = errors.New("port check failed")
+var errPortCheck = errors.New("port Check failed")
 
 type TemplatesConfig struct {
 	Yandex Configurations
@@ -101,6 +104,7 @@ type ConfigurationUnitParams struct {
 // installTerraform - установить terraform, если не установлен
 func installTerraform() error {
 	llog.Infoln("Preparing the installation terraform...")
+
 	downloadArchiveCmd := exec.Command("curl", "-O",
 		"https://releases.hashicorp.com/terraform/0.14.7/terraform_0.14.7_linux_amd64.zip")
 	downloadArchiveCmd.Dir = terraformWorkDir
@@ -108,6 +112,7 @@ func installTerraform() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to download archive of terraform")
 	}
+
 	unzipArchiveCmd := exec.Command("unzip", "terraform_0.14.7_linux_amd64.zip")
 	llog.Infoln(unzipArchiveCmd.String())
 	unzipArchiveCmd.Dir = terraformWorkDir
@@ -115,12 +120,14 @@ func installTerraform() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to unzip archive of terraform")
 	}
+
 	rmArchiveCmd := exec.Command("rm", "terraform_0.14.7_linux_amd64.zip")
 	rmArchiveCmd.Dir = terraformWorkDir
 	err = rmArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to remove archive of terraform")
 	}
+
 	installCmd := exec.Command("sudo", "install", "terraform", "/usr/bin/terraform")
 	llog.Infoln(installCmd.String())
 	installCmd.Dir = terraformWorkDir
@@ -128,6 +135,7 @@ func installTerraform() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to install terraform")
 	}
+
 	tabCompleteCmd := exec.Command("terraform", "-install-autocomplete")
 	llog.Infoln(tabCompleteCmd.String())
 	tabCompleteCmd.Dir = terraformWorkDir
@@ -135,18 +143,21 @@ func installTerraform() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to add Tab complete to terraform")
 	}
+
 	return nil
 }
 
 // terraformInit - подготовить среду для развертывания
 func terraformInit() error {
+	llog.Infoln("Initializating terraform...")
+
 	initCmd := exec.Command("terraform", "init")
 	initCmd.Dir = terraformWorkDir
-	llog.Infoln("Initializating terraform...")
 	initCmdResult := initCmd.Run()
 	if initCmdResult != nil {
 		return merry.Wrap(initCmdResult)
 	}
+
 	llog.Infoln("Terraform initialized")
 	return nil
 }
@@ -154,9 +165,10 @@ func terraformInit() error {
 var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
 // terraformPrepare - заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
-func terraformPrepare(templatesConfig TemplatesConfig, settings DeploySettings) error {
+func terraformPrepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
 	var templatesInit []ConfigurationUnitParams
-	flavor := settings.flavor
+
+	flavor := settings.Flavor
 	switch flavor {
 	case "small":
 		templatesInit = templatesConfig.Yandex.Small
@@ -171,11 +183,16 @@ func terraformPrepare(templatesConfig TemplatesConfig, settings DeploySettings) 
 	default:
 		return merry.Wrap(errChooseConfig)
 	}
-	err := prepare(templatesInit[2].CPU, templatesInit[3].RAM,
-		templatesInit[4].Disk, templatesInit[1].Platform, settings.nodes)
+
+	err := Prepare(templatesInit[2].CPU,
+		templatesInit[3].RAM,
+		templatesInit[4].Disk,
+		templatesInit[1].Platform,
+		settings.Nodes)
 	if err != nil {
 		return merry.Wrap(err)
 	}
+
 	return nil
 }
 
@@ -183,23 +200,27 @@ func terraformPrepare(templatesConfig TemplatesConfig, settings DeploySettings) 
 func terraformApply() error {
 	checkLaunchTerraform := exec.Command("terraform", "show")
 	checkLaunchTerraform.Dir = terraformWorkDir
+
 	checkLaunchTerraformResult, err := checkLaunchTerraform.CombinedOutput()
 	if err != nil {
-		return merry.Prepend(err, "failed to check terraform applying")
+		return merry.Prepend(err, "failed to Check terraform applying")
 	}
+
 	// при незапущенном кластера terraform возвращает пустую строку длиной 13 символов, либо no state c пробелами до 13
 	if len(checkLaunchTerraformResult) > linesNotInitTerraformShow {
 		llog.Infof("terraform already applied, deploy continue...")
 		return nil
 	}
+
+	llog.Infoln("Applying terraform...")
 	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
 	applyCMD.Dir = terraformWorkDir
-	llog.Infoln("Applying terraform...")
 	result, err := applyCMD.CombinedOutput()
 	if err != nil {
 		llog.Errorln(string(result))
 		return merry.Wrap(err)
 	}
+
 	log.Printf("Terraform applied")
 	return nil
 }
@@ -211,8 +232,9 @@ func terraformDestroy() error {
 
 	stdout, err := destroyCmd.StdoutPipe()
 	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe for logging destroy of cluster")
+		return merry.Prepend(err, "failed creating command stdout pipe for logging destroy of cluster")
 	}
+
 	stdoutReader := bufio.NewReader(stdout)
 	go handleReader(stdoutReader)
 
@@ -241,30 +263,39 @@ func getIPMapping() (mapAddresses, error) {
 	if err != nil {
 		return mapIP, merry.Prepend(err, "failed to read file terraform.tfstate")
 	}
+
 	masterExternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
 	masterExternalIP := masterExternalIPArray.Get("attributes").Get("network_interface.0").Get("nat_ip_address")
 	mapIP.masterExternalIP = masterExternalIP.Str
+
 	masterInternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
 	masterInternalIP := masterInternalIPArray.Get("attributes").Get("network_interface.0").Get("ip_address")
 	mapIP.masterInternalIP = masterInternalIP.Str
+
 	metricsExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	metricsExternalIP := metricsExternalIPArray.Get("instances.0").Get("network_interface.0").Get("nat_ip_address")
 	mapIP.metricsExternalIP = metricsExternalIP.Str
+
 	metricsInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	metricsInternalIP := metricsInternalIPArray.Get("instances.0").Get("network_interface.0").Get("ip_address")
 	mapIP.metricsInternalIP = metricsInternalIP.Str
+
 	ingressExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	ingressExternalIP := ingressExternalIPArray.Get("instances.1").Get("network_interface.0").Get("nat_ip_address")
 	mapIP.ingressExternalIP = ingressExternalIP.Str
+
 	ingressInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	ingressInternalIP := ingressInternalIPArray.Get("instances.1").Get("network_interface.0").Get("ip_address")
 	mapIP.ingressInternalIP = ingressInternalIP.Str
+
 	postgresExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	postgresExternalIP := postgresExternalIPArray.Get("instances.2").Get("network_interface.0").Get("nat_ip_address")
 	mapIP.postgresExternalIP = postgresExternalIP.Str
+
 	postgresInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	postgresInternalIP := postgresInternalIPArray.Get("instances.2").Get("network_interface.0").Get("ip_address")
 	mapIP.postgresInternalIP = postgresInternalIP.Str
+
 	return mapIP, nil
 }
 
@@ -325,7 +356,7 @@ func copyToMaster() error {
 	for i := 0; i <= connectionRetryCount; i++ {
 		masterPortAvailable = isRemotePortOpen(masterExternalIP, 22)
 		if !masterPortAvailable {
-			llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
+			llog.Infof("status of Check the master's port 22:%v. Repeat #%v", errPortCheck, i)
 			time.Sleep(execTimeout * time.Second)
 		} else {
 			break
@@ -495,7 +526,7 @@ func deployKuberneters() error {
 	*/
 	checkDeploy, err := checkDeployMaster()
 	if err != nil {
-		return merry.Prepend(err, "failed to check deploy k8s in master node")
+		return merry.Prepend(err, "failed to Check deploy k8s in master node")
 	}
 	if checkDeploy {
 		llog.Infoln("k8s already success deployed")
@@ -737,7 +768,7 @@ func readCommandFromInput(portForwardStruct tunnelToCluster,
 		sc := bufio.NewScanner(os.Stdin)
 		for sc.Scan() {
 			consoleCmd := sc.Text()
-			StatsInit()
+			statistics.StatsInit()
 			switch consoleCmd {
 			case "quit":
 				llog.Println("Exiting...")
@@ -823,10 +854,10 @@ func executePop(cmdType string, databaseType string) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	if err := populate(settings); err != nil {
+	if err := Populate(settings); err != nil {
 		llog.Errorf("%v", err)
 	}
-	balance, err := check(settings, nil)
+	balance, err := Check(settings, nil)
 	if err != nil {
 		llog.Errorf("%v", err)
 	}
@@ -840,18 +871,18 @@ func executePay(cmdType string, databaseType string) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	sum, err := check(settings, nil)
+	sum, err := Check(settings, nil)
 	if err != nil {
 		llog.Errorf("%v", err)
 	}
 
 	llog.Infof("Initial balance: %v", sum)
 
-	if err := pay(settings); err != nil {
+	if err := Pay(settings); err != nil {
 		llog.Errorf("%v", err)
 	}
-	if settings.check {
-		balance, err := check(settings, sum)
+	if settings.Check {
+		balance, err := Check(settings, sum)
 		if err != nil {
 			llog.Errorf("%v", err)
 		}
@@ -861,29 +892,31 @@ func executePay(cmdType string, databaseType string) error {
 }
 
 // readConfig - прочитать конфигурационный файл test_config.json
-func readConfig(cmdType string, databaseType string) (*DatabaseSettings, error) {
-	settings := Defaults()
+func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, error) {
+	settings := config.Defaults()
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read config file")
 	}
-	settings.log_level = gjson.Parse(string(data)).Get("log_level").Str
-	settings.banRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
-	settings.databaseType = databaseType
+
+	settings.LogLevel = gjson.Parse(string(data)).Get("log_level").Str
+	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
+	settings.DatabaseType = databaseType
 	if databaseType == "postgres" {
-		settings.dbURL = "postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable"
+		settings.DBURL = "postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable"
 	} else if databaseType == "fdb" {
-		settings.dbURL = "fdb.cluster"
+		settings.DBURL = "fdb.cluster"
 	}
 	if (cmdType == "postgres pop") || (cmdType == "fdb pop") {
-		settings.count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
+		settings.Count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
 	} else if (cmdType == "postgres pay") || (cmdType == "fdb pay") {
-		settings.count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
-		settings.check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("check").Bool()
-		settings.zipfian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
-		settings.oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
+		settings.Count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
+		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
+		settings.ZIPFian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
+		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
 	}
-	return &settings, nil
+
+	return settings, nil
 }
 
 // checkDeployMaster - проверить, что все поды k8s в running, что подтверждает успешность деплоя k8s
@@ -892,16 +925,19 @@ func checkDeployMaster() (bool, error) {
 	if err != nil {
 		return false, merry.Prepend(err, "failed to get IP addresses for copy from master")
 	}
+
 	masterExternalIP := mapIP.masterExternalIP
 	client, err := getClientSSH(masterExternalIP)
 	if err != nil {
-		return false, merry.Prepend(err, "failed to create ssh connection for check deploy")
+		return false, merry.Prepend(err, "failed to create ssh connection for Check deploy")
 	}
+
 	checkSession, err := client.NewSession()
 	if err != nil {
-		return false, merry.Prepend(err, "failed to open ssh connection for check deploy")
+		return false, merry.Prepend(err, "failed to open ssh connection for Check deploy")
 	}
-	checkCmd := "kubectl get pods --all-namespaces"
+
+	const checkCmd = "kubectl get pods --all-namespaces"
 	resultCheckCmd, err := checkSession.CombinedOutput(checkCmd)
 	if err != nil {
 		//nolint:errorlint
@@ -914,11 +950,13 @@ func checkDeployMaster() (bool, error) {
 			return false, nil
 		}
 	}
+
 	countPods := strings.Count(string(resultCheckCmd), "Running")
 	if countPods < runningPodsCount {
 		return false, nil
 	}
-	checkSession.Close()
+
+	_ = checkSession.Close()
 	return true, nil
 }
 
@@ -993,7 +1031,7 @@ func closePortForward(portForward tunnelToCluster) {
 	llog.Infoln("status of port-forward's close: success")
 }
 
-func deploy(settings DeploySettings) error {
+func Deploy(settings *config.DeploySettings) error {
 	llog.Traceln(settings)
 	checkVersionCmd, err := exec.Command("terraform", "version").Output()
 	if err != nil {
@@ -1007,34 +1045,42 @@ func deploy(settings DeploySettings) error {
 			}
 		}
 	}
+
 	if strings.Contains(string(checkVersionCmd), "version") {
 		log.Printf("Founded version %v", string(checkVersionCmd[:17]))
 	}
+
 	templatesConfig, err := readTemplates()
 	if err != nil {
 		return merry.Prepend(err, "failed to read templates.yml")
 	}
+
 	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform (пока yandex)
 	err = terraformPrepare(*templatesConfig, settings)
 	if err != nil {
 		return merry.Prepend(err, "failed to prepare terraform")
 	}
+
 	err = terraformInit()
 	if err != nil {
 		return merry.Prepend(err, "failed to init terraform")
 	}
+
 	err = terraformApply()
 	if err != nil {
 		return merry.Prepend(err, "failed to apply terraform")
 	}
+
 	err = copyToMaster()
 	if err != nil {
 		return merry.Prepend(err, "failed to сopy RSA to cluster")
 	}
+
 	err = deployKuberneters()
 	if err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
+
 	err = copyConfigFromMaster()
 	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from Master")
@@ -1078,6 +1124,7 @@ func deploy(settings DeploySettings) error {
 	popChan := make(chan error)
 	payChan := make(chan error)
 	go readCommandFromInput(portForward, errorExitChan, successExitChan, popChan, payChan)
+
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)

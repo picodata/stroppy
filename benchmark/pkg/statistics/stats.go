@@ -1,4 +1,4 @@
-package main
+package statistics
 
 import (
 	"fmt"
@@ -49,7 +49,7 @@ type stats struct {
 
 var s stats
 
-type cookie struct {
+type Cookie struct {
 	time time.Time
 }
 
@@ -101,16 +101,17 @@ func StatsInit() {
 	s.summary.Reset()
 	s.queue = make(chan time.Duration, 1000)
 	s.done = make(chan bool, 1)
+
 	go statsWorker()
 }
 
-func StatsRequestStart() cookie {
-	return cookie{
+func StatsRequestStart() Cookie {
+	return Cookie{
 		time: time.Now(),
 	}
 }
 
-func StatsRequestEnd(c cookie) {
+func StatsRequestEnd(c Cookie) {
 	s.queue <- time.Since(c.time)
 }
 

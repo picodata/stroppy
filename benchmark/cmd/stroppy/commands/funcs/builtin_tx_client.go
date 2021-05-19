@@ -1,4 +1,4 @@
-package main
+package funcs
 
 import (
 	"errors"
@@ -7,54 +7,59 @@ import (
 	"sync/atomic"
 	"time"
 
+	"gitlab.com/picodata/benchmark/stroppy/internal/database"
+	cluster2 "gitlab.com/picodata/benchmark/stroppy/internal/database/cluster"
+	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	fixed_random_source2 "gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
+	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
+	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/benchmark/stroppy/fixed_random_source"
-	"gitlab.com/picodata/benchmark/stroppy/model"
-	"gitlab.com/picodata/benchmark/stroppy/store"
 )
 
 const maxTxRetries = 10
 
 var maxSleepDuration, _ = time.ParseDuration("1s")
 
+// BuiltinTxTransfer
 // This interface describe the interaction between general Pay code and
 // some db cluster that is capable of performing ACID transactions.
 //
 // should satisfy PredictableCluster interface
-type BuiltinTxTranfer interface {
-	GetClusterType() store.DBClusterType
+type BuiltinTxTransfer interface {
+	GetClusterType() cluster2.DBClusterType
 	// provide seed and count of accounts for this cluster.
-	FetchSettings() (store.ClusterSettings, error)
+	FetchSettings() (cluster2.ClusterSettings, error)
 
 	// MakeAtomicTransfer performs transfer operation using db's builtin ACID transactions
 	// This methods should not return ErrNoRows - if one of accounts does not exist we should simply proceed further
-	MakeAtomicTransfer(t *model.Transfer) error
+	MakeAtomicTransfer(t *model2.Transfer) error
 
-	PredictableCluster
+	database.PredictableCluster
 }
 
 type ClientBuiltinTx struct {
-	cluster BuiltinTxTranfer
+	cluster BuiltinTxTransfer
 	// oracle is optional, because it is to hard to implement
 	// for large dbs
-	oracle   *Oracle
+	oracle   *database.Oracle
 	payStats *PayStats
 }
 
-func (c *ClientBuiltinTx) Init(cluster BuiltinTxTranfer, oracle *Oracle, payStats *PayStats) {
+func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	c.cluster = cluster
 	c.oracle = oracle
 	c.payStats = payStats
 }
 
 //nolint:gosec
-func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
+func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
-			if errors.Is(err, store.ErrTxRollback) {
+			if errors.Is(err, cluster2.ErrTxRollback) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
@@ -68,14 +73,14 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 
 				continue
 			}
-			if errors.Is(err, store.ErrInsufficientFunds) {
-				atomic.AddUint64(&c.payStats.insufficient_funds, 1)
+			if errors.Is(err, cluster2.ErrInsufficientFunds) {
+				atomic.AddUint64(&c.payStats.InsufficientFunds, 1)
 				break
 			}
 			// that means one of accounts was not found
 			// and we should proceed to the next transfer
-			if errors.Is(err, store.ErrNoRows) {
-				atomic.AddUint64(&c.payStats.no_such_account, 1)
+			if errors.Is(err, cluster2.ErrNoRows) {
+				atomic.AddUint64(&c.payStats.NoSuchAccount, 1)
 				break
 			}
 			atomic.AddUint64(&c.payStats.errors, 1)
@@ -89,30 +94,30 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 }
 
 func payWorkerBuiltinTx(
-	settings DatabaseSettings,
-	n_transfers int,
+	settings *config.DatabaseSettings,
+	nTransfers int,
 	zipfian bool,
-	dbCluster BuiltinTxTranfer,
-	oracle *Oracle,
+	dbCluster BuiltinTxTransfer,
+	oracle *database.Oracle,
 	payStats *PayStats,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
 
 	var client ClientBuiltinTx
-	var randSource fixed_random_source.FixedRandomSource
+	var randSource fixed_random_source2.FixedRandomSource
 	client.Init(dbCluster, oracle, payStats)
 	clusterSettings, err := dbCluster.FetchSettings()
 	if err != nil {
 		llog.Fatalf("Got a fatal error fetching cluster settings: %v", err)
 	}
 
-	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.banRangeMultiplier)
-	for i := 0; i < n_transfers; {
-		t := new(model.Transfer)
+	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.BanRangeMultiplier)
+	for i := 0; i < nTransfers; {
+		t := new(model2.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
 
-		cookie := StatsRequestStart()
+		cookie := statistics.StatsRequestStart()
 		if _, err := client.MakeAtomicTransfer(t); err != nil {
 			if IsTransientError(err) {
 				llog.Tracef("[%v] Transfer failed: %v", t.Id, err)
@@ -122,34 +127,36 @@ func payWorkerBuiltinTx(
 			}
 		} else {
 			i++
-			StatsRequestEnd(cookie)
+			statistics.StatsRequestEnd(cookie)
 		}
 	}
 }
 
-// TO DO: расширить логику, либо убрать err в выходных параметрах
+// TODO: расширить логику, либо убрать err в выходных параметрах
 //nolint:unparam
-func payBuiltinTx(settings *DatabaseSettings, cluster BuiltinTxTranfer, oracle *Oracle) (*PayStats, error) {
-	var wg sync.WaitGroup
-	var payStats PayStats
+func payBuiltinTx(settings *config.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+	var (
+		wg       sync.WaitGroup
+		payStats PayStats
+	)
 
-	transfers_per_worker := settings.count / settings.workers
-	remainder := settings.count - transfers_per_worker*settings.workers
+	transfersPerWorker := settings.Count / settings.Workers
+	remainder := settings.Count - transfersPerWorker*settings.Workers
 
 	// is recovery needed for builtin? Maybe after x retries for Tx
 	// TODO: implement recovery
 
-	for i := 0; i < settings.workers; i++ {
+	for i := 0; i < settings.Workers; i++ {
 		wg.Add(1)
-		n_transfers := transfers_per_worker
+		nTransfers := transfersPerWorker
 		if i < remainder {
-			n_transfers++
+			nTransfers++
 		}
-		go payWorkerBuiltinTx(*settings, n_transfers, settings.zipfian, cluster, oracle, &payStats, &wg)
+		go payWorkerBuiltinTx(settings, nTransfers, settings.ZIPFian, cluster, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()
-	StatsReportSummary()
+	statistics.StatsReportSummary()
 	if oracle != nil {
 		oracle.FindBrokenAccounts(cluster)
 	}

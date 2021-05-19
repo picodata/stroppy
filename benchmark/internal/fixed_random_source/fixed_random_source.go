@@ -49,8 +49,10 @@ type RandomSettings struct {
 	bansPerBic int
 }
 
-var once sync.Once
-var rs *RandomSettings
+var (
+	once sync.Once
+	rs   *RandomSettings
+)
 
 //nolint:gosec
 func randomSettings(count int, seed int, banRangeMultiplier float64) *RandomSettings {
