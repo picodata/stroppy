@@ -4,7 +4,6 @@ fdb.cluster
 .*
 id_rsa.* 
 id_rsa
-config
 yandex_compute_instance_group.tf
 *.tfstate
 *.tfstate.backup

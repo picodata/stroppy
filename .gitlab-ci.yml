@@ -20,7 +20,6 @@ lint:
     GIT_FETCH_EXTRA_FLAGS: refs/heads/master:refs/remotes/origin/master
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
-    # - go get gitlab.com/picodata/stroppy/pkg/database/config
     - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 1m30s
 
 docker:

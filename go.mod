@@ -27,7 +27,3 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/client-go v0.21.0
 )
-
-// replace (
-// 	gitlab.com/picodata/stroppy/pkg/database/config latest => ./pkg/database/config latest
-// )
