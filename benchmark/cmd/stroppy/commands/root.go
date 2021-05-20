@@ -4,12 +4,12 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/statistics"
 )
 
 func Execute() {
-	settings := config2.Defaults()
+	settings := config.Defaults()
 
 	rootCmd := &cobra.Command{
 		Use:   "lightest [pop|pay|deploy]",
@@ -79,7 +79,7 @@ The default value of banRangeMultipluer is 1.1.`)
 
 	rootCmd.AddCommand(newPopulateCommand(settings),
 		newPayCommand(settings),
-		newDeployCommand(config2.DefaultsDeploy()))
+		newDeployCommand(config.DefaultsDeploy()))
 
 	_ = rootCmd.Execute()
 }

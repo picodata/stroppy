@@ -2,16 +2,16 @@ package funcs
 
 import (
 	"errors"
-	cluster2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
-	"gitlab.com/picodata/benchmark/stroppy/internal/model"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+	"gitlab.com/picodata/stroppy/benchmark/internal/fixed_random_source"
+	"gitlab.com/picodata/stroppy/benchmark/internal/model"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/statistics"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -26,7 +26,7 @@ type ClusterPopulatable interface {
 	// For now data model for PostgreSQL is copied from lighest, but should be adjusted to correspond
 	// to planned workload in the future
 	BootstrapDB(count int, seed int) error
-	FetchSettings() (cluster2.ClusterSettings, error)
+	FetchSettings() (cluster.ClusterSettings, error)
 
 	InsertAccount(acc model.Account) error
 }
@@ -36,22 +36,22 @@ type PopStats struct {
 	duplicates uint64
 }
 
-func Populate(settings *config2.DatabaseSettings) error {
+func Populate(settings *config.DatabaseSettings) error {
 	var (
 		err           error
 		targetCluster ClusterPopulatable
 	)
 
 	switch settings.DatabaseType {
-	case cluster2.PostgresType:
+	case cluster.PostgresType:
 		var closeConns func()
-		targetCluster, closeConns, err = cluster2.NewPostgresCluster(settings.DBURL)
+		targetCluster, closeConns, err = cluster.NewPostgresCluster(settings.DBURL)
 		if err != nil {
 			return merry.Wrap(err)
 		}
 		defer closeConns()
-	case cluster2.FDBType:
-		targetCluster, err = cluster2.NewFDBCluster(settings.DBURL)
+	case cluster.FDBType:
+		targetCluster, err = cluster.NewFDBCluster(settings.DBURL)
 		if err != nil {
 			return merry.Wrap(err)
 		}
@@ -93,12 +93,12 @@ func Populate(settings *config2.DatabaseSettings) error {
 			for {
 				err := targetCluster.InsertAccount(acc)
 				if err != nil {
-					if errors.Is(err, cluster2.ErrDuplicateKey) {
+					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
 						break
 					}
 					atomic.AddUint64(&stats.errors, 1)
-					if errors.Is(err, cluster2.ErrTimeoutExceeded) {
+					if errors.Is(err, cluster.ErrTimeoutExceeded) {
 						llog.Errorf("Retrying after request error: %v", err)
 						time.Sleep(time.Millisecond)
 					}

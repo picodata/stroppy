@@ -6,8 +6,8 @@ import (
 	"math/rand"
 
 	"github.com/ansel1/merry"
-	hcl "github.com/hashicorp/hcl/v2"
-	hcl2 "github.com/hashicorp/hcl/v2/hclwrite"
+	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclwrite"
 	llog "github.com/sirupsen/logrus"
 	"github.com/zclconf/go-cty/cty"
 )
@@ -32,7 +32,7 @@ func randStringID() string {
 }
 
 // setTerraformBlock - задать блок требований к провайдеру
-func setTerraformBlock(providerFileBody *hcl2.Body) {
+func setTerraformBlock(providerFileBody *hclwrite.Body) {
 	terraformBlock := providerFileBody.AppendNewBlock("terraform", nil)
 	terraformBody := terraformBlock.Body()
 	requiredProvidersBlock := terraformBody.AppendNewBlock("required_providers", nil)
@@ -42,7 +42,7 @@ func setTerraformBlock(providerFileBody *hcl2.Body) {
 }
 
 // setIamServiceAccountBlock - задать блок настроек управления сервисными аккаунтами (IAM)
-func setIamServiceAccountBlock(providerFileBody *hcl2.Body) {
+func setIamServiceAccountBlock(providerFileBody *hclwrite.Body) {
 	iamServiceAccountBlock := providerFileBody.AppendNewBlock("resource",
 		[]string{"yandex_iam_service_account", "instances"})
 	iamServiceAccountBody := iamServiceAccountBlock.Body()
@@ -52,7 +52,7 @@ func setIamServiceAccountBlock(providerFileBody *hcl2.Body) {
 }
 
 // setResourceManagerBlock - задать блок единой привязки в рамках IAM для существующей папки менеджера ресурсов.
-func setResourceManagerBlock(providerFileBody *hcl2.Body) {
+func setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 	resourceManagerParams := []string{"yandex_resourcemanager_folder_iam_binding", "editor"}
 	resourceManagerBlock := providerFileBody.AppendNewBlock("resource", resourceManagerParams)
 	resourceManagerBody := resourceManagerBlock.Body()
@@ -85,7 +85,7 @@ func setResourceManagerBlock(providerFileBody *hcl2.Body) {
 }
 
 // setVpcNetworkBody - задать блок управления сетью cloud
-func setVpcNetworkBody(providerFileBody *hcl2.Body) {
+func setVpcNetworkBody(providerFileBody *hclwrite.Body) {
 	vpcNetworkBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_network", "internal"})
 	vpcNetworkBody := vpcNetworkBlock.Body()
 	vpcNetworkBody.SetAttributeValue("name", cty.StringVal("internal"))
@@ -99,7 +99,7 @@ var (
 )
 
 // setVpcSubnetBody - задать блок управления подсетью cloud
-func setVpcSubnetBody(providerFileBody *hcl2.Body) {
+func setVpcSubnetBody(providerFileBody *hclwrite.Body) {
 	networkID := randStringID()
 	vpcSubnetBlockName = fmt.Sprintf("internal-a-%s", networkID)
 	vpcInternalNetworkName = fmt.Sprintf("internal-%s", networkID)
@@ -123,7 +123,7 @@ func setVpcSubnetBody(providerFileBody *hcl2.Body) {
 }
 
 // setComputeImageBlock - задать блок управления образами cloud
-func setComputeImageBlock(providerFileBody *hcl2.Body) {
+func setComputeImageBlock(providerFileBody *hclwrite.Body) {
 	computeImageBlock := providerFileBody.AppendNewBlock("data", []string{"yandex_compute_image", "ubuntu_image"})
 	computeImageBody := computeImageBlock.Body()
 	computeImageBody.SetAttributeValue("family", cty.StringVal("ubuntu-2004-lts"))
@@ -136,7 +136,7 @@ const zoneNameTemplate = "ru-central1-a-%s"
 var zoneName string
 
 // setWorkersBlock - задать блок управления настройками worker-машин
-func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
+func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal,
 	cpu int, ram int, disk int, platform string, nodes int) {
 	workersBlockName := fmt.Sprintf("workers-1-%s", randStringID())
 
@@ -239,7 +239,7 @@ func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 }
 
 // setMasterBlock - задать блок управления настройками master-машин
-func setMasterBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal, platform string) {
+func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal, platform string) {
 	computeInstanceName := fmt.Sprintf("master-%s", randStringID())
 	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", computeInstanceName})
 	masterBody := masterBlock.Body()
@@ -286,7 +286,7 @@ func setMasterBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal, pl
 func Prepare(cpu int, ram int, disk int, platform string, nodes int) error {
 	llog.Infoln("Starting generation provider configuration file")
 
-	providerFile := hcl2.NewEmptyFile()
+	providerFile := hclwrite.NewEmptyFile()
 	providerFileBody := providerFile.Body()
 	providerFileBody.AppendNewline()
 

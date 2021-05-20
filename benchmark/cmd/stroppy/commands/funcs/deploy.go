@@ -4,7 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 	"io/ioutil"
 	"log"
 	"net"
@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/picodata/benchmark/stroppy/pkg/sshtunnel"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/sshtunnel"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/statistics"
 
 	"github.com/ansel1/merry"
-	scp "github.com/bramvdbogaerde/go-scp"
+	"github.com/bramvdbogaerde/go-scp"
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -165,7 +165,7 @@ func terraformInit() error {
 var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
 // terraformPrepare - заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
-func terraformPrepare(templatesConfig TemplatesConfig, settings *config2.DeploySettings) error {
+func terraformPrepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
 	var templatesInit []ConfigurationUnitParams
 
 	flavor := settings.Flavor
@@ -892,8 +892,8 @@ func executePay(cmdType string, databaseType string) error {
 }
 
 // readConfig - прочитать конфигурационный файл test_config.json
-func readConfig(cmdType string, databaseType string) (*config2.DatabaseSettings, error) {
-	settings := config2.Defaults()
+func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, error) {
+	settings := config.Defaults()
 	data, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read config file")
@@ -1031,7 +1031,7 @@ func closePortForward(portForward tunnelToCluster) {
 	llog.Infoln("status of port-forward's close: success")
 }
 
-func Deploy(settings *config2.DeploySettings) error {
+func Deploy(settings *config.DeploySettings) error {
 	llog.Traceln(settings)
 	checkVersionCmd, err := exec.Command("terraform", "version").Output()
 	if err != nil {

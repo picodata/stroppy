@@ -3,7 +3,7 @@ package database
 import (
 	"sync"
 
-	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
+	"gitlab.com/picodata/stroppy/benchmark/internal/model"
 
 	llog "github.com/sirupsen/logrus"
 	"gopkg.in/inf.v0"
@@ -11,7 +11,7 @@ import (
 
 type PredictableCluster interface {
 	// Return list of all present accounts
-	FetchAccounts() ([]model2.Account, error)
+	FetchAccounts() ([]model.Account, error)
 	// Provide balance and pending amount for an account for Oracle.
 	FetchBalance(bic string, ban string) (balance *inf.Dec, pendingAmount *inf.Dec, err error)
 }
@@ -20,53 +20,53 @@ type TrackingAccount struct {
 	bic        string
 	ban        string
 	balance    *inf.Dec
-	transferId model2.TransferId
+	transferId model.TransferId
 }
 
-func (acc *TrackingAccount) setTransfer(transferId model2.TransferId) {
-	if acc.transferId != model2.NilUuid && acc.transferId != transferId {
+func (acc *TrackingAccount) setTransfer(transferId model.TransferId) {
+	if acc.transferId != model.NilUuid && acc.transferId != transferId {
 		llog.Fatalf("setTransfer() on %v:%v: current transfer id %v, setting %v",
 			acc.bic, acc.ban, acc.transferId, transferId)
 	}
 	acc.transferId = transferId
 }
 
-func (acc *TrackingAccount) clearTransfer(transferId model2.TransferId) {
-	if acc.transferId != model2.NilUuid && acc.transferId != transferId {
+func (acc *TrackingAccount) clearTransfer(transferId model.TransferId) {
+	if acc.transferId != model.NilUuid && acc.transferId != transferId {
 		llog.Fatalf("clearTransfer() on %v:%v: current transfer id %v, clearing %v",
 			acc.bic, acc.ban, acc.transferId, transferId)
 	}
-	acc.transferId = model2.NilUuid
+	acc.transferId = model.NilUuid
 }
 
-func (acc *TrackingAccount) BeginDebit(transferId model2.TransferId, amount *inf.Dec) {
+func (acc *TrackingAccount) BeginDebit(transferId model.TransferId, amount *inf.Dec) {
 	acc.setTransfer(transferId)
 }
 
-func (acc *TrackingAccount) CompleteDebit(transferId model2.TransferId, amount *inf.Dec) {
+func (acc *TrackingAccount) CompleteDebit(transferId model.TransferId, amount *inf.Dec) {
 	acc.clearTransfer(transferId)
 	acc.balance.Sub(acc.balance, amount)
 }
 
-func (acc *TrackingAccount) BeginCredit(transferId model2.TransferId, amount *inf.Dec) {
+func (acc *TrackingAccount) BeginCredit(transferId model.TransferId, amount *inf.Dec) {
 	acc.setTransfer(transferId)
 }
 
-func (acc *TrackingAccount) CompleteCredit(transferId model2.TransferId, amount *inf.Dec) {
+func (acc *TrackingAccount) CompleteCredit(transferId model.TransferId, amount *inf.Dec) {
 	acc.clearTransfer(transferId)
 	acc.balance.Add(acc.balance, amount)
 }
 
 type Oracle struct {
 	acs       map[string]*TrackingAccount
-	transfers map[model2.TransferId]bool
+	transfers map[model.TransferId]bool
 	mux       sync.Mutex
 }
 
 func (o *Oracle) Init(cluster PredictableCluster) {
 	llog.Infof("Oracle enabled, loading account balances")
 	o.acs = make(map[string]*TrackingAccount)
-	o.transfers = make(map[model2.TransferId]bool)
+	o.transfers = make(map[model.TransferId]bool)
 	accounts, err := cluster.FetchAccounts()
 	if err != nil {
 		llog.Fatalf("%v", err)
@@ -80,7 +80,7 @@ func (o *Oracle) Init(cluster PredictableCluster) {
 	}
 }
 
-func (o *Oracle) lookupAccounts(acs []model2.Account) (*TrackingAccount, *TrackingAccount) {
+func (o *Oracle) lookupAccounts(acs []model.Account) (*TrackingAccount, *TrackingAccount) {
 	from, from_found := o.acs[acs[0].Bic+acs[0].Ban]
 	to, to_found := o.acs[acs[1].Bic+acs[1].Ban]
 	if (!from_found || !to_found) && acs[0].Found && acs[1].Found {
@@ -89,7 +89,7 @@ func (o *Oracle) lookupAccounts(acs []model2.Account) (*TrackingAccount, *Tracki
 	return from, to
 }
 
-func (o *Oracle) BeginTransfer(transferId model2.TransferId, acs []model2.Account, amount *inf.Dec) {
+func (o *Oracle) BeginTransfer(transferId model.TransferId, acs []model.Account, amount *inf.Dec) {
 	o.mux.Lock()
 	defer o.mux.Unlock()
 	if _, exists := o.transfers[transferId]; exists {
@@ -103,7 +103,7 @@ func (o *Oracle) BeginTransfer(transferId model2.TransferId, acs []model2.Accoun
 	}
 }
 
-func (o *Oracle) CompleteTransfer(transferId model2.TransferId, acs []model2.Account, amount *inf.Dec) {
+func (o *Oracle) CompleteTransfer(transferId model.TransferId, acs []model.Account, amount *inf.Dec) {
 	o.mux.Lock()
 	defer o.mux.Unlock()
 	if _, exists := o.transfers[transferId]; exists {

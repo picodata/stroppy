@@ -3,8 +3,8 @@ package funcs
 import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	cluster2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 	"gopkg.in/inf.v0"
 )
 
@@ -14,22 +14,22 @@ type CheckableCluster interface {
 	PersistTotal(total inf.Dec) error
 }
 
-func Check(settings *config2.DatabaseSettings, prev *inf.Dec) (*inf.Dec, error) {
+func Check(settings *config.DatabaseSettings, prev *inf.Dec) (*inf.Dec, error) {
 	var (
 		err         error
 		someCluster interface{}
 	)
 
 	switch settings.DatabaseType {
-	case cluster2.PostgresType:
+	case cluster.PostgresType:
 		var closeConns func()
-		someCluster, closeConns, err = cluster2.NewPostgresCluster(settings.DBURL)
+		someCluster, closeConns, err = cluster.NewPostgresCluster(settings.DBURL)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
 		defer closeConns()
-	case cluster2.FDBType:
-		someCluster, err = cluster2.NewFDBCluster(settings.DBURL)
+	case cluster.FDBType:
+		someCluster, err = cluster.NewFDBCluster(settings.DBURL)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
@@ -52,7 +52,7 @@ func Check(settings *config2.DatabaseSettings, prev *inf.Dec) (*inf.Dec, error) 
 	if prev == nil {
 		sum, err = targetCluster.FetchTotal()
 		if err != nil {
-			if err != cluster2.ErrNoRows {
+			if err != cluster.ErrNoRows {
 				llog.Fatalf("Failed to fetch the stored total: %v", err)
 			}
 			sum = nil

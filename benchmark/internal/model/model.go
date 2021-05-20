@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	fixed_random_source2 "gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
+	"gitlab.com/picodata/stroppy/benchmark/internal/fixed_random_source"
 
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
@@ -63,7 +63,7 @@ func (t *Transfer) InitAccounts() {
 	acs[1].PendingAmount = t.Amount
 }
 
-func (t *Transfer) InitRandomTransfer(randSource *fixed_random_source2.FixedRandomSource, zipfian bool) {
+func (t *Transfer) InitRandomTransfer(randSource *fixed_random_source.FixedRandomSource, zipfian bool) {
 	t.Amount = randSource.NewTransferAmount()
 	t.Acs = make([]Account, 2)
 	if zipfian {

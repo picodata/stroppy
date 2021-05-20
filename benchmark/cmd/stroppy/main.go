@@ -3,8 +3,8 @@ package main
 import (
 	"os"
 
-	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+	"gitlab.com/picodata/stroppy/benchmark/cmd/stroppy/commands"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/statistics"
 
 	llog "github.com/sirupsen/logrus"
 )

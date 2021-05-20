@@ -1,9 +1,9 @@
 package funcs
 
 import (
-	database2 "gitlab.com/picodata/benchmark/stroppy/pkg/database"
-	cluster2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 	"runtime"
 
 	"github.com/ansel1/merry"
@@ -16,7 +16,7 @@ import (
 func IsTransientError(err error) bool {
 	err = merry.Unwrap(err)
 
-	return err == cluster2.ErrTimeoutExceeded
+	return err == cluster.ErrTimeoutExceeded
 }
 
 var nClients uint64
@@ -29,7 +29,7 @@ type PayStats struct {
 	recoveries        uint64
 }
 
-func Pay(settings *config2.DatabaseSettings) error {
+func Pay(settings *config.DatabaseSettings) error {
 	llog.Infof("Establishing connection to the cluster")
 
 	var (
@@ -38,15 +38,15 @@ func Pay(settings *config2.DatabaseSettings) error {
 	)
 
 	switch settings.DatabaseType {
-	case cluster2.PostgresType:
+	case cluster.PostgresType:
 		var closeConns func()
-		targetCluster, closeConns, err = cluster2.NewPostgresCluster(settings.DBURL)
+		targetCluster, closeConns, err = cluster.NewPostgresCluster(settings.DBURL)
 		if err != nil {
 			return merry.Wrap(err)
 		}
 		defer closeConns()
-	case cluster2.FDBType:
-		targetCluster, err = cluster2.NewFDBCluster(settings.DBURL)
+	case cluster.FDBType:
+		targetCluster, err = cluster.NewFDBCluster(settings.DBURL)
 		if err != nil {
 			return merry.Wrap(err)
 		}
@@ -58,13 +58,13 @@ func Pay(settings *config2.DatabaseSettings) error {
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
 		settings.Count, settings.Workers, runtime.NumCPU())
 
-	var oracle *database2.Oracle
+	var oracle *database.Oracle
 	if settings.Oracle {
-		predictableCluster, ok := targetCluster.(database2.PredictableCluster)
+		predictableCluster, ok := targetCluster.(database.PredictableCluster)
 		if !ok {
 			return merry.Errorf("oracle is not supported for %s cluster", settings.DatabaseType)
 		}
-		oracle = new(database2.Oracle)
+		oracle = new(database.Oracle)
 		oracle.Init(predictableCluster)
 	}
 

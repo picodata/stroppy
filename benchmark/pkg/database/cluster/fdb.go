@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strconv"
 
-	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
+	"gitlab.com/picodata/stroppy/benchmark/internal/model"
 
 	"github.com/ansel1/merry"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
@@ -151,7 +151,7 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 }
 
 // InsertAccount - сохранить новый счет.
-func (cluster *FDBCluster) InsertAccount(acc model2.Account) error {
+func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		keyAccount := cluster.getAccountKey(acc)
 		checkUniq, err := tx.Get(keyAccount).Get()
@@ -229,7 +229,7 @@ func (cluster *FDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
-	var fetchResult []model2.Account
+	var fetchResult []model.Account
 	// присваиваем ноль, т.к. инициализируется как nil, иначе не сработает расчет итогового баланса
 	amount := inf.NewDec(0, 10)
 	fetchResult, err := cluster.FetchAccounts()
@@ -244,7 +244,7 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model2.Transfer) error {
+func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	tx, err := cluster.pool.CreateTransaction()
 	if err != nil {
 		tx.Cancel()
@@ -255,7 +255,7 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model2.Transfer) error {
 		tx.Cancel()
 		return ErrTxRollback
 	}
-	srcAccount := model2.Account{
+	srcAccount := model.Account{
 		Bic:             transfer.Acs[0].Bic,
 		Ban:             transfer.Acs[0].Ban,
 		Balance:         &inf.Dec{},
@@ -284,7 +284,7 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model2.Transfer) error {
 		return merry.Prepend(err, "failed to serialize source account")
 	}
 	tx.Set(sourceAccountKey, setSourceAccountValue)
-	destAccount := model2.Account{
+	destAccount := model.Account{
 		Bic:             transfer.Acs[1].Bic,
 		Ban:             transfer.Acs[1].Ban,
 		Balance:         &inf.Dec{},
@@ -318,10 +318,10 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model2.Transfer) error {
 }
 
 // FetchAccounts - получить массив всех сохранненых счетов.
-func (cluster *FDBCluster) FetchAccounts() ([]model2.Account, error) {
-	var accounts []model2.Account
+func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
+	var accounts []model.Account
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		var accounts []model2.Account
+		var accounts []model.Account
 		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: 0, Reverse: false}).Iterator()
 		for r.Advance() {
 			accountKeyValue, err := r.Get()
@@ -332,7 +332,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model2.Account, error) {
 			if err != nil {
 				return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
 			}
-			var fetchAccount model2.Account
+			var fetchAccount model.Account
 			var fetchAccountValue accountValue
 			fetchAccountValue, err = getAccountValue(tx, accountKeyValue.Key)
 			if err != nil {
@@ -357,7 +357,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model2.Account, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	accounts, ok := data.([]model2.Account)
+	accounts, ok := data.([]model.Account)
 	if !ok {
 		return accounts, merry.Errorf("this type data of model.Account is not supported")
 	}
@@ -368,7 +368,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model2.Account, error) {
 func (cluster *FDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
 	var balances, pendingAmount *inf.Dec
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		fetchAccount := model2.Account{
+		fetchAccount := model.Account{
 			Bic:             bic,
 			Ban:             ban,
 			Balance:         balances,
@@ -457,7 +457,7 @@ func getAccountValue(tx fdb.ReadTransaction, key fdb.Key) (valueResult accountVa
 мы формируем идентификатор ключа в любом случае,
 проверка на наличие ключа есть в методах получения, вернется nil, если по ключу ничего не найдено*/
 // getAccountKey - cформировать ключ по параметрам счета.
-func (cluster *FDBCluster) getAccountKey(space model2.Account) (keyResult fdb.Key) {
+func (cluster *FDBCluster) getAccountKey(space model.Account) (keyResult fdb.Key) {
 	keyResult = cluster.model.accounts.Pack(tuple.Tuple{space.Bic, space.Ban})
 	return keyResult
 }
@@ -467,7 +467,7 @@ func (cluster *FDBCluster) getAccountKey(space model2.Account) (keyResult fdb.Ke
 проверка на наличие ключа есть в методах получения, вернется nil,
 если по ключу ничего не найдено, нужно это обрабатывать*/
 // getTransferKey - сформировать ключ по параметрам перевода.
-func (cluster *FDBCluster) getTransferKey(space *model2.Transfer) (keyResult fdb.Key) {
+func (cluster *FDBCluster) getTransferKey(space *model.Transfer) (keyResult fdb.Key) {
 	/*tuple не поддерживает тип uuid.UUID,
 	доступные типы https://github.com/apple/foundationdb/blob/master/bindings/go/src/fdb/tuple/tuple.go
 	согласно доке на tuple.UUID:
@@ -486,7 +486,7 @@ func (cluster *FDBCluster) getTransferKey(space *model2.Transfer) (keyResult fdb
 }
 
 // setTransfer - сделать перевод.
-func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model2.Transfer) error {
+func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Transfer) error {
 	var preparemap transferValue
 	preparemap.Amount = transfer.Amount
 	transferValue, err := serializeValue(preparemap)

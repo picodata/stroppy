@@ -3,11 +3,11 @@ package commands
 import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands/funcs"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/cmd/stroppy/commands/funcs"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 )
 
-func newPopulateCommand(settings *config2.DatabaseSettings) *cobra.Command {
+func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
 	popCmd := &cobra.Command{
 		Use:     "pop",
 		Aliases: []string{"populate"},

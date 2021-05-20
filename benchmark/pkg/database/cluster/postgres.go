@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"time"
 
-	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
+	"gitlab.com/picodata/stroppy/benchmark/internal/model"
 
 	"github.com/ansel1/merry"
 	"github.com/google/uuid"
@@ -165,7 +165,7 @@ const upsertAccount = `
 	INSERT INTO account (bic, ban, balance, pending_amount) VALUES ($1, $2, $3, 0);
 `
 
-func (self *PostgresCluster) InsertAccount(acc model2.Account) error {
+func (self *PostgresCluster) InsertAccount(acc model.Account) error {
 	_, err := self.pool.Exec(context.Background(), upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
 	if err != nil {
 		//nolint:errorlint
@@ -185,14 +185,14 @@ const fetchAccounts = `
 SELECT * FROM account
 `
 
-func (self *PostgresCluster) FetchAccounts() ([]model2.Account, error) {
+func (self *PostgresCluster) FetchAccounts() ([]model.Account, error) {
 	rows, err := self.pool.Query(context.Background(), fetchAccounts)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	var accs []model2.Account
+	var accs []model.Account
 	for rows.Next() {
-		var acc model2.Account
+		var acc model.Account
 		if err := rows.Scan(&acc); err != nil {
 			return nil, merry.Prepend(err, "failed to scan account for FetchAccounts")
 		}
@@ -261,7 +261,7 @@ INSERT INTO transfer
   VALUES ($1, $2, $3, $4, $5, $6, 'complete')
 `
 
-func (self *PostgresCluster) InsertTransfer(transfer *model2.Transfer) error {
+func (self *PostgresCluster) InsertTransfer(transfer *model.Transfer) error {
 	res, err := self.pool.Exec(
 		context.Background(),
 		insertTransfer,
@@ -289,7 +289,7 @@ UPDATE transfer
   AND amount IS NOT NULL AND client_id = $3 AND client_timestamp > now() - interval'30 second'
 `
 
-func (self *PostgresCluster) SetTransferState(state string, transferId model2.TransferId, clientId uuid.UUID) error {
+func (self *PostgresCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
 	if err != nil {
 		return merry.Wrap(err)
@@ -308,7 +308,7 @@ UPDATE transfer
   AND amount IS NOT NULL
 `
 
-func (self *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId model2.TransferId) error {
+func (self *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
 	res, err := self.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
 	if err != nil {
 		return merry.Wrap(err)
@@ -327,7 +327,7 @@ UPDATE transfer
   AND amount IS NOT NULL AND client_id = $2
 `
 
-func (self *PostgresCluster) ClearTransferClient(transferId model2.TransferId, clientId uuid.UUID) error {
+func (self *PostgresCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
 	if err != nil {
 		return merry.Wrap(err)
@@ -347,7 +347,7 @@ DELETE FROM transfer
   AND client_id = $2 AND client_timestamp > now() - interval '30 second'
 `
 
-func (self *PostgresCluster) DeleteTransfer(transferId model2.TransferId, clientId uuid.UUID) error {
+func (self *PostgresCluster) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -368,8 +368,8 @@ SELECT src_bic, src_ban, dst_bic, dst_ban, amount, state
   WHERE transfer_id = $1
 `
 
-func (self *PostgresCluster) FetchTransfer(transferId model2.TransferId) (*model2.Transfer, error) {
-	t := new(model2.Transfer)
+func (self *PostgresCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+	t := new(model.Transfer)
 	t.InitEmptyTransfer(transferId)
 	row := self.pool.QueryRow(context.Background(), fetchTransfer, transferId)
 	// Ignore possible error, we will retry
@@ -391,7 +391,7 @@ SELECT client_id
   WHERE transfer_id = $1
 `
 
-func (self *PostgresCluster) FetchTransferClient(transferId model2.TransferId) (*uuid.UUID, error) {
+func (self *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
 	row := self.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
 
 	var clientId uuid.UUID
@@ -417,12 +417,12 @@ UPDATE account
   RETURNING *
 `
 
-func (self *PostgresCluster) LockAccount(transferId model2.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model2.Account, error) {
+func (self *PostgresCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	row := self.pool.QueryRow(ctx, lockAccount, transferId, pendingAmount.UnscaledBig().Int64(), bic, ban)
 
-	var acc model2.Account
+	var acc model.Account
 	var resultBalance, resultPendingAmount int64
 	err := row.Scan(&acc.Bic, &acc.Ban, &resultBalance, &acc.PendingTransfer, &resultPendingAmount)
 	if err != nil {
@@ -446,7 +446,7 @@ UPDATE account
   AND balance IS NOT NULL AND pending_transfer = $3
 `
 
-func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId model2.TransferId) error {
+func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 
@@ -470,7 +470,7 @@ UPDATE account
   AND balance IS NOT NULL AND pending_transfer = $4
 `
 
-func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model2.TransferId) error {
+func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
 	res, err := self.pool.Exec(context.Background(), updateBalance, balance.UnscaledBig().Int64(), bic, ban, transferId)
 	if err != nil {
 		return merry.Wrap(err)
@@ -502,18 +502,18 @@ const fetchDeadTransfers = `
 SELECT transfer_id FROM transfer
 `
 
-func (self *PostgresCluster) FetchDeadTransfers() ([]model2.TransferId, error) {
+func (self *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
 	rows, err := self.pool.Query(context.Background(), fetchDeadTransfers)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return []model2.TransferId{}, nil
+			return []model.TransferId{}, nil
 		}
 
 		return nil, merry.Wrap(err)
 	}
-	var transferIds []model2.TransferId
+	var transferIds []model.TransferId
 	for rows.Next() {
-		var tId model2.TransferId
+		var tId model.TransferId
 		err = rows.Scan(&tId)
 		// probably should be ignored
 		if err != nil {
@@ -528,9 +528,9 @@ func (self *PostgresCluster) FetchDeadTransfers() ([]model2.TransferId, error) {
 func WithdrawMoney(
 	ctx context.Context,
 	tx pgx.Tx,
-	acc model2.Account,
-	transfer model2.Transfer,
-) (*model2.HistoryItem, error) {
+	acc model.Account,
+	transfer model.Transfer,
+) (*model.HistoryItem, error) {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -565,7 +565,7 @@ func WithdrawMoney(
 	newBalanceDec := inf.NewDec(newBalance, 0)
 	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model2.NewHistoryItem(
+	history := model.NewHistoryItem(
 		transfer.Id,
 		acc.Bic,
 		acc.Ban,
@@ -580,9 +580,9 @@ func WithdrawMoney(
 func TopUpMoney(
 	ctx context.Context,
 	tx pgx.Tx,
-	acc model2.Account,
-	transfer model2.Transfer,
-) (*model2.HistoryItem, error) {
+	acc model.Account,
+	transfer model.Transfer,
+) (*model.HistoryItem, error) {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -614,7 +614,7 @@ func TopUpMoney(
 	newBalanceDec := inf.NewDec(newBalance, 0)
 	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model2.NewHistoryItem(
+	history := model.NewHistoryItem(
 		transfer.Id,
 		acc.Bic,
 		acc.Ban,
@@ -628,7 +628,7 @@ func TopUpMoney(
 
 // MakeAtomicTransfer inserts new transfer (should be used as history in the future) and
 // update corresponding balances in a single SQL transaction
-func (self *PostgresCluster) MakeAtomicTransfer(transfer *model2.Transfer) error {
+func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), txTimeout)
 	defer cancel()
 
@@ -691,7 +691,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model2.Transfer) error
 	// 	5.											--- txB commits
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
-	var sourceHistoryItem, destHistoryItem *model2.HistoryItem
+	var sourceHistoryItem, destHistoryItem *model.HistoryItem
 	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)

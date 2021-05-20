@@ -1,6 +1,6 @@
 module gitlab.com/picodata/stroppy/benchmark
 
-go 1.15
+go 1.16
 
 require (
 	github.com/agext/levenshtein v1.2.2 // indirect

@@ -2,17 +2,17 @@ package funcs
 
 import (
 	"errors"
-	database2 "gitlab.com/picodata/benchmark/stroppy/pkg/database"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
-	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/database/config"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	fixed_random_source2 "gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
-	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
-	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
+	"gitlab.com/picodata/stroppy/benchmark/internal/fixed_random_source"
+	"gitlab.com/picodata/stroppy/benchmark/internal/model"
+	"gitlab.com/picodata/stroppy/benchmark/pkg/statistics"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -34,27 +34,27 @@ type BuiltinTxTransfer interface {
 
 	// MakeAtomicTransfer performs transfer operation using db's builtin ACID transactions
 	// This methods should not return ErrNoRows - if one of accounts does not exist we should simply proceed further
-	MakeAtomicTransfer(t *model2.Transfer) error
+	MakeAtomicTransfer(t *model.Transfer) error
 
-	database2.PredictableCluster
+	database.PredictableCluster
 }
 
 type ClientBuiltinTx struct {
 	cluster BuiltinTxTransfer
 	// oracle is optional, because it is to hard to implement
 	// for large dbs
-	oracle   *database2.Oracle
+	oracle   *database.Oracle
 	payStats *PayStats
 }
 
-func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database2.Oracle, payStats *PayStats) {
+func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	c.cluster = cluster
 	c.oracle = oracle
 	c.payStats = payStats
 }
 
 //nolint:gosec
-func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
+func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
@@ -94,18 +94,18 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
 }
 
 func payWorkerBuiltinTx(
-	settings *config2.DatabaseSettings,
+	settings *config.DatabaseSettings,
 	nTransfers int,
 	zipfian bool,
 	dbCluster BuiltinTxTransfer,
-	oracle *database2.Oracle,
+	oracle *database.Oracle,
 	payStats *PayStats,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
 
 	var client ClientBuiltinTx
-	var randSource fixed_random_source2.FixedRandomSource
+	var randSource fixed_random_source.FixedRandomSource
 	client.Init(dbCluster, oracle, payStats)
 	clusterSettings, err := dbCluster.FetchSettings()
 	if err != nil {
@@ -114,7 +114,7 @@ func payWorkerBuiltinTx(
 
 	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.BanRangeMultiplier)
 	for i := 0; i < nTransfers; {
-		t := new(model2.Transfer)
+		t := new(model.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
 
 		cookie := statistics.StatsRequestStart()
@@ -134,7 +134,7 @@ func payWorkerBuiltinTx(
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
 //nolint:unparam
-func payBuiltinTx(settings *config2.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database2.Oracle) (*PayStats, error) {
+func payBuiltinTx(settings *config.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database.Oracle) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup
 		payStats PayStats
