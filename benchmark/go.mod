@@ -26,4 +26,9 @@ require (
 	gopkg.in/inf.v0 v0.9.1
 	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/client-go v0.21.0
+	gitlab.com/picodata/stroppy/benchmark/pkg/database/config latest
+)
+
+replace (
+	gitlab.com/picodata/stroppy/benchmark/pkg/database/config latest => ./pkg/database/config latest
 )
