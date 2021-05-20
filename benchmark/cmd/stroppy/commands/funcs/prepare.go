@@ -1,7 +1,9 @@
 package funcs
 
 import (
+	"fmt"
 	"io/ioutil"
+	"math/rand"
 
 	"github.com/ansel1/merry"
 	hcl "github.com/hashicorp/hcl/v2"
@@ -17,6 +19,17 @@ const defaultMasterRAM = 4
 const defaultMasterDisk = 15
 
 const providerFilePath = "deploy/yandex_compute_instance_group.tf"
+
+func randStringID() string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+	const idLength = 5
+	b := make([]rune, idLength)
+	for i := range b {
+		b[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(b)
+}
 
 // setTerraformBlock - задать блок требований к провайдеру
 func setTerraformBlock(providerFileBody *hcl2.Body) {
@@ -79,20 +92,32 @@ func setVpcNetworkBody(providerFileBody *hcl2.Body) {
 	providerFileBody.AppendNewline()
 }
 
+//nolint:gochecknoglobals
+var (
+	vpcInternalNetworkName string
+	vpcSubnetBlockName     string
+)
+
 // setVpcSubnetBody - задать блок управления подсетью cloud
 func setVpcSubnetBody(providerFileBody *hcl2.Body) {
-	vpcSubnetBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_subnet", "internal-a"})
+	networkID := randStringID()
+	vpcSubnetBlockName = fmt.Sprintf("internal-a-%s", networkID)
+	vpcInternalNetworkName = fmt.Sprintf("internal-%s", networkID)
+
+	vpcSubnetBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_subnet", vpcSubnetBlockName})
 	vpcSubnetBody := vpcSubnetBlock.Body()
-	vpcSubnetBody.SetAttributeValue("name", cty.StringVal("internal-a"))
+	vpcSubnetBody.SetAttributeValue("name", cty.StringVal(vpcSubnetBlockName))
 	vpcSubnetBody.SetAttributeValue("zone", cty.StringVal("ru-central1-a"))
 	//nolint:exhaustivestruct
 	vpcNetInternalID := hcl.Traversal{
-		hcl.TraverseRoot{Name: "yandex_vpc_network.internal"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("yandex_vpc_network.%s", vpcInternalNetworkName)},
 		hcl.TraverseAttr{Name: "id"},
 	}
 	vpcSubnetBody.SetAttributeTraversal("network_id", vpcNetInternalID)
+
 	var v4CidrBlocks []cty.Value
-	v4CidrBlocks = append(v4CidrBlocks, cty.StringVal("172.16.1.0/24"))
+	const subnetAddressTemplate = "172.16.%d.0/24"
+	v4CidrBlocks = append(v4CidrBlocks, cty.StringVal(fmt.Sprintf(subnetAddressTemplate, rand.Intn(254))))
 	vpcSubnetBody.SetAttributeValue("v4_cidr_blocks", cty.ListVal(v4CidrBlocks))
 	providerFileBody.AppendNewline()
 }
@@ -105,13 +130,21 @@ func setComputeImageBlock(providerFileBody *hcl2.Body) {
 	providerFileBody.AppendNewline()
 }
 
+const zoneNameTemplate = "ru-central1-a-%s"
+
+//nolint:gochecknoglobals
+var zoneName string
+
 // setWorkersBlock - задать блок управления настройками worker-машин
 func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 	cpu int, ram int, disk int, platform string, nodes int) {
+	workersBlockName := fmt.Sprintf("workers-1-%s", randStringID())
+
 	workersBlock := providerFileBody.AppendNewBlock("resource",
-		[]string{"yandex_compute_instance_group", "workers_1"})
+		[]string{"yandex_compute_instance_group", workersBlockName})
 	workersBody := workersBlock.Body()
-	workersBody.SetAttributeValue("name", cty.StringVal("workers-1"))
+	workersBody.SetAttributeValue("name", cty.StringVal(workersBlockName))
+
 	//nolint:exhaustivestruct
 	serviceAccInstanceID := hcl.Traversal{
 		hcl.TraverseRoot{Name: "yandex_iam_service_account.instances"},
@@ -151,31 +184,39 @@ func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 	netInterfaseWorkersBody := netInterfaseWorkersBlock.Body()
 	//nolint:exhaustivestruct
 	vpcNetInternalID := hcl.Traversal{
-		hcl.TraverseRoot{Name: "yandex_vpc_network.internal"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("yandex_vpc_network.%s", vpcInternalNetworkName)},
 		hcl.TraverseAttr{Name: "id"},
 	}
 	netInterfaseWorkersBody.SetAttributeTraversal("network_id", vpcNetInternalID)
+
 	//nolint:exhaustivestruct
 	vpcSubNet := hcl.Traversal{
-		hcl.TraverseRoot{Name: "[yandex_vpc_subnet.internal-a"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("[yandex_vpc_subnet.%s", vpcSubnetBlockName)},
 		hcl.TraverseAttr{Name: "id,]"},
 	}
+
 	netInterfaseWorkersBody.SetAttributeTraversal("subnet_ids", vpcSubNet)
 	netInterfaseWorkersBody.SetAttributeValue("nat", cty.BoolVal(true))
 	instanceTemplateWorkersBody.SetAttributeTraversal("metadata", stringSSHKeys)
 	providerFileBody.AppendNewline()
+
 	scalePolicyWorkersBlock := workersBody.AppendNewBlock("scale_policy", nil)
 	fixedScaleWorkersBlock := scalePolicyWorkersBlock.Body().AppendNewBlock("fixed_scale", nil)
 	fixedScaleBody := fixedScaleWorkersBlock.Body()
 	// здесь задается кол-во workers
 	fixedScaleBody.SetAttributeValue("size", cty.NumberIntVal(int64(nodes)))
 	providerFileBody.AppendNewline()
+
 	allocPolicyWorkersBlock := workersBody.AppendNewBlock("allocation_policy", nil)
 	allocPolicyWorkersBody := allocPolicyWorkersBlock.Body()
+
+	zoneName = fmt.Sprintf(zoneNameTemplate, randStringID())
+
 	var zones []cty.Value
-	zones = append(zones, cty.StringVal("ru-central1-a"))
+	zones = append(zones, cty.StringVal(zoneName))
 	allocPolicyWorkersBody.SetAttributeValue("zones", cty.ListVal(zones))
 	providerFileBody.AppendNewline()
+
 	deployPolicyWorkersBlock := workersBody.AppendNewBlock("deploy_policy", nil)
 	deployPolicyWorkersBody := deployPolicyWorkersBlock.Body()
 	deployPolicyWorkersBody.SetAttributeValue("max_unavailable", cty.NumberIntVal(1))
@@ -199,11 +240,12 @@ func setWorkersBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal,
 
 // setMasterBlock - задать блок управления настройками master-машин
 func setMasterBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal, platform string) {
-	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", "master"})
+	computeInstanceName := fmt.Sprintf("master-%s", randStringID())
+	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", computeInstanceName})
 	masterBody := masterBlock.Body()
-	masterBody.SetAttributeValue("name", cty.StringVal("master"))
-	masterBody.SetAttributeValue("zone", cty.StringVal("ru-central1-a"))
-	masterBody.SetAttributeValue("hostname", cty.StringVal("master"))
+	masterBody.SetAttributeValue("name", cty.StringVal(computeInstanceName))
+	masterBody.SetAttributeValue("zone", cty.StringVal(zoneName))
+	masterBody.SetAttributeValue("hostname", cty.StringVal(computeInstanceName))
 	masterBody.SetAttributeValue("platform_id", cty.StringVal(platform))
 
 	// Здесь задаются параметры cpu/count для master-машины
@@ -232,7 +274,7 @@ func setMasterBlock(providerFileBody *hcl2.Body, stringSSHKeys hcl.Traversal, pl
 	netInterfaceMasterBody := netInterfaceMasterBlock.Body()
 	//nolint:exhaustivestruct
 	subnetMasterID := hcl.Traversal{
-		hcl.TraverseRoot{Name: "yandex_vpc_subnet.internal-a"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("yandex_vpc_subnet.%s", vpcSubnetBlockName)},
 		hcl.TraverseAttr{Name: "id"},
 	}
 	netInterfaceMasterBody.SetAttributeTraversal("subnet_id", subnetMasterID)

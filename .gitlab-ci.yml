@@ -8,7 +8,7 @@ build:
   stage: build
   script:
     - cd benchmark
-    - go build -o bin/stroppy
+    - go build -o bin/stroppy ./cmd/stroppy
   artifacts:
     paths:
     - benchmark/bin/
@@ -22,6 +22,7 @@ lint:
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
     - cd benchmark
+    - go get all
     - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 1m30s
 
 docker:

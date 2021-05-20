@@ -5,9 +5,13 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands/funcs"
 	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	"math/rand"
+	"time"
 )
 
 func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
+	rand.Seed(time.Now().UnixNano())
+
 	deployCmd := &cobra.Command{
 		Use:                    "dep",
 		Aliases:                []string{"deploy"},

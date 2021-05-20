@@ -1,7 +1,7 @@
 FROM registry.gitlab.com/picodata/dockers/stroppy_builder:v2
 WORKDIR /stroppy
 COPY . .
-RUN go build -o bin/stroppy
+RUN go build -o bin/stroppy ./cmd/stroppy
 
 FROM debian:9.13-slim
 ARG FDB_VERSION=6.2.28
