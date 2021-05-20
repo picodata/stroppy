@@ -10,8 +10,8 @@ yandex_compute_instance_group.tf
 *.tfstate.backup
 
 
-benchmark/vendor
-benchmark/bin
-benchmark/_*
+vendor
+bin
+_*
 
 !*/.dockerignore

@@ -7,13 +7,10 @@ stages:
 build:
   stage: build
   script:
-    - cd benchmark
-    - go env -w GO111MODULE=auto
-    - go mod tidy
     - go build -o bin/stroppy ./cmd/stroppy
   artifacts:
     paths:
-    - benchmark/bin/
+    - bin/
 
 lint:
   stage: build
@@ -23,8 +20,7 @@ lint:
     GIT_FETCH_EXTRA_FLAGS: refs/heads/master:refs/remotes/origin/master
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
-    - cd benchmark
-    - go get gitlab.com/picodata/stroppy/benchmark/pkg/database/config
+    # - go get gitlab.com/picodata/stroppy/pkg/database/config
     - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 1m30s
 
 docker:
