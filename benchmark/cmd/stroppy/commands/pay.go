@@ -4,10 +4,10 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands/funcs"
-	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
 )
 
-func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
+func newPayCommand(settings *config2.DatabaseSettings) *cobra.Command {
 	payCmd := &cobra.Command{
 		Use:     "pay",
 		Aliases: []string{"transfer"},

@@ -1,4 +1,4 @@
-module gitlab.com/picodata/benchmark/stroppy
+module gitlab.com/picodata/stroppy/benchmark
 
 go 1.15
 

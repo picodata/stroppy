@@ -4,10 +4,10 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands/funcs"
-	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
 )
 
-func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
+func newPopulateCommand(settings *config2.DatabaseSettings) *cobra.Command {
 	popCmd := &cobra.Command{
 		Use:     "pop",
 		Aliases: []string{"populate"},

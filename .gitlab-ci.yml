@@ -8,6 +8,10 @@ build:
   stage: build
   script:
     - cd benchmark
+    # - git config --global --add url."git@github.com:".insteadOf "https://github.com/"
+    - go env -w GO111MODULE=auto
+    - go mod tidy
+    # - go get gitlab.com/picodata/benchmark/stroppy/pkg/database/config
     - go build -o bin/stroppy ./cmd/stroppy
   artifacts:
     paths:
@@ -22,7 +26,7 @@ lint:
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
     - cd benchmark
-    - go get all
+    - go get gitlab.com/picodata/benchmark/stroppy/pkg/database/config
     - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 1m30s
 
 docker:

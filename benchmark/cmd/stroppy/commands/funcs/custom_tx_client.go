@@ -1,15 +1,15 @@
 package funcs
 
 import (
+	database2 "gitlab.com/picodata/benchmark/stroppy/pkg/database"
+	"gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
+	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
 	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/picodata/benchmark/stroppy/internal/database"
-	cluster2 "gitlab.com/picodata/benchmark/stroppy/internal/database/cluster"
-	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
 	fixed_random_source2 "gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
 	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
 	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
@@ -27,8 +27,8 @@ import (
 //
 // Should also satisfy PredictableCluster interface
 type CustomTxTransfer interface {
-	GetClusterType() cluster2.DBClusterType
-	FetchSettings() (cluster2.ClusterSettings, error)
+	GetClusterType() cluster.DBClusterType
+	FetchSettings() (cluster.ClusterSettings, error)
 
 	InsertTransfer(transfer *model2.Transfer) error
 	DeleteTransfer(transferId model2.TransferId, clientId uuid.UUID) error
@@ -44,18 +44,18 @@ type CustomTxTransfer interface {
 	LockAccount(transferId model2.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model2.Account, error)
 	UnlockAccount(bic string, ban string, transferId model2.TransferId) error
 
-	database.PredictableCluster
+	database2.PredictableCluster
 }
 
 type ClientCustomTx struct {
 	shortId  uint64    // For logging
 	clientId uuid.UUID // For locking
 	cluster  CustomTxTransfer
-	oracle   *database.Oracle
+	oracle   *database2.Oracle
 	payStats *PayStats
 }
 
-func (c *ClientCustomTx) Init(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func (c *ClientCustomTx) Init(cluster CustomTxTransfer, oracle *database2.Oracle, payStats *PayStats) {
 	c.clientId = uuid.New()
 	c.shortId = atomic.AddUint64(&nClients, 1)
 	c.cluster = cluster
@@ -137,7 +137,7 @@ func (c *ClientCustomTx) LockAccounts(t *model2.Transfer, wait bool) error {
 		// The transfer is already locked - fetch balance to find out if the
 		// account exists or not
 		for i := 0; i < 2; i++ {
-			if err := c.FetchAccountBalance(&t.Acs[i]); err != nil && err != cluster2.ErrNoRows {
+			if err := c.FetchAccountBalance(&t.Acs[i]); err != nil && err != cluster.ErrNoRows {
 				return merry.Prepend(err, "failed to fetch account balance")
 			}
 		}
@@ -175,7 +175,7 @@ func (c *ClientCustomTx) LockAccounts(t *model2.Transfer, wait bool) error {
 				// later
 				// No such account. We're not holding locks. CompleteTransfer() will delete
 				// the transfer.
-				if err == cluster2.ErrNoRows {
+				if err == cluster.ErrNoRows {
 					return merry.Prepend(c.SetTransferState(t, "locked"), "failed to set transfer state")
 				} else if IsTransientError(err) {
 					llog.Tracef("[%v] [%v] Retrying after error: %v", c.shortId, t.Id, err)
@@ -190,7 +190,7 @@ func (c *ClientCustomTx) LockAccounts(t *model2.Transfer, wait bool) error {
 				var clientId *uuid.UUID
 				clientId, err := c.cluster.FetchTransferClient(receivedAccount.PendingTransfer)
 				if err != nil {
-					if err != cluster2.ErrNoRows {
+					if err != cluster.ErrNoRows {
 						return merry.Prepend(err, "failed to fetch transfer client")
 					}
 					// Transfer not found, even though it's just aborted
@@ -290,7 +290,7 @@ func (c *ClientCustomTx) CompleteTransfer(t *model2.Transfer) error {
 	llog.Tracef("[%v] [%v] Unlocking %v", c.shortId, t.Id, t)
 
 	for i := 0; i < 2; i++ {
-		if err := c.UnlockAccount(t.Id, &acs[i]); err != nil && err != cluster2.ErrNoRows {
+		if err := c.UnlockAccount(t.Id, &acs[i]); err != nil && err != cluster.ErrNoRows {
 			llog.Tracef("[%v] [%v] Failed to unlock account %v %v:%v: %v",
 				c.shortId, t.Id, i, acs[i].Bic, acs[i].Ban, err)
 			return merry.Prepend(err, "failed to unlock account")
@@ -305,7 +305,7 @@ func (c *ClientCustomTx) DeleteTransfer(transferId model2.TransferId) error {
 	// for a few years, we just delete it for simplicity.
 	err := c.cluster.DeleteTransfer(transferId, c.clientId)
 	if err != nil {
-		if err == cluster2.ErrNoRows {
+		if err == cluster.ErrNoRows {
 			llog.Tracef("[%v] [%v] Transfer is already deleted", c.shortId, transferId)
 			return nil
 		}
@@ -317,9 +317,9 @@ func (c *ClientCustomTx) DeleteTransfer(transferId model2.TransferId) error {
 }
 
 func payWorkerCustomTx(
-	settings config.DatabaseSettings,
+	settings config2.DatabaseSettings,
 	n_transfers int, zipfian bool, dbCluster CustomTxTransfer,
-	oracle *database.Oracle, payStats *PayStats,
+	oracle *database2.Oracle, payStats *PayStats,
 	wg *sync.WaitGroup) {
 
 	defer wg.Done()
@@ -341,7 +341,7 @@ func payWorkerCustomTx(
 
 		cookie := statistics.StatsRequestStart()
 		if err := client.MakeTransfer(t); err != nil {
-			if err == cluster2.ErrNoRows {
+			if err == cluster.ErrNoRows {
 				llog.Tracef("[%v] [%v] Transfer not found", client.shortId, t.Id)
 				i++
 				statistics.StatsRequestEnd(cookie)
@@ -359,7 +359,7 @@ func payWorkerCustomTx(
 }
 
 //nolint:unparam
-func payCustomTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+func payCustomTx(settings *config2.DatabaseSettings, cluster CustomTxTransfer, oracle *database2.Oracle) (*PayStats, error) {
 	var wg sync.WaitGroup
 	var payStats PayStats
 
@@ -411,7 +411,7 @@ func (c *ClientCustomTx) RecoverTransfer(transferId model2.TransferId) {
 	llog.Tracef("[%v] [%v] Recovering transfer", c.shortId, transferId)
 	atomic.AddUint64(&c.payStats.recoveries, 1)
 	if err := c.SetTransferClient(transferId); err != nil {
-		if !merry.Is(err, cluster2.ErrNoRows) {
+		if !merry.Is(err, cluster.ErrNoRows) {
 			llog.Errorf("[%v] [%v] Failed to set client on transfer: %v",
 				c.shortId, transferId, err)
 		}
@@ -421,7 +421,7 @@ func (c *ClientCustomTx) RecoverTransfer(transferId model2.TransferId) {
 	// Ignore possible error, we will retry
 	t, err := c.cluster.FetchTransfer(transferId)
 	if err != nil {
-		if err == cluster2.ErrNoRows {
+		if err == cluster.ErrNoRows {
 			llog.Errorf("[%v] [%v] Transfer not found when fetching for recovery",
 				c.shortId, transferId)
 			return

@@ -4,12 +4,12 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/benchmark/stroppy/cmd/stroppy/commands/funcs"
-	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
+	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
 	"math/rand"
 	"time"
 )
 
-func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
+func newDeployCommand(deploySettings *config2.DeploySettings) *cobra.Command {
 	rand.Seed(time.Now().UnixNano())
 
 	deployCmd := &cobra.Command{

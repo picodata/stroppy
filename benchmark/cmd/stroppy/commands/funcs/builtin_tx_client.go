@@ -2,14 +2,14 @@ package funcs
 
 import (
 	"errors"
+	database2 "gitlab.com/picodata/benchmark/stroppy/pkg/database"
+	"gitlab.com/picodata/benchmark/stroppy/pkg/database/cluster"
+	config2 "gitlab.com/picodata/benchmark/stroppy/pkg/database/config"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/picodata/benchmark/stroppy/internal/database"
-	cluster2 "gitlab.com/picodata/benchmark/stroppy/internal/database/cluster"
-	"gitlab.com/picodata/benchmark/stroppy/internal/database/config"
 	fixed_random_source2 "gitlab.com/picodata/benchmark/stroppy/internal/fixed_random_source"
 	model2 "gitlab.com/picodata/benchmark/stroppy/internal/model"
 	"gitlab.com/picodata/benchmark/stroppy/pkg/statistics"
@@ -28,26 +28,26 @@ var maxSleepDuration, _ = time.ParseDuration("1s")
 //
 // should satisfy PredictableCluster interface
 type BuiltinTxTransfer interface {
-	GetClusterType() cluster2.DBClusterType
+	GetClusterType() cluster.DBClusterType
 	// provide seed and count of accounts for this cluster.
-	FetchSettings() (cluster2.ClusterSettings, error)
+	FetchSettings() (cluster.ClusterSettings, error)
 
 	// MakeAtomicTransfer performs transfer operation using db's builtin ACID transactions
 	// This methods should not return ErrNoRows - if one of accounts does not exist we should simply proceed further
 	MakeAtomicTransfer(t *model2.Transfer) error
 
-	database.PredictableCluster
+	database2.PredictableCluster
 }
 
 type ClientBuiltinTx struct {
 	cluster BuiltinTxTransfer
 	// oracle is optional, because it is to hard to implement
 	// for large dbs
-	oracle   *database.Oracle
+	oracle   *database2.Oracle
 	payStats *PayStats
 }
 
-func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database2.Oracle, payStats *PayStats) {
 	c.cluster = cluster
 	c.oracle = oracle
 	c.payStats = payStats
@@ -59,7 +59,7 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
-			if errors.Is(err, cluster2.ErrTxRollback) {
+			if errors.Is(err, cluster.ErrTxRollback) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
@@ -73,13 +73,13 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
 
 				continue
 			}
-			if errors.Is(err, cluster2.ErrInsufficientFunds) {
+			if errors.Is(err, cluster.ErrInsufficientFunds) {
 				atomic.AddUint64(&c.payStats.InsufficientFunds, 1)
 				break
 			}
 			// that means one of accounts was not found
 			// and we should proceed to the next transfer
-			if errors.Is(err, cluster2.ErrNoRows) {
+			if errors.Is(err, cluster.ErrNoRows) {
 				atomic.AddUint64(&c.payStats.NoSuchAccount, 1)
 				break
 			}
@@ -94,11 +94,11 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model2.Transfer) (bool, error) {
 }
 
 func payWorkerBuiltinTx(
-	settings *config.DatabaseSettings,
+	settings *config2.DatabaseSettings,
 	nTransfers int,
 	zipfian bool,
 	dbCluster BuiltinTxTransfer,
-	oracle *database.Oracle,
+	oracle *database2.Oracle,
 	payStats *PayStats,
 	wg *sync.WaitGroup,
 ) {
@@ -134,7 +134,7 @@ func payWorkerBuiltinTx(
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
 //nolint:unparam
-func payBuiltinTx(settings *config.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+func payBuiltinTx(settings *config2.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database2.Oracle) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup
 		payStats PayStats

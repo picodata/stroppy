@@ -1,15 +1,15 @@
 package funcs
 
 import (
+	database2 "gitlab.com/picodata/benchmark/stroppy/pkg/database"
 	"sync"
 
-	"gitlab.com/picodata/benchmark/stroppy/internal/database"
 	"gitlab.com/picodata/benchmark/stroppy/internal/model"
 
 	llog "github.com/sirupsen/logrus"
 )
 
-func recoveryWorker(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats,
+func recoveryWorker(cluster CustomTxTransfer, oracle *database2.Oracle, payStats *PayStats,
 	wg *sync.WaitGroup) {
 	defer wg.Done()
 
@@ -30,11 +30,11 @@ type RecoveryQueue struct {
 	queue    chan model.TransferId
 	wg       sync.WaitGroup
 	cluster  CustomTxTransfer
-	oracle   *database.Oracle
+	oracle   *database2.Oracle
 	payStats *PayStats
 }
 
-func (q *RecoveryQueue) Init(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func (q *RecoveryQueue) Init(cluster CustomTxTransfer, oracle *database2.Oracle, payStats *PayStats) {
 	q.cluster = cluster
 	q.oracle = oracle
 	q.payStats = payStats
@@ -79,7 +79,7 @@ func Recover() {
 	}
 }
 
-func RecoveryStart(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func RecoveryStart(cluster CustomTxTransfer, oracle *database2.Oracle, payStats *PayStats) {
 	q.Init(cluster, oracle, payStats)
 
 	// Start background fiber working on the queue to
