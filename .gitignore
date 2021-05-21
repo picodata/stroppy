@@ -4,8 +4,10 @@ fdb.cluster
 .*
 id_rsa.* 
 id_rsa
+picodata.pem
 config
-*.tf
+*.tfstate
+*.tfstate.backup
 
 
 benchmark/vendor
