@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -62,11 +63,11 @@ const clusterK8sPort = 6443
 
 const reserveClusterK8sPort = 6444
 
-const RunningPodStatus = "Running"
+const runningPodStatus = "Running"
 
 const successPostgresPodsCount = 3
 
-const notFoundPodsCount = 5
+const maxNotFoundCount = 5
 
 type mapAddresses struct {
 	masterExternalIP   string
@@ -93,6 +94,8 @@ type tunnelToCluster struct {
 
 var errPortCheck = errors.New("port check failed")
 
+var errPodsNotFound = errors.New("one of pods is not found")
+
 type TemplatesConfig struct {
 	Yandex Configurations
 }
@@ -112,6 +115,17 @@ type ConfigurationUnitParams struct {
 	CPU         int
 	RAM         int
 	Disk        int
+}
+
+type statusClusterSet struct {
+	status string
+	err    error
+}
+
+type sshResult struct {
+	Port   int
+	Tunnel *sshtunnel.SSHTunnel
+	Err    error
 }
 
 // installTerraform - установить terraform, если не установлен
@@ -431,8 +445,8 @@ func copyToMaster() error {
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
 	}
-	postgresDeployFileDir := fmt.Sprintf("%s/deploy_operator.sh", terraformWorkDir)
-	postgresDeployFile, _ := os.Open(postgresDeployFileDir)
+	postgresDeployFilePath := fmt.Sprintf("%s/deploy_operator.sh", terraformWorkDir)
+	postgresDeployFile, _ := os.Open(postgresDeployFilePath)
 	err = client.CopyFile(postgresDeployFile, "/home/ubuntu/deploy_operator.sh", "0664")
 	if err != nil {
 		postgresManifestFile.Close()
@@ -688,7 +702,7 @@ func deployPostgres() error {
 }
 
 // getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
-func getPostgresPodsCount() (*int32, error) {
+func getPostgresPodsCount() (*int64, error) {
 	manifestFile, err := ioutil.ReadFile("deploy/postgres-manifest.yaml")
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read postgres-manifest.yaml")
@@ -704,31 +718,38 @@ func getPostgresPodsCount() (*int32, error) {
 		return nil, merry.Prepend(err, "failed to check format postgres-manifest.yaml")
 	}
 
-	podsCount := postgresSQLconfig.Spec.NumberOfInstances
+	podsCount := int64(postgresSQLconfig.Spec.NumberOfInstances)
 
 	return &podsCount, nil
 }
 
 // checkDeployPostgres - проверить, что все поды postgres в running
-func checkDeployPostgres() error {
+func checkDeployPostgres() (statusClusterSet, error) {
 	llog.Infoln("Checking of deploy postgres...")
 
-	successPodsCount := 0
+	var successPodsCount int64
 
-	errorsPodsCount := 0
+	var notFoundCount int64
 
-	notFoundCount := 0
+	statusSet := statusClusterSet{
+		status: "failed",
+		err:    nil,
+	}
 
 	clientset, err := getClientSet()
 	if err != nil {
-		return merry.Prepend(err, "failed to get clienset for check deploy of postgres")
+		return statusSet, merry.Prepend(err, "failed to get clienset for check deploy of postgres")
 	}
 
 	postgresPodsCount, err := getPostgresPodsCount()
 	if err != nil {
-		return merry.Prepend(err, "failed to get postgres pods count")
+		return statusSet, merry.Prepend(err, "failed to get postgres pods count")
 	}
-	for successPodsCount < int(*postgresPodsCount) && errorsPodsCount < 1 && notFoundCount < notFoundPodsCount {
+
+	for successPodsCount < *postgresPodsCount && notFoundCount < maxNotFoundCount {
+		llog.Infof("waiting for checking %v minutes...\n", execTimeout)
+		time.Sleep(execTimeout * time.Second)
+
 		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
 		//nolint:exhaustivestruct
 		acidPostgresZeroPod, err := clientset.CoreV1().Pods("default").Get(context.TODO(),
@@ -739,56 +760,50 @@ func checkDeployPostgres() error {
 		switch {
 		case k8s_errors.IsNotFound(err):
 			llog.Infof("Pod %v not found in default namespace\n", podNumber)
+			notFoundCount++
 		case k8s_errors.IsInternalError(err):
-			llog.Infof("Error getting pod %v: %v\n", podNumber, err.Error())
-			errorsPodsCount++
+			internalErrorString := fmt.Sprintf("internal error in pod %v\n", podNumber)
+			statusSet.err = merry.Prepend(err, internalErrorString)
+			return statusSet, nil
 		case err != nil:
-			llog.Infof("Unknown error getting pod %v: %v", podNumber, err.Error())
-			errorsPodsCount++
+			uknnownErrorString := fmt.Sprintf("Unknown error getting pod %v", podNumber)
+			statusSet.err = merry.Prepend(err, uknnownErrorString)
+			return statusSet, nil
 		case err == nil:
 			llog.Infof("Found pod %v in default namespace\n", podNumber)
 		}
 		llog.Infof("status of pod %v: %v\n", podNumber, acidPostgresZeroPod.Status.Phase)
 		// Status.Phase - текущий статус пода
-		if acidPostgresZeroPod.Status.Phase == RunningPodStatus {
+		if acidPostgresZeroPod.Status.Phase == runningPodStatus {
+			// переходим к следующему поду и сбрасываем счетчик not found
 			successPodsCount++
+			notFoundCount = 0
 		}
 
 		// чтобы не ждать до следующей итерации
 		if successPodsCount >= successPostgresPodsCount {
 			llog.Infoln("Сhecking of deploy postgres: success")
 			break
-		} else if errorsPodsCount > 0 {
-			llog.Errorf("one or more pods did not start or started with an error")
-			return merry.Prepend(err, "one or more pods did not start or started with an error")
 		}
-
-		llog.Infof("waiting for checking %v minutes...\n", execTimeout)
-		time.Sleep(execTimeout * time.Minute)
 	}
-	return nil
+
+	if notFoundCount >= maxNotFoundCount {
+		statusSet.err = errPodsNotFound
+		return statusSet, nil
+	}
+
+	statusSet.status = "success"
+	return statusSet, nil
 }
 
-// openPostgresPortForward - открыть port-forward туннель для postgres
-func openPostgresPortForward(stopPortForwardPostgres chan struct{}, readyPortForwardPostgres chan struct{},
-	errorPortForwardPostgres chan error) {
-	llog.Println("Opening of port-forward...")
+func openPostgresPortForward() error {
+	stopPortForwardPostgres := make(chan struct{})
+	readyPortForwardPostgres := make(chan struct{})
+	errorPortForwardPostgres := make(chan error)
 
-	/*mapIP, err := mappingIP()
-	if err != nil {
-		llog.Errorf("failed to map IP addresses in terraform.tfstate: %v\n", err)
-		errorPortForwardPostgres <- err
-	}*/
-
-	config, err := getKubeConfig()
-	if err != nil {
-		llog.Errorf("failed to get kubeconfig for open port-forward of postgres: %v", err)
-		errorPortForwardPostgres <- err
-	}
 	clientset, err := getClientSet()
 	if err != nil {
-		llog.Errorf("failed to get clientset for open port-forward of postgres: %v", err)
-		errorPortForwardPostgres <- err
+		return merry.Prepend(err, "failed to get clientset for open port-forward of postgres")
 	}
 
 	// reqURL - текущий url запроса к сущности k8s в runtime
@@ -798,32 +813,57 @@ func openPostgresPortForward(stopPortForwardPostgres chan struct{}, readyPortFor
 		Name("acid-postgres-cluster-0").
 		SubResource("portforward").URL()
 
+	go openKubePortForward("postgres", []string{"6432:5432"}, reqURL,
+		stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
+
+	select {
+	case <-readyPortForwardPostgres:
+		llog.Infof("Port-forwarding for postgres is started success\n")
+		return nil
+	case errPortForwardPostgres := <-errorPortForwardPostgres:
+		llog.Errorf("Port-forwarding for postgres is started failed\n")
+		return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
+	}
+}
+
+// openKubePortForward - открыть port-forward туннель для вызывающей функции(caller)
+func openKubePortForward(caller string, ports []string, reqURL *url.URL,
+	stopPortForward chan struct{}, readyPortForward chan struct{}, errorPortForward chan error) {
+	llog.Printf("Opening of port-forward of %v...\n", caller)
+
+	config, err := getKubeConfig()
+	if err != nil {
+		llog.Errorf("failed to get kubeconfig for open port-forward of %v: %v", caller, err)
+		errorPortForward <- err
+	}
+
 	httpTransaction, upgrader, err := spdy.RoundTripperFor(config)
 	if err != nil {
-		llog.Errorf("failed to create http transction for port-forward of postgres: %v\n", err)
-		errorPortForwardPostgres <- err
+		llog.Errorf("failed to create http transction for port-forward of %v: %v\n", caller, err)
+		errorPortForward <- err
 	}
 
 	portForwardLog, err := os.OpenFile("portForwardPostgres.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		llog.Errorf("failed to create or open log file for port-forward of postgres: %v", err)
-		errorPortForwardPostgres <- err
+		llog.Errorf("failed to create or open log file for port-forward of %v: %v", caller, err)
+		errorPortForward <- err
 	}
 	defer portForwardLog.Close()
 
 	//nolint:exhaustivestruct
 	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: httpTransaction}, http.MethodPost, reqURL)
-	portForward, err := portforward.New(dialer, []string{"6432:5432"},
-		stopPortForwardPostgres, readyPortForwardPostgres, portForwardLog, portForwardLog)
+	portForward, err := portforward.New(dialer, ports,
+		stopPortForward, readyPortForward, portForwardLog, portForwardLog)
 	if err != nil {
-		llog.Errorf("failed to get port-forwarder of postgres: %v\n", err)
-		errorPortForwardPostgres <- err
+		llog.Errorf("failed to get port-forwarder of %v: %v\n", caller, err)
+		errorPortForward <- err
 	}
 
 	err = portForward.ForwardPorts()
+	defer close(stopPortForward)
 	if err != nil {
-		llog.Errorf("failed to open port-forward of postgres: %v\n", err)
-		errorPortForwardPostgres <- err
+		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
+		errorPortForward <- err
 	}
 }
 
@@ -853,12 +893,6 @@ func copyConfigFromMaster() error {
 	}
 
 	return nil
-}
-
-type sshResult struct {
-	Port   int
-	Tunnel *sshtunnel.SSHTunnel
-	Err    error
 }
 
 // openSSHTunnel - открыть ssh-соединение и передать указатель на него вызывающему коду для управления
@@ -1289,24 +1323,17 @@ func deploy(settings DeploySettings) error {
 		if err != nil {
 			return merry.Prepend(err, "failed to deploy of postgres")
 		}
-		err = checkDeployPostgres()
+		statusSet, err := checkDeployPostgres()
 		if err != nil {
 			return merry.Prepend(err, "failed to check deploy of postgres")
 		}
-
-		stopPortForwardPostgres := make(chan struct{})
-		readyPortForwardPostgres := make(chan struct{})
-		errorPortForwardPostgres := make(chan error)
-		go openPostgresPortForward(stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
-		select {
-		case <-readyPortForwardPostgres:
-			llog.Infof("Port-forwarding for postgres is started success\n")
-		case errPortForwardPostgres := <-errorPortForwardPostgres:
-			llog.Errorf("Port-forwarding for postgres is started failed\n")
-			return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
+		if statusSet.err != nil {
+			return merry.Prepend(err, "deploy of postgres is failed")
 		}
-
-		defer close(stopPortForwardPostgres)
+		err = openPostgresPortForward()
+		if err != nil {
+			return merry.Prepend(err, "failed to open port-forward channel of postgres")
+		}
 	}
 
 	log.Printf(
