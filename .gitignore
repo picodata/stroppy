@@ -4,8 +4,8 @@ fdb.cluster
 .*
 id_rsa.* 
 id_rsa
+picodata.pem
 config
-yandex_compute_instance_group.tf
 *.tfstate
 *.tfstate.backup
 
