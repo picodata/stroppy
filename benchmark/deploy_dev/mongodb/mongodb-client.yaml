@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mongodb-client
+spec:
+  containers:
+  - name: mongodb-client
+    image: mongoclient/mongoclient:4.0.0
+    resources:
+      limits:
+        cpu: "1.0"
+        memory: 250M
+      requests:
+        cpu: "0.2"
+        memory: 200M

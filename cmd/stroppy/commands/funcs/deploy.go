@@ -27,9 +27,9 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-const terraformWorkDir = "deploy/"
+const terraformWorkDir = "benchmark/deploy/"
 
-const configFile = "deploy/test_config.json"
+const configFile = "benchmark/deploy/test_config.json"
 
 // кол-во попыток подключения при ошибке
 const connectionRetryCount = 3
@@ -40,7 +40,7 @@ const execTimeout = 5
 // размер ответа terraform show при незапущенном кластере
 const linesNotInitTerraformShow = 13
 
-const templatesFile = "deploy/templates.yml"
+const templatesFile = "benchmark/deploy/templates.yml"
 
 // кол-во подов при успешном деплое k8s в master-ноде
 const runningPodsCount = 41
@@ -258,7 +258,7 @@ func getIPMapping() (mapAddresses, error) {
 		по переданному тегу json, который можно преобразовать в том числе в строку.
 	*/
 	var mapIP mapAddresses
-	tsStateWorkDir := fmt.Sprintf("%v/terraform.tfstate", terraformWorkDir)
+	tsStateWorkDir := fmt.Sprintf("%s/terraform.tfstate", terraformWorkDir)
 	data, err := ioutil.ReadFile(tsStateWorkDir)
 	if err != nil {
 		return mapIP, merry.Prepend(err, "failed to read file terraform.tfstate")
@@ -698,7 +698,7 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 		}
 	}
 
-	authMethod, err := sshtunnel.PrivateKeyFile("deploy/id_rsa")
+	authMethod, err := sshtunnel.PrivateKeyFile("benchmark/deploy/id_rsa")
 	if err != nil {
 		llog.Infof("failed to use private key file: %v", err)
 		sshTunnelChan <- sshResult{0, nil, err}
@@ -978,7 +978,7 @@ func isRemotePortOpen(hostname string, port int) bool {
 	address := hostname + ":" + strconv.Itoa(port)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		llog.Errorf("port %v at %v is not available: %v \n", port, hostname, err)
+		llog.Errorf("port %d at '%s' is not available: %v \n", port, hostname, err)
 		return false
 	}
 	defer conn.Close()
@@ -987,7 +987,7 @@ func isRemotePortOpen(hostname string, port int) bool {
 }
 
 func editClusterURL(url string) error {
-	kubeConfigPath := "deploy/config"
+	kubeConfigPath := "benchmark/deploy/config"
 	kubeConfig, err := clientcmd.LoadFromFile(kubeConfigPath)
 	if err != nil {
 		return merry.Prepend(err, "failed to load kubeconfig")

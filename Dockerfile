@@ -14,5 +14,5 @@ ARG COMMIT_HASH
 ENV COMMIT_HASH ${COMMIT_HASH:-manual_build}
 
 #добавляем директорию с файлами для деплоя и конфигурирования stroppy
-COPY --from=0 stroppy/deploy/ deploy/
+COPY --from=0 stroppy/benchmark/deploy/ deploy/
 COPY --from=0 stroppy/bin/stroppy .

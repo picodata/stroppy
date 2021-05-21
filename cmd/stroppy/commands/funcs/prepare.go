@@ -18,7 +18,7 @@ const defaultMasterRAM = 4
 
 const defaultMasterDisk = 15
 
-const providerFilePath = "deploy/yandex_compute_instance_group.tf"
+const providerFilePath = "benchmark/deploy/yandex_compute_instance_group.tf"
 
 func randStringID() string {
 	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -240,7 +240,8 @@ func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversa
 
 // setMasterBlock - задать блок управления настройками master-машин
 func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal, platform string) {
-	computeInstanceName := fmt.Sprintf("master-%s", randStringID())
+	computeInstanceName := fmt.Sprintf("master_%s", randStringID())
+
 	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", computeInstanceName})
 	masterBody := masterBlock.Body()
 	masterBody.SetAttributeValue("name", cty.StringVal(computeInstanceName))
