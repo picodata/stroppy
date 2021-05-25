@@ -34,6 +34,7 @@ type DeploySettings struct {
 	Provider string
 	Flavor   string
 	Nodes    int
+	DBType   string
 }
 
 // DefaultsDeploy - заполнить параметры деплоя значениями по умолчанию.
@@ -44,6 +45,7 @@ func DefaultsDeploy() *DeploySettings {
 		Provider: "yandex",
 		Flavor:   "small",
 		Nodes:    3,
+		DBType:   "postgres",
 	}
 	return &d
 }

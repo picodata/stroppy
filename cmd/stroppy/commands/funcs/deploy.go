@@ -2,12 +2,23 @@ package funcs
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"io/ioutil"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 	"log"
 	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"strconv"
@@ -55,6 +66,12 @@ const clusterK8sPort = 6443
 
 const reserveClusterK8sPort = 6444
 
+const runningPodStatus = "Running"
+
+const successPostgresPodsCount = 3
+
+const maxNotFoundCount = 5
+
 type mapAddresses struct {
 	masterExternalIP   string
 	masterInternalIP   string
@@ -80,6 +97,8 @@ type tunnelToCluster struct {
 
 var errPortCheck = errors.New("port Check failed")
 
+var errPodsNotFound = errors.New("one of pods is not found")
+
 type TemplatesConfig struct {
 	Yandex Configurations
 }
@@ -99,6 +118,11 @@ type ConfigurationUnitParams struct {
 	CPU         int
 	RAM         int
 	Disk        int
+}
+
+type statusClusterSet struct {
+	status string
+	err    error
 }
 
 // installTerraform - установить terraform, если не установлен
@@ -445,12 +469,28 @@ func copyToMaster() error {
 	if err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
 	}
+	postgresDeployFilePath := fmt.Sprintf("%s/deploy_operator.sh", terraformWorkDir)
+	postgresDeployFile, _ := os.Open(postgresDeployFilePath)
+	err = client.CopyFile(postgresDeployFile, "/home/ubuntu/deploy_operator.sh", "0664")
+	if err != nil {
+		postgresManifestFile.Close()
+		return merry.Prepend(err, "error while copying file deploy_operator.sh")
+	}
+	postgresManifestFile.Close()
+	client.Close()
+	llog.Infoln("copying deploy_operator.sh: success")
+
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
+	err = client.Connect()
+	if err != nil {
+		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	}
 	fdbClusterClientFileDir := fmt.Sprintf("%s/cluster_with_client.yaml", terraformWorkDir)
 	fdbClusterClientFile, _ := os.Open(fdbClusterClientFileDir)
 	err = client.CopyFile(fdbClusterClientFile, "/home/ubuntu/cluster_with_client.yaml", "0664")
 	if err != nil {
 		fdbClusterClientFile.Close()
-		return merry.Prepend(err, "error while copying file postgres-manifest.yaml")
+		return merry.Prepend(err, "error while copying file cluster_with_client.yaml")
 	}
 	fdbClusterClientFile.Close()
 	client.Close()
@@ -496,17 +536,6 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 helm repo update
 helm install loki grafana/loki-stack --namespace monitoring
 helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbclusters.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbbackups.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/FoundationDB/fdb-kubernetes-operator/v0.31.1/config/crd/bases/apps.foundationdb.org_foundationdbrestores.yaml
-kubectl apply -f \
-https://raw.githubusercontent.com/foundationdb/fdb-kubernetes-operator/v0.31.1/config/samples/deployment.yaml
-echo "Waiting foundationdb deploy for 60 seconds..."
-sleep 60
-kubectl apply -f /home/ubuntu/cluster_with_client.yaml
 kubectl apply -f /home/ubuntu/metrics-server.yaml
 kubectl apply -f /home/ubuntu/ingress-grafana.yaml
 kubectl apply -f \
@@ -637,6 +666,231 @@ func handleReader(reader *bufio.Reader) {
 	}
 }
 
+// getKubeConfig - получить конфигурацию k8s
+func getKubeConfig() (*rest.Config, error) {
+	kubeConfig := "deploy/config"
+	config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to get config for check deploy of postgres")
+	}
+	return config, nil
+}
+
+func getClientSet() (*kubernetes.Clientset, error) {
+	config, err := getKubeConfig()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to get kubeconfig for clientset")
+	}
+	// clientset - клиент для обращения к группам сущностей k8s
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to create clientset")
+	}
+	return clientset, nil
+}
+
+// deployPostgres - развернуть postgres в кластере
+func deployPostgres() error {
+	llog.Infoln("Prepare deploy of postgres")
+	mapIP, err := getIPMapping()
+	if err != nil {
+		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
+	}
+	masterExternalIP := mapIP.masterExternalIP
+
+	sshClient, err := getClientSSH(masterExternalIP)
+	if err != nil {
+		return merry.Prepend(err, "failed to create ssh connection for deploy of postgres")
+	}
+
+	sshSession, err := sshClient.NewSession()
+	if err != nil {
+		return merry.Prepend(err, "failed to open ssh connection for deploy of postgres")
+	}
+	defer sshSession.Close()
+
+	llog.Infoln("Starting deploy of postgres")
+	deployCmd := "chmod +x deploy_operator.sh && ./deploy_operator.sh"
+	stdout, err := sshSession.StdoutPipe()
+	if err != nil {
+		return merry.Prepend(err, "failed creating command stdoutpipe")
+	}
+	stdoutReader := bufio.NewReader(stdout)
+	go handleReader(stdoutReader)
+	_, err = sshSession.CombinedOutput(deployCmd)
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	llog.Infoln("Finished deploy of postgres")
+	return nil
+}
+
+// getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
+func getPostgresPodsCount() (*int64, error) {
+	manifestFile, err := ioutil.ReadFile("deploy/postgres-manifest.yaml")
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to read postgres-manifest.yaml")
+	}
+
+	//nolint:exhaustivestruct
+	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode(manifestFile, nil, &v1.Postgresql{})
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to decode postgres-manifest.yaml")
+	}
+	postgresSQLconfig, ok := obj.(*v1.Postgresql)
+	if !ok {
+		return nil, merry.Prepend(err, "failed to check format postgres-manifest.yaml")
+	}
+
+	podsCount := int64(postgresSQLconfig.Spec.NumberOfInstances)
+
+	return &podsCount, nil
+}
+
+// checkDeployPostgres - проверить, что все поды postgres в running
+func checkDeployPostgres() (statusClusterSet, error) {
+	llog.Infoln("Checking of deploy postgres...")
+
+	var successPodsCount int64
+
+	var notFoundCount int64
+
+	statusSet := statusClusterSet{
+		status: "failed",
+		err:    nil,
+	}
+
+	clientset, err := getClientSet()
+	if err != nil {
+		return statusSet, merry.Prepend(err, "failed to get clienset for check deploy of postgres")
+	}
+
+	postgresPodsCount, err := getPostgresPodsCount()
+	if err != nil {
+		return statusSet, merry.Prepend(err, "failed to get postgres pods count")
+	}
+
+	for successPodsCount < *postgresPodsCount && notFoundCount < maxNotFoundCount {
+		llog.Infof("waiting for checking %v minutes...\n", execTimeout)
+		time.Sleep(execTimeout * time.Second)
+
+		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
+		//nolint:exhaustivestruct
+		acidPostgresZeroPod, err := clientset.CoreV1().Pods("default").Get(context.TODO(),
+			podNumber, metav1.GetOptions{
+				TypeMeta:        metav1.TypeMeta{},
+				ResourceVersion: "",
+			})
+		switch {
+		case k8s_errors.IsNotFound(err):
+			llog.Infof("Pod %v not found in default namespace\n", podNumber)
+			notFoundCount++
+		case k8s_errors.IsInternalError(err):
+			internalErrorString := fmt.Sprintf("internal error in pod %v\n", podNumber)
+			statusSet.err = merry.Prepend(err, internalErrorString)
+			return statusSet, nil
+		case err != nil:
+			uknnownErrorString := fmt.Sprintf("Unknown error getting pod %v", podNumber)
+			statusSet.err = merry.Prepend(err, uknnownErrorString)
+			return statusSet, nil
+		case err == nil:
+			llog.Infof("Found pod %v in default namespace\n", podNumber)
+		}
+		llog.Infof("status of pod %v: %v\n", podNumber, acidPostgresZeroPod.Status.Phase)
+		// Status.Phase - текущий статус пода
+		if acidPostgresZeroPod.Status.Phase == runningPodStatus {
+			// переходим к следующему поду и сбрасываем счетчик not found
+			successPodsCount++
+			notFoundCount = 0
+		}
+
+		// чтобы не ждать до следующей итерации
+		if successPodsCount >= successPostgresPodsCount {
+			llog.Infoln("Сhecking of deploy postgres: success")
+			break
+		}
+	}
+
+	if notFoundCount >= maxNotFoundCount {
+		statusSet.err = errPodsNotFound
+		return statusSet, nil
+	}
+
+	statusSet.status = "success"
+	return statusSet, nil
+}
+
+func openPostgresPortForward() error {
+	stopPortForwardPostgres := make(chan struct{})
+	readyPortForwardPostgres := make(chan struct{})
+	errorPortForwardPostgres := make(chan error)
+
+	clientset, err := getClientSet()
+	if err != nil {
+		return merry.Prepend(err, "failed to get clientset for open port-forward of postgres")
+	}
+
+	// reqURL - текущий url запроса к сущности k8s в runtime
+	reqURL := clientset.CoreV1().RESTClient().Post().
+		Resource("pods").
+		Namespace("default").
+		Name("acid-postgres-cluster-0").
+		SubResource("portforward").URL()
+
+	go openKubePortForward("postgres", []string{"6432:5432"}, reqURL,
+		stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
+
+	select {
+	case <-readyPortForwardPostgres:
+		llog.Infof("Port-forwarding for postgres is started success\n")
+		return nil
+	case errPortForwardPostgres := <-errorPortForwardPostgres:
+		llog.Errorf("Port-forwarding for postgres is started failed\n")
+		return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
+	}
+}
+
+// openKubePortForward - открыть port-forward туннель для вызывающей функции(caller)
+func openKubePortForward(caller string, ports []string, reqURL *url.URL,
+	stopPortForward chan struct{}, readyPortForward chan struct{}, errorPortForward chan error) {
+	llog.Printf("Opening of port-forward of %v...\n", caller)
+
+	config, err := getKubeConfig()
+	if err != nil {
+		llog.Errorf("failed to get kubeconfig for open port-forward of %v: %v", caller, err)
+		errorPortForward <- err
+	}
+
+	httpTransaction, upgrader, err := spdy.RoundTripperFor(config)
+	if err != nil {
+		llog.Errorf("failed to create http transction for port-forward of %v: %v\n", caller, err)
+		errorPortForward <- err
+	}
+
+	portForwardLog, err := os.OpenFile("portForwardPostgres.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		llog.Errorf("failed to create or open log file for port-forward of %v: %v", caller, err)
+		errorPortForward <- err
+	}
+	defer portForwardLog.Close()
+
+	//nolint:exhaustivestruct
+	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: httpTransaction}, http.MethodPost, reqURL)
+	portForward, err := portforward.New(dialer, ports,
+		stopPortForward, readyPortForward, portForwardLog, portForwardLog)
+	if err != nil {
+		llog.Errorf("failed to get port-forwarder of %v: %v\n", caller, err)
+		errorPortForward <- err
+	}
+
+	err = portForward.ForwardPorts()
+	defer close(stopPortForward)
+	if err != nil {
+		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
+		errorPortForward <- err
+	}
+}
+
 // copyConfigFromMaster - скопировать файд kube config c мастер-инстанса кластера и применить для использования
 func copyConfigFromMaster() error {
 	mapIP, err := getIPMapping()
@@ -648,6 +902,7 @@ func copyConfigFromMaster() error {
 	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	llog.Infoln(copyFromMasterCmd.String())
 	copyFromMasterCmd.Dir = terraformWorkDir
+
 	_, err = copyFromMasterCmd.CombinedOutput()
 	if err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
@@ -655,8 +910,7 @@ func copyConfigFromMaster() error {
 
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
 	clusterURL := "https://localhost:6443"
-	err = editClusterURL(clusterURL)
-	if err != nil {
+	if err = editClusterURL(clusterURL); err != nil {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
@@ -691,8 +945,7 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 
 		// подменяем порт в kubeconfig на локальной машине
 		clusterURL := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
-		err = editClusterURL(clusterURL)
-		if err != nil {
+		if err = editClusterURL(clusterURL); err != nil {
 			llog.Infof("failed to replace port: %v", err)
 			sshTunnelChan <- sshResult{0, nil, err}
 		}
@@ -732,8 +985,8 @@ func openSSHTunnel(sshTunnelChan chan sshResult) {
 	sshTunnelChan <- sshResult{k8sPort, tunnel, nil}
 }
 
-// portForwardKubectl - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func portForwardKubectl(portForwardChan chan tunnelToCluster) {
+// openMonitoringPortForward - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
+func openMonitoringPortForward(portForwardChan chan tunnelToCluster) {
 	// проверяем доступность портов 8080 и 8081 на локальной машине
 	llog.Infoln("Checking the status of port 8080 of the localhost for monitoring...")
 	monitoringPort := clusterMonitoringPort
@@ -745,6 +998,7 @@ func portForwardKubectl(portForwardChan chan tunnelToCluster) {
 			portForwardChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"), nil}
 		}
 	}
+
 	// формируем строку с указанием портов для port-forward
 	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
 	// уровень --v=4 соответствует debug
@@ -829,7 +1083,7 @@ func readCommandFromInput(portForwardStruct tunnelToCluster,
 					}
 				}
 			default:
-				llog.Printf("You entered: %v. Expected quit \n", consoleCmd)
+				llog.Infof("You entered: %v. Expected quit \n", consoleCmd)
 			}
 		}
 	}
@@ -1033,21 +1287,24 @@ func closePortForward(portForward tunnelToCluster) {
 
 func Deploy(settings *config.DeploySettings) error {
 	llog.Traceln(settings)
+
 	checkVersionCmd, err := exec.Command("terraform", "version").Output()
 	if err != nil {
 		log.Printf("Failed to find terraform version")
+
 		if errors.Is(err, exec.ErrNotFound) {
 			err := installTerraform()
 			if err != nil {
-				log.Fatalf("Deploy terraform status: %v ", err)
+				llog.Fatalf("Deploy terraform status: %v ", err)
+				return merry.Prepend(err, "failed to install terraform")
 			} else {
-				log.Printf("Deploy terraform status: success")
+				llog.Infof("Deploy terraform status: success")
 			}
 		}
 	}
 
 	if strings.Contains(string(checkVersionCmd), "version") {
-		log.Printf("Founded version %v", string(checkVersionCmd[:17]))
+		llog.Infof("Founded version %v", string(checkVersionCmd[:17]))
 	}
 
 	templatesConfig, err := readTemplates()
@@ -1096,7 +1353,7 @@ func Deploy(settings *config.DeploySettings) error {
 	}
 	defer sshTunnel.Tunnel.Close()
 
-	go portForwardKubectl(portForwardChan)
+	go openMonitoringPortForward(portForwardChan)
 	portForward := <-portForwardChan
 	llog.Println(portForward)
 	if portForward.err != nil {
@@ -1104,6 +1361,24 @@ func Deploy(settings *config.DeploySettings) error {
 	}
 
 	defer closePortForward(portForward)
+
+	if settings.DBType == "postgres" {
+		err = deployPostgres()
+		if err != nil {
+			return merry.Prepend(err, "failed to deploy of postgres")
+		}
+		statusSet, err := checkDeployPostgres()
+		if err != nil {
+			return merry.Prepend(err, "failed to check deploy of postgres")
+		}
+		if statusSet.err != nil {
+			return merry.Prepend(err, "deploy of postgres is failed")
+		}
+		err = openPostgresPortForward()
+		if err != nil {
+			return merry.Prepend(err, "failed to open port-forward channel of postgres")
+		}
+	}
 
 	log.Printf(
 		`Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
@@ -1128,7 +1403,7 @@ func Deploy(settings *config.DeploySettings) error {
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
-		return err
+		return merry.Wrap(err)
 	case success := <-successExitChan:
 		llog.Infof("destroy cluster %v", success)
 		return nil

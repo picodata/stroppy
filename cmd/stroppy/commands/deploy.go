@@ -73,5 +73,10 @@ func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
 		deploySettings.Nodes,
 		"count nodes of cluster")
 
+	deployCmd.PersistentFlags().StringVar(&deploySettings.DBType,
+		"dbtype",
+		deploySettings.DBType,
+		"database type for deploy")
+
 	return deployCmd
 }
