@@ -5,16 +5,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"io/ioutil"
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/kubernetes/scheme"
-	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/portforward"
-	"k8s.io/client-go/transport/spdy"
 	"log"
 	"net"
 	"net/http"
@@ -25,7 +17,6 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/picodata/stroppy/pkg/sshtunnel"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"github.com/ansel1/merry"
@@ -34,7 +25,7 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
-	"gitlab.com/picodata/benchmark/stroppy/sshtunnel"
+	"gitlab.com/picodata/stroppy/pkg/sshtunnel"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
@@ -105,8 +96,6 @@ type tunnelToCluster struct {
 }
 
 var errPortCheck = errors.New("port Check failed")
-
-var errPodsNotFound = errors.New("one of pods is not found")
 
 var errPodsNotFound = errors.New("one of pods is not found")
 
