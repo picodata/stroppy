@@ -1,4 +1,4 @@
-image: registry.gitlab.com/picodata/dockers/stroppy_builder:v2
+image: registry.gitlab.com/picodata/dockers/stroppy_builder:v3
 
 stages:
 - build

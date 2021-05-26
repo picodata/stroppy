@@ -1,4 +1,5 @@
-Для запуска stroppy необходимо использовать команды, указанные в Makefile.
+
+# Для запуска stroppy необходимо использовать команды, указанные в Makefile.
 
 Назначение команд:
 
@@ -20,20 +21,35 @@ make fdb_pay - выполнить тест выполнения транзакц
 
 make deploy_yandex
 
-Примечание:
+# Предварительные условия перед построением проекта на macOS:
+
+Перед выполнением команды make all необходимо:
+
+Установить, если не установлены macports по инструкции по ссылке:
+
+[MacPorts Quckstart](https://www.macports.org/install.php)
+
+1. установить в систему библиотеку foundationdb, для чего выполнить команду port install foundationdb
+2. добавить символические ссылки на каталоги включаемых файлов и библиотек в общесистемную директорию:
+```
+ln -s /opt/local/include/foundationdb /usr/local/include/foundationdb
+ln -s /opt/local/lib/libfdb_c.dylib /usr/local/lib/libfdb_c.dylib
+```
+
+# Примечание:
 перед развертыванием кластера необходило в директории benchmark/deploy/
 выполнить команду для генерации ключей RSA, которые будут использоваться для доступа к кластеру:
 
 ssh-keygen -q -t rsa -N '' -f id_rsa <<<y 2>&1 >/dev/null
 
-Пример последовательности команд для тестирования Postgresql:
+# Пример последовательности команд для тестирования Postgresql:
 
 make all  
 make clean  
 make postgres_pop  
 make postgres_pay  
 
-Пример последовательности команд для тестирования FoundationDB:
+# Пример последовательности команд для тестирования FoundationDB:
 
 Примечание: 
 1. Команда make all запускается один раз, т.е. если сначала было выполнено тестирование Postgresql, 
@@ -46,4 +62,3 @@ make all
 make fdb_init  
 make fdb_pop  
 make fdb_pay  
-

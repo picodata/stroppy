@@ -33,9 +33,18 @@ import (
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
+	"gitlab.com/picodata/benchmark/stroppy/sshtunnel"
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/portforward"
+	"k8s.io/client-go/transport/spdy"
 )
 
 const terraformWorkDir = "benchmark/deploy/"
@@ -99,6 +108,8 @@ var errPortCheck = errors.New("port Check failed")
 
 var errPodsNotFound = errors.New("one of pods is not found")
 
+var errPodsNotFound = errors.New("one of pods is not found")
+
 type TemplatesConfig struct {
 	Yandex Configurations
 }
@@ -123,6 +134,12 @@ type ConfigurationUnitParams struct {
 type statusClusterSet struct {
 	status string
 	err    error
+}
+
+type sshResult struct {
+	Port   int
+	Tunnel *sshtunnel.SSHTunnel
+	Err    error
 }
 
 // installTerraform - установить terraform, если не установлен
@@ -363,6 +380,7 @@ func copyToMaster() error {
 	}
 
 	// проверяем наличие файла id_rsa
+
 	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
 	_, err = os.Stat(privateKeyFile)
 	if err != nil {
@@ -930,12 +948,6 @@ func copyConfigFromMaster() error {
 	return nil
 }
 
-type sshResult struct {
-	Port   int
-	Tunnel *sshtunnel.SSHTunnel
-	Err    error
-}
-
 // openSSHTunnel - открыть ssh-соединение и передать указатель на него вызывающему коду для управления
 func openSSHTunnel(sshTunnelChan chan sshResult) {
 	mapIP, err := getIPMapping()
@@ -1308,10 +1320,10 @@ func Deploy(settings *config.DeploySettings) error {
 		if errors.Is(err, exec.ErrNotFound) {
 			err := installTerraform()
 			if err != nil {
-				llog.Fatalf("Deploy terraform status: %v ", err)
+				llog.Fatalf("Failed to install terraform: %v ", err)
 				return merry.Prepend(err, "failed to install terraform")
 			} else {
-				llog.Infof("Deploy terraform status: success")
+				llog.Infof("Terraform install status: success")
 			}
 		}
 	}
@@ -1355,7 +1367,6 @@ func Deploy(settings *config.DeploySettings) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from Master")
 	}
-
 	sshTunnelChan := make(chan sshResult)
 	portForwardChan := make(chan tunnelToCluster)
 
