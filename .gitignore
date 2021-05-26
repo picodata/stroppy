@@ -4,10 +4,9 @@ fdb.cluster
 .*
 id_rsa.* 
 id_rsa
-yandex_compute_instance_group.tf
+picodata.pem
 *.tfstate
 *.tfstate.backup
-
 
 vendor
 bin

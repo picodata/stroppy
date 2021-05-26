@@ -16,7 +16,7 @@ variable "yc_cloud_id" {
 variable "yc_folder_id" {
   type = string
   description = "Yandex Cloud folder id"
-  default = "b1gj1dh66oosnfvon61a"
+  default = "b1gj1dh66oosnfvon61b"
 }
 
 provider "yandex" {

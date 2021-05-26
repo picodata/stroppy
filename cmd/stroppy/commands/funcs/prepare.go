@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"strings"
 
 	"github.com/ansel1/merry"
 	"github.com/hashicorp/hcl/v2"
@@ -84,30 +85,33 @@ func setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setVpcNetworkBody - задать блок управления сетью cloud
-func setVpcNetworkBody(providerFileBody *hclwrite.Body) {
-	vpcNetworkBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_network", "internal"})
-	vpcNetworkBody := vpcNetworkBlock.Body()
-	vpcNetworkBody.SetAttributeValue("name", cty.StringVal("internal"))
-	providerFileBody.AppendNewline()
-}
-
 //nolint:gochecknoglobals
 var (
 	vpcInternalNetworkName string
 	vpcSubnetBlockName     string
 )
 
-// setVpcSubnetBody - задать блок управления подсетью cloud
-func setVpcSubnetBody(providerFileBody *hclwrite.Body) {
-	networkID := randStringID()
+// setVpcNetworkBody - задать блок управления сетью cloud
+func setVpcNetworkBody(providerFileBody *hclwrite.Body) {
+	networkID := strings.ToLower(randStringID())
 	vpcSubnetBlockName = fmt.Sprintf("internal-a-%s", networkID)
 	vpcInternalNetworkName = fmt.Sprintf("internal-%s", networkID)
 
+	vpcNetworkBlock := providerFileBody.AppendNewBlock("resource",
+		[]string{"yandex_vpc_network", vpcInternalNetworkName})
+	vpcNetworkBody := vpcNetworkBlock.Body()
+	vpcNetworkBody.SetAttributeValue("name", cty.StringVal(vpcInternalNetworkName))
+	providerFileBody.AppendNewline()
+}
+
+const zoneName = "ru-central1-a"
+
+// setVpcSubnetBody - задать блок управления подсетью cloud
+func setVpcSubnetBody(providerFileBody *hclwrite.Body) {
 	vpcSubnetBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_subnet", vpcSubnetBlockName})
 	vpcSubnetBody := vpcSubnetBlock.Body()
 	vpcSubnetBody.SetAttributeValue("name", cty.StringVal(vpcSubnetBlockName))
-	vpcSubnetBody.SetAttributeValue("zone", cty.StringVal("ru-central1-a"))
+	vpcSubnetBody.SetAttributeValue("zone", cty.StringVal(zoneName))
 	//nolint:exhaustivestruct
 	vpcNetInternalID := hcl.Traversal{
 		hcl.TraverseRoot{Name: fmt.Sprintf("yandex_vpc_network.%s", vpcInternalNetworkName)},
@@ -115,8 +119,9 @@ func setVpcSubnetBody(providerFileBody *hclwrite.Body) {
 	}
 	vpcSubnetBody.SetAttributeTraversal("network_id", vpcNetInternalID)
 
-	var v4CidrBlocks []cty.Value
 	const subnetAddressTemplate = "172.16.%d.0/24"
+
+	var v4CidrBlocks []cty.Value
 	v4CidrBlocks = append(v4CidrBlocks, cty.StringVal(fmt.Sprintf(subnetAddressTemplate, rand.Intn(254))))
 	vpcSubnetBody.SetAttributeValue("v4_cidr_blocks", cty.ListVal(v4CidrBlocks))
 	providerFileBody.AppendNewline()
@@ -130,15 +135,10 @@ func setComputeImageBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-const zoneNameTemplate = "ru-central1-a-%s"
-
-//nolint:gochecknoglobals
-var zoneName string
-
 // setWorkersBlock - задать блок управления настройками worker-машин
 func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal,
 	cpu int, ram int, disk int, platform string, nodes int) {
-	workersBlockName := fmt.Sprintf("workers-1-%s", randStringID())
+	workersBlockName := fmt.Sprintf("workers-1%s", strings.ToLower(randStringID()))
 
 	workersBlock := providerFileBody.AppendNewBlock("resource",
 		[]string{"yandex_compute_instance_group", workersBlockName})
@@ -210,8 +210,6 @@ func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversa
 	allocPolicyWorkersBlock := workersBody.AppendNewBlock("allocation_policy", nil)
 	allocPolicyWorkersBody := allocPolicyWorkersBlock.Body()
 
-	zoneName = fmt.Sprintf(zoneNameTemplate, randStringID())
-
 	var zones []cty.Value
 	zones = append(zones, cty.StringVal(zoneName))
 	allocPolicyWorkersBody.SetAttributeValue("zones", cty.ListVal(zones))
@@ -240,7 +238,7 @@ func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversa
 
 // setMasterBlock - задать блок управления настройками master-машин
 func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal, platform string) {
-	computeInstanceName := fmt.Sprintf("master_%s", randStringID())
+	const computeInstanceName = "master"
 
 	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", computeInstanceName})
 	masterBody := masterBlock.Body()
