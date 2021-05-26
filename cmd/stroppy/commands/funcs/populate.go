@@ -36,6 +36,26 @@ type PopStats struct {
 	duplicates uint64
 }
 
+// executePop - выполнить загрузку счетов в указанную БД
+func executePop(cmdType string, databaseType string) error {
+	settings, err := readConfig(cmdType, databaseType)
+	if err != nil {
+		return merry.Prepend(err, "failed to read config")
+	}
+
+	if err := Populate(settings); err != nil {
+		llog.Errorf("%v", err)
+	}
+
+	balance, err := Check(settings, nil)
+	if err != nil {
+		llog.Errorf("%v", err)
+	}
+
+	llog.Infof("Total balance: %v", balance)
+	return nil
+}
+
 func Populate(settings *config.DatabaseSettings) error {
 	var (
 		err           error

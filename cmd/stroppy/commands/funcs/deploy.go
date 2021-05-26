@@ -72,17 +72,6 @@ const successPostgresPodsCount = 3
 
 const maxNotFoundCount = 5
 
-type mapAddresses struct {
-	masterExternalIP   string
-	masterInternalIP   string
-	metricsExternalIP  string
-	metricsInternalIP  string
-	ingressExternalIP  string
-	ingressInternalIP  string
-	postgresExternalIP string
-	postgresInternalIP string
-}
-
 /*
 структура хранит результат открытия port-forward туннеля к кластеру:
 cmd - структура, которая хранит атрибуты команды, которая запустила туннель
@@ -99,27 +88,6 @@ var errPortCheck = errors.New("port Check failed")
 
 var errPodsNotFound = errors.New("one of pods is not found")
 
-type TemplatesConfig struct {
-	Yandex Configurations
-}
-
-type Configurations struct {
-	Small    []ConfigurationUnitParams
-	Standard []ConfigurationUnitParams
-	Large    []ConfigurationUnitParams
-	Xlarge   []ConfigurationUnitParams
-	Xxlarge  []ConfigurationUnitParams
-	Maximum  []ConfigurationUnitParams
-}
-
-type ConfigurationUnitParams struct {
-	Description string
-	Platform    string
-	CPU         int
-	RAM         int
-	Disk        int
-}
-
 type statusClusterSet struct {
 	status string
 	err    error
@@ -129,52 +97,6 @@ type sshResult struct {
 	Port   int
 	Tunnel *sshtunnel.SSHTunnel
 	Err    error
-}
-
-// installTerraform - установить terraform, если не установлен
-func installTerraform() error {
-	llog.Infoln("Preparing the installation terraform...")
-
-	downloadArchiveCmd := exec.Command("curl", "-O",
-		"https://releases.hashicorp.com/terraform/0.14.7/terraform_0.14.7_linux_amd64.zip")
-	downloadArchiveCmd.Dir = terraformWorkDir
-	err := downloadArchiveCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to download archive of terraform")
-	}
-
-	unzipArchiveCmd := exec.Command("unzip", "terraform_0.14.7_linux_amd64.zip")
-	llog.Infoln(unzipArchiveCmd.String())
-	unzipArchiveCmd.Dir = terraformWorkDir
-	err = unzipArchiveCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to unzip archive of terraform")
-	}
-
-	rmArchiveCmd := exec.Command("rm", "terraform_0.14.7_linux_amd64.zip")
-	rmArchiveCmd.Dir = terraformWorkDir
-	err = rmArchiveCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to remove archive of terraform")
-	}
-
-	installCmd := exec.Command("sudo", "install", "terraform", "/usr/bin/terraform")
-	llog.Infoln(installCmd.String())
-	installCmd.Dir = terraformWorkDir
-	err = installCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to install terraform")
-	}
-
-	tabCompleteCmd := exec.Command("terraform", "-install-autocomplete")
-	llog.Infoln(tabCompleteCmd.String())
-	tabCompleteCmd.Dir = terraformWorkDir
-	err = tabCompleteCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to add Tab complete to terraform")
-	}
-
-	return nil
 }
 
 // terraformInit - подготовить среду для развертывания
@@ -190,173 +112,6 @@ func terraformInit() error {
 
 	llog.Infoln("Terraform initialized")
 	return nil
-}
-
-var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
-
-// terraformPrepare - заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
-func terraformPrepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
-	var templatesInit []ConfigurationUnitParams
-
-	flavor := settings.Flavor
-	switch flavor {
-	case "small":
-		templatesInit = templatesConfig.Yandex.Small
-	case "standard":
-		templatesInit = templatesConfig.Yandex.Standard
-	case "large":
-		templatesInit = templatesConfig.Yandex.Large
-	case "xlarge":
-		templatesInit = templatesConfig.Yandex.Xlarge
-	case "xxlarge":
-		templatesInit = templatesConfig.Yandex.Xxlarge
-	default:
-		return merry.Wrap(errChooseConfig)
-	}
-
-	err := Prepare(templatesInit[2].CPU,
-		templatesInit[3].RAM,
-		templatesInit[4].Disk,
-		templatesInit[1].Platform,
-		settings.Nodes)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-
-	return nil
-}
-
-// terraformApply - развернуть кластер
-func terraformApply() error {
-	checkLaunchTerraform := exec.Command("terraform", "show")
-	checkLaunchTerraform.Dir = terraformWorkDir
-
-	checkLaunchTerraformResult, err := checkLaunchTerraform.CombinedOutput()
-	if err != nil {
-		return merry.Prepend(err, "failed to Check terraform applying")
-	}
-
-	// при незапущенном кластера terraform возвращает пустую строку длиной 13 символов, либо no state c пробелами до 13
-	if len(checkLaunchTerraformResult) > linesNotInitTerraformShow {
-		llog.Infof("terraform already applied, deploy continue...")
-		return nil
-	}
-
-	llog.Infoln("Applying terraform...")
-	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
-	applyCMD.Dir = terraformWorkDir
-	result, err := applyCMD.CombinedOutput()
-	if err != nil {
-		llog.Errorln(string(result))
-		return merry.Wrap(err)
-	}
-
-	log.Printf("Terraform applied")
-	return nil
-}
-
-// terraformDestroy - уничтожить кластер
-func terraformDestroy() error {
-	destroyCmd := exec.Command("terraform", "destroy", "-force")
-	destroyCmd.Dir = terraformWorkDir
-
-	stdout, err := destroyCmd.StdoutPipe()
-	if err != nil {
-		return merry.Prepend(err, "failed creating command stdout pipe for logging destroy of cluster")
-	}
-
-	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
-
-	llog.Infoln("Destroying terraform...")
-	initCmdResult := destroyCmd.Run()
-	if initCmdResult != nil {
-		return merry.Wrap(initCmdResult)
-	}
-
-	llog.Infoln("Terraform destroyed")
-	return nil
-}
-
-func getIPMapping() (mapAddresses, error) {
-	/*
-		Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-		 своя пара - внешний (NAT) и внутренний ip.
-		 Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-		  т.к. использование encoding/json
-		влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-		по переданному тегу json, который можно преобразовать в том числе в строку.
-	*/
-	var mapIP mapAddresses
-	tsStateWorkDir := fmt.Sprintf("%s/terraform.tfstate", terraformWorkDir)
-	data, err := ioutil.ReadFile(tsStateWorkDir)
-	if err != nil {
-		return mapIP, merry.Prepend(err, "failed to read file terraform.tfstate")
-	}
-
-	masterExternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
-	masterExternalIP := masterExternalIPArray.Get("attributes").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.masterExternalIP = masterExternalIP.Str
-
-	masterInternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
-	masterInternalIP := masterInternalIPArray.Get("attributes").Get("network_interface.0").Get("ip_address")
-	mapIP.masterInternalIP = masterInternalIP.Str
-
-	metricsExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	metricsExternalIP := metricsExternalIPArray.Get("instances.0").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.metricsExternalIP = metricsExternalIP.Str
-
-	metricsInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	metricsInternalIP := metricsInternalIPArray.Get("instances.0").Get("network_interface.0").Get("ip_address")
-	mapIP.metricsInternalIP = metricsInternalIP.Str
-
-	ingressExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	ingressExternalIP := ingressExternalIPArray.Get("instances.1").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.ingressExternalIP = ingressExternalIP.Str
-
-	ingressInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	ingressInternalIP := ingressInternalIPArray.Get("instances.1").Get("network_interface.0").Get("ip_address")
-	mapIP.ingressInternalIP = ingressInternalIP.Str
-
-	postgresExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	postgresExternalIP := postgresExternalIPArray.Get("instances.2").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.postgresExternalIP = postgresExternalIP.Str
-
-	postgresInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
-	postgresInternalIP := postgresInternalIPArray.Get("instances.2").Get("network_interface.0").Get("ip_address")
-	mapIP.postgresInternalIP = postgresInternalIP.Str
-
-	return mapIP, nil
-}
-
-func getClientSSH(ipAddress string) (*ssh.Client, error) {
-	privateKeyFile := fmt.Sprintf("%s/id_rsa", terraformWorkDir)
-	privateKeyRaw, err := ioutil.ReadFile(privateKeyFile)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to get id_rsa for ssh client")
-	}
-
-	signer, err := ssh.ParsePrivateKey(privateKeyRaw)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to parse id_rsa for ssh client")
-	}
-	// линтер требует указания всех полей структуры при присвоении переменной
-	//nolint:exhaustivestruct
-	config := &ssh.ClientConfig{
-		User: "ubuntu",
-		Auth: []ssh.AuthMethod{
-			ssh.PublicKeys(signer),
-		},
-		//nolint:gosec
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
-	}
-
-	addr := fmt.Sprintf("%s:%d", ipAddress, 22)
-	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to start ssh connection for ssh client")
-	}
-	return client, nil
 }
 
 /*copyToMaster - скопировать на мастер-ноду ключ id_rsa для работы мастера с воркерами
@@ -709,42 +464,6 @@ func getClientSet() (*kubernetes.Clientset, error) {
 	return clientset, nil
 }
 
-// deployPostgres - развернуть postgres в кластере
-func deployPostgres() error {
-	llog.Infoln("Prepare deploy of postgres")
-	mapIP, err := getIPMapping()
-	if err != nil {
-		return merry.Prepend(err, "failed to map IP addresses in terraform.tfstate")
-	}
-	masterExternalIP := mapIP.masterExternalIP
-
-	sshClient, err := getClientSSH(masterExternalIP)
-	if err != nil {
-		return merry.Prepend(err, "failed to create ssh connection for deploy of postgres")
-	}
-
-	sshSession, err := sshClient.NewSession()
-	if err != nil {
-		return merry.Prepend(err, "failed to open ssh connection for deploy of postgres")
-	}
-	defer sshSession.Close()
-
-	llog.Infoln("Starting deploy of postgres")
-	deployCmd := "chmod +x deploy_operator.sh && ./deploy_operator.sh"
-	stdout, err := sshSession.StdoutPipe()
-	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe")
-	}
-	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
-	_, err = sshSession.CombinedOutput(deployCmd)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	llog.Infoln("Finished deploy of postgres")
-	return nil
-}
-
 // getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
 func getPostgresPodsCount() (*int64, error) {
 	manifestFile, err := ioutil.ReadFile("deploy/postgres-manifest.yaml")
@@ -840,195 +559,6 @@ func checkDeployPostgres() (statusClusterSet, error) {
 	return statusSet, nil
 }
 
-func openPostgresPortForward() error {
-	stopPortForwardPostgres := make(chan struct{})
-	readyPortForwardPostgres := make(chan struct{})
-	errorPortForwardPostgres := make(chan error)
-
-	clientset, err := getClientSet()
-	if err != nil {
-		return merry.Prepend(err, "failed to get clientset for open port-forward of postgres")
-	}
-
-	// reqURL - текущий url запроса к сущности k8s в runtime
-	reqURL := clientset.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Namespace("default").
-		Name("acid-postgres-cluster-0").
-		SubResource("portforward").URL()
-
-	go openKubePortForward("postgres", []string{"6432:5432"}, reqURL,
-		stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
-
-	select {
-	case <-readyPortForwardPostgres:
-		llog.Infof("Port-forwarding for postgres is started success\n")
-		return nil
-	case errPortForwardPostgres := <-errorPortForwardPostgres:
-		llog.Errorf("Port-forwarding for postgres is started failed\n")
-		return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
-	}
-}
-
-// openKubePortForward - открыть port-forward туннель для вызывающей функции(caller)
-func openKubePortForward(caller string, ports []string, reqURL *url.URL,
-	stopPortForward chan struct{}, readyPortForward chan struct{}, errorPortForward chan error) {
-	llog.Printf("Opening of port-forward of %v...\n", caller)
-
-	config, err := getKubeConfig()
-	if err != nil {
-		llog.Errorf("failed to get kubeconfig for open port-forward of %v: %v", caller, err)
-		errorPortForward <- err
-	}
-
-	httpTransaction, upgrader, err := spdy.RoundTripperFor(config)
-	if err != nil {
-		llog.Errorf("failed to create http transction for port-forward of %v: %v\n", caller, err)
-		errorPortForward <- err
-	}
-
-	portForwardLog, err := os.OpenFile("portForwardPostgres.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		llog.Errorf("failed to create or open log file for port-forward of %v: %v", caller, err)
-		errorPortForward <- err
-	}
-	defer portForwardLog.Close()
-
-	//nolint:exhaustivestruct
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: httpTransaction}, http.MethodPost, reqURL)
-	portForward, err := portforward.New(dialer, ports,
-		stopPortForward, readyPortForward, portForwardLog, portForwardLog)
-	if err != nil {
-		llog.Errorf("failed to get port-forwarder of %v: %v\n", caller, err)
-		errorPortForward <- err
-	}
-
-	err = portForward.ForwardPorts()
-	defer close(stopPortForward)
-	if err != nil {
-		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
-		errorPortForward <- err
-	}
-}
-
-// copyConfigFromMaster - скопировать файд kube config c мастер-инстанса кластера и применить для использования
-func copyConfigFromMaster() error {
-	mapIP, err := getIPMapping()
-	if err != nil {
-		return merry.Prepend(err, "failed to get IP addresses for copy from master")
-	}
-
-	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", mapIP.masterExternalIP)
-	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
-	llog.Infoln(copyFromMasterCmd.String())
-	copyFromMasterCmd.Dir = terraformWorkDir
-
-	_, err = copyFromMasterCmd.CombinedOutput()
-	if err != nil {
-		return merry.Prepend(err, "failed to execute command copy from master")
-	}
-
-	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
-	clusterURL := "https://localhost:6443"
-	if err = editClusterURL(clusterURL); err != nil {
-		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
-	}
-
-	return nil
-}
-
-// openSSHTunnel - открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func openSSHTunnel(sshTunnelChan chan sshResult) {
-	mapIP, err := getIPMapping()
-	if err != nil {
-		log.Printf("failed to get IP addresses for open ssh tunnel:%v ", err)
-		sshTunnelChan <- sshResult{0, nil, err}
-	}
-	mastersConnectionString := fmt.Sprintf("ubuntu@%v", mapIP.masterExternalIP)
-
-	/*	проверяем доступность портов для postgres на локальной машине */
-	llog.Infoln("Checking the status of port 6443 of the localhost for k8s...")
-	k8sPort := clusterK8sPort
-	if !isLocalPortOpen(k8sPort) {
-		llog.Infoln("Checking the status of port 6444 of the localhost for k8s...")
-		// проверяем резервный порт в случае недоступности основного
-		k8sPort = reserveClusterK8sPort
-		if !isLocalPortOpen(k8sPort) {
-			sshTunnelChan <- sshResult{0, nil, merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available")}
-		}
-
-		// подменяем порт в kubeconfig на локальной машине
-		clusterURL := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
-		if err = editClusterURL(clusterURL); err != nil {
-			llog.Infof("failed to replace port: %v", err)
-			sshTunnelChan <- sshResult{0, nil, err}
-		}
-	}
-
-	authMethod, err := sshtunnel.PrivateKeyFile("benchmark/deploy/id_rsa")
-	if err != nil {
-		llog.Infof("failed to use private key file: %v", err)
-		sshTunnelChan <- sshResult{0, nil, err}
-	}
-	// Setup the tunnel, but do not yet start it yet.
-	destinationServerString := fmt.Sprintf("localhost:%v", k8sPort)
-	tunnel, err := sshtunnel.NewSSHTunnel(
-		mastersConnectionString,
-		destinationServerString,
-		k8sPort,
-		authMethod,
-	)
-	if err != nil {
-		sshTunnelChan <- sshResult{0, nil, merry.Prepend(err, "failed to create tunnel")}
-	}
-
-	// You can provide a logger for debugging, or remove this line to
-	// make it silent.
-	tunnel.Log = log.New(os.Stdout, "SSH tunnel ", log.Flags())
-
-	tunnelStartedChan := make(chan error, 1)
-	go tunnel.Start(tunnelStartedChan)
-	tunnelStarted := <-tunnelStartedChan
-	close(tunnelStartedChan)
-
-	if tunnelStarted != nil {
-		sshTunnelChan <- sshResult{0, nil, merry.Prepend(err, "failed to start tunnel")}
-		return
-	}
-
-	sshTunnelChan <- sshResult{k8sPort, tunnel, nil}
-}
-
-// openMonitoringPortForward - запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func openMonitoringPortForward(portForwardChan chan tunnelToCluster) {
-	// проверяем доступность портов 8080 и 8081 на локальной машине
-	llog.Infoln("Checking the status of port 8080 of the localhost for monitoring...")
-	monitoringPort := clusterMonitoringPort
-	if !isLocalPortOpen(monitoringPort) {
-		llog.Infoln("Checking the status of port 8081 of the localhost for monitoring...")
-		// проверяем доступность резервного порта
-		monitoringPort = reserveClusterMonitoringPort
-		if !isLocalPortOpen(monitoringPort) {
-			portForwardChan <- tunnelToCluster{nil, merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"), nil}
-		}
-	}
-
-	// формируем строку с указанием портов для port-forward
-	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
-	// уровень --v=4 соответствует debug
-	portForwardCmd := exec.Command("kubectl", "port-forward", "--kubeconfig=config", "--log-file=portforward.log",
-		"--v=4", "deployment/grafana-stack", portForwardSpec, "-n", "monitoring")
-	llog.Infof(portForwardCmd.String())
-	portForwardCmd.Dir = terraformWorkDir
-
-	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
-	if err := portForwardCmd.Start(); err != nil {
-		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
-		portForwardChan <- tunnelToCluster{nil, err, nil}
-	}
-	portForwardChan <- tunnelToCluster{portForwardCmd, nil, &monitoringPort}
-}
-
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
 func readCommandFromInput(portForwardStruct tunnelToCluster,
 	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
@@ -1103,36 +633,6 @@ func readCommandFromInput(portForwardStruct tunnelToCluster,
 	}
 }
 
-func readTemplates() (*TemplatesConfig, error) {
-	var templatesConfig TemplatesConfig
-	data, err := ioutil.ReadFile(templatesFile)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to read templates.yml")
-	}
-	err = yaml.Unmarshal(data, &templatesConfig)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to unmarshall templates.yml")
-	}
-	return &templatesConfig, nil
-}
-
-// executePop - выполнить загрузку счетов в указанную БД
-func executePop(cmdType string, databaseType string) error {
-	settings, err := readConfig(cmdType, databaseType)
-	if err != nil {
-		return merry.Prepend(err, "failed to read config")
-	}
-	if err := Populate(settings); err != nil {
-		llog.Errorf("%v", err)
-	}
-	balance, err := Check(settings, nil)
-	if err != nil {
-		llog.Errorf("%v", err)
-	}
-	llog.Infof("Total balance: %v", balance)
-	return nil
-}
-
 // executePay - выполнить тест переводов
 func executePay(cmdType string, databaseType string) error {
 	settings, err := readConfig(cmdType, databaseType)
@@ -1140,6 +640,7 @@ func executePay(cmdType string, databaseType string) error {
 		return merry.Prepend(err, "failed to read config")
 	}
 	sum, err := Check(settings, nil)
+
 	if err != nil {
 		llog.Errorf("%v", err)
 	}
@@ -1149,6 +650,7 @@ func executePay(cmdType string, databaseType string) error {
 	if err := Pay(settings); err != nil {
 		llog.Errorf("%v", err)
 	}
+
 	if settings.Check {
 		balance, err := Check(settings, sum)
 		if err != nil {
