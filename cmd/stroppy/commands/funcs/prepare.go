@@ -238,7 +238,8 @@ func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversa
 
 // setMasterBlock - задать блок управления настройками master-машин
 func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal, platform string) {
-	const computeInstanceName = "master"
+	const computeInstanceNameTemplate = "master%s"
+	computeInstanceName := fmt.Sprintf(computeInstanceNameTemplate, strings.ToLower(randStringID()))
 
 	masterBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_compute_instance", computeInstanceName})
 	masterBody := masterBlock.Body()

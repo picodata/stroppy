@@ -561,28 +561,34 @@ func deployKuberneters() error {
 		llog.Infoln("k8s already success deployed")
 		return nil
 	}
+
 	mapIP, err := getIPMapping()
 	if err != nil {
 		return merry.Prepend(err, "failed to get IP addresses for deploy k8s")
 	}
+
 	client, err := getClientSSH(mapIP.masterExternalIP)
 	if err != nil {
 		return merry.Prepend(err, "failed to get ssh client for deploy k8s")
 	}
+
 	deployOneStep, err := client.NewSession()
 	if err != nil {
 		return merry.Prepend(err, "failed to open ssh connection for first step deploy")
 	}
+
 	_, err = deployOneStep.CombinedOutput(deployk8sFirstStepCmd)
 	if err != nil {
 		return merry.Prepend(err, "failed first step deploy k8s")
 	}
 	log.Printf("First step deploy k8s: success")
+
 	deployOneStep.Close()
 	deploySecondStep, err := client.NewSession()
 	if err != nil {
 		return merry.Prepend(err, "failed to open ssh connection for second step deploy")
 	}
+
 	deployk8sSecondStepCmd := fmt.Sprintf(`echo \
 "tee inventory/local/hosts.ini<<EOF
 [all]
@@ -614,31 +620,37 @@ EOF" | tee -a deploy_kubernetes.sh
 		mapIP.ingressInternalIP, mapIP.ingressInternalIP,
 		mapIP.postgresInternalIP, mapIP.postgresInternalIP,
 	)
+
 	_, err = deploySecondStep.CombinedOutput(deployk8sSecondStepCmd)
 	if err != nil {
 		return merry.Prepend(err, "failed second step deploy k8s")
 	}
 	log.Printf("Second step deploy k8s: success")
+
 	deploySecondStep.Close()
 	deployThirdStep, err := client.NewSession()
 	if err != nil {
 		return merry.Prepend(err, "failed to open ssh connection for second step deploy k8s")
 	}
+
 	_, err = deployThirdStep.CombinedOutput(deployk8sThirdStepCmd)
 	if err != nil {
 		return merry.Prepend(err, "failed third step deploy k8s")
 	}
 	log.Printf("Third step deploy k8s: success")
+
 	deployThirdStep.Close()
 	deployFooStep, err := client.NewSession()
 	if err != nil {
 		return merry.Prepend(err, "failed to open ssh connection for third step deploy k8s")
 	}
+
 	deployFooStepCmd := "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
 	stdout, err := deployFooStep.StdoutPipe()
 	if err != nil {
 		return merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
 	}
+
 	stdoutReader := bufio.NewReader(stdout)
 	go handleReader(stdoutReader)
 	llog.Infof("Waiting for deploying about 20 minutes...")
@@ -646,6 +658,7 @@ EOF" | tee -a deploy_kubernetes.sh
 	if err != nil {
 		return merry.Prepend(err, "failed foo step deploy k8s")
 	}
+
 	log.Printf("Foo step deploy k8s: success")
 	deployFooStep.Close()
 	defer client.Close()
