@@ -38,8 +38,6 @@ docker:
     paths:
       - benchmark/docker-tag.txt
     expire_in: 1 month
-  before_script:
-    - cd benchmark
   script:
     - CD_DOCKER_TAG=`date +'%Y-%m-%d'`_$CI_COMMIT_SHA
     - echo $CD_DOCKER_TAG > docker-tag.txt
