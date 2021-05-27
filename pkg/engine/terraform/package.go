@@ -3,80 +3,176 @@ package terraform
 import (
 	"bufio"
 	"errors"
-	"fmt"
-	"github.com/ansel1/merry"
-	llog "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"io/ioutil"
 	"log"
 	"os/exec"
 	"path/filepath"
+	"strings"
+
+	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/engine"
+	"gopkg.in/yaml.v2"
 )
+
+// размер ответа terraform show при незапущенном кластере
+const linesNotInitTerraformShow = 13
+
+const templatesFileName = "templates.yml"
 
 var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
-func CreateTerraform(exeFolder, cfgFolder string) (t *Terraform) {
+func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
 	t = &Terraform{
+		settings:          settings,
 		exePath:           filepath.Join(exeFolder, "terraform"),
-		templatesFilePath: filepath.Join(cfgFolder),
+		templatesFilePath: filepath.Join(cfgFolder, templatesFileName),
 		WorkDirectory:     cfgFolder,
 	}
+	t.stateFilePath = filepath.Join(t.WorkDirectory, "terraform.tfstate")
+
+	checkVersionCmd, err := exec.Command("terraform", "version").Output()
+	if err != nil {
+		log.Printf("Failed to find terraform version")
+
+		if errors.Is(err, exec.ErrNotFound) {
+			err := t.install()
+			if err != nil {
+				llog.Fatalf("Failed to install terraform: %v ", err)
+			} else {
+				llog.Infof("Terraform install status: success")
+			}
+		}
+	}
+
+	if strings.Contains(string(checkVersionCmd), "version") {
+		llog.Infof("Founded version %v", string(checkVersionCmd[:17]))
+	}
+
 	return
 }
 
 type MapAddresses struct {
-	masterExternalIP   string
-	masterInternalIP   string
-	metricsExternalIP  string
-	metricsInternalIP  string
-	ingressExternalIP  string
-	ingressInternalIP  string
-	postgresExternalIP string
-	postgresInternalIP string
+	MasterExternalIP   string
+	MasterInternalIP   string
+	MetricsExternalIP  string
+	MetricsInternalIP  string
+	IngressExternalIP  string
+	IngressInternalIP  string
+	PostgresExternalIP string
+	PostgresInternalIP string
 }
 
 type Terraform struct {
+	settings *config.DeploySettings
+
 	exePath           string
 	templatesFilePath string
-	WorkDirectory     string
+	stateFilePath     string
+
+	addressMap *MapAddresses
+	isInit     bool
+
+	WorkDirectory string
 }
 
 type TemplatesConfig struct {
 	Yandex Configurations
 }
 
-// terraformApply - развернуть кластер
-func (t *Terraform) terraformApply() error {
-	checkLaunchTerraform := exec.Command("terraform", "show")
-	checkLaunchTerraform.Dir = t.WorkDirectory
+func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
+	if t.addressMap == nil {
+		var _map *MapAddresses
+		_map, err = t.collectInternalExternalAddressMap()
+		if err != nil {
+			return
+		}
+		t.addressMap = _map
+	}
 
-	checkLaunchTerraformResult, err := checkLaunchTerraform.CombinedOutput()
+	addressMap = *t.addressMap
+	return
+}
+
+func (t *Terraform) Init() (err error) {
+	var terraformVersionSting []byte
+	terraformVersionSting, err = exec.Command("terraform", "version").Output()
 	if err != nil {
+		log.Printf("Failed to find terraform version")
+
+		if errors.Is(err, exec.ErrNotFound) {
+			if err = t.install(); err != nil {
+				llog.Fatalf("Failed to install terraform: %v ", err)
+				return merry.Prepend(err, "failed to install terraform")
+			}
+			llog.Infof("Terraform install status: success")
+		}
+	}
+
+	if strings.Contains(string(terraformVersionSting), "version") {
+		llog.Infof("Founded version %v", string(terraformVersionSting[:17]))
+	}
+	return
+}
+
+func (t *Terraform) Run() error {
+	templatesConfig, err := t.readTemplates()
+	if err != nil {
+		return merry.Prepend(err, "failed to read templates.yml")
+	}
+
+	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform (пока yandex)
+	err = t.prepare(*templatesConfig, t.settings)
+	if err != nil {
+		return merry.Prepend(err, "failed to prepare terraform")
+	}
+
+	err = t.init()
+	if err != nil {
+		return merry.Prepend(err, "failed to init terraform")
+	}
+
+	err = t.apply()
+	if err != nil {
+		return merry.Prepend(err, "failed to apply terraform")
+	}
+
+	return nil
+}
+
+// apply - развернуть кластер
+func (t *Terraform) apply() (err error) {
+	terraformShowCmd := exec.Command("terraform", "show")
+	terraformShowCmd.Dir = t.WorkDirectory
+
+	var terraformShowOutput []byte
+	if terraformShowOutput, err = terraformShowCmd.CombinedOutput(); err != nil {
 		return merry.Prepend(err, "failed to Check terraform applying")
 	}
 
 	// при незапущенном кластера terraform возвращает пустую строку длиной 13 символов, либо no state c пробелами до 13
-	if len(checkLaunchTerraformResult) > linesNotInitTerraformShow {
+	if len(terraformShowOutput) > linesNotInitTerraformShow {
 		llog.Infof("terraform already applied, deploy continue...")
-		return nil
+		return
 	}
 
 	llog.Infoln("Applying terraform...")
 	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
 	applyCMD.Dir = t.WorkDirectory
-	result, err := applyCMD.CombinedOutput()
-	if err != nil {
-		llog.Errorln(string(result))
-		return merry.Wrap(err)
+
+	var result []byte
+	if result, err = applyCMD.CombinedOutput(); err != nil {
+		return merry.Prependf(err, "terraform apply error, possible output '%s'", string(result))
 	}
 
 	log.Printf("Terraform applied")
-	return nil
+	return
 }
 
-// terraformDestroy - уничтожить кластер
-func (t *Terraform) terraformDestroy() error {
+// Destroy - уничтожить кластер
+func (t *Terraform) Destroy() error {
 	destroyCmd := exec.Command("terraform", "destroy", "-force")
 	destroyCmd.Dir = t.WorkDirectory
 
@@ -86,7 +182,7 @@ func (t *Terraform) terraformDestroy() error {
 	}
 
 	stdoutReader := bufio.NewReader(stdout)
-	go handleReader(stdoutReader)
+	go engine.HandleReader(stdoutReader)
 
 	llog.Infoln("Destroying terraform...")
 	initCmdResult := destroyCmd.Run()
@@ -104,15 +200,18 @@ func (t *Terraform) readTemplates() (*TemplatesConfig, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read templates.yml")
 	}
+
 	err = yaml.Unmarshal(data, &templatesConfig)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to unmarshall templates.yml")
 	}
+
 	return &templatesConfig, nil
 }
 
-// terraformPrepare - заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
-func (t *Terraform) terraformPrepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
+// prepare
+// заполнить конфиг провайдера (for example yandex_compute_instance_group.tf)
+func (t *Terraform) prepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
 	var templatesInit []ConfigurationUnitParams
 
 	flavor := settings.Flavor
@@ -131,7 +230,7 @@ func (t *Terraform) terraformPrepare(templatesConfig TemplatesConfig, settings *
 		return merry.Wrap(errChooseConfig)
 	}
 
-	err := Prepare(templatesInit[2].CPU,
+	err := prepareConfig(templatesInit[2].CPU,
 		templatesInit[3].RAM,
 		templatesInit[4].Disk,
 		templatesInit[1].Platform,
@@ -143,7 +242,7 @@ func (t *Terraform) terraformPrepare(templatesConfig TemplatesConfig, settings *
 	return nil
 }
 
-func (t *Terraform) getIPMapping() (MapAddresses, error) {
+func (t *Terraform) collectInternalExternalAddressMap() (*MapAddresses, error) {
 	/*
 		Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 		 своя пара - внешний (NAT) и внутренний ip.
@@ -152,50 +251,55 @@ func (t *Terraform) getIPMapping() (MapAddresses, error) {
 		влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
 		по переданному тегу json, который можно преобразовать в том числе в строку.
 	*/
+
+	if !t.isInit {
+		return nil, errors.New("terraform not init")
+	}
+
 	var mapIP MapAddresses
-	tsStateWorkDir := fmt.Sprintf("%s/terraform.tfstate", t.WorkDirectory)
-	data, err := ioutil.ReadFile(tsStateWorkDir)
+	data, err := ioutil.ReadFile(t.stateFilePath)
 	if err != nil {
-		return mapIP, merry.Prepend(err, "failed to read file terraform.tfstate")
+		return nil, merry.Prepend(err, "failed to read file terraform.tfstate")
 	}
 
 	masterExternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
 	masterExternalIP := masterExternalIPArray.Get("attributes").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.masterExternalIP = masterExternalIP.Str
+	mapIP.MasterExternalIP = masterExternalIP.Str
 
 	masterInternalIPArray := gjson.Parse(string(data)).Get("resources.1").Get("instances.0")
 	masterInternalIP := masterInternalIPArray.Get("attributes").Get("network_interface.0").Get("ip_address")
-	mapIP.masterInternalIP = masterInternalIP.Str
+	mapIP.MasterInternalIP = masterInternalIP.Str
 
 	metricsExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	metricsExternalIP := metricsExternalIPArray.Get("instances.0").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.metricsExternalIP = metricsExternalIP.Str
+	mapIP.MetricsExternalIP = metricsExternalIP.Str
 
 	metricsInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	metricsInternalIP := metricsInternalIPArray.Get("instances.0").Get("network_interface.0").Get("ip_address")
-	mapIP.metricsInternalIP = metricsInternalIP.Str
+	mapIP.MetricsInternalIP = metricsInternalIP.Str
 
 	ingressExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	ingressExternalIP := ingressExternalIPArray.Get("instances.1").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.ingressExternalIP = ingressExternalIP.Str
+	mapIP.IngressExternalIP = ingressExternalIP.Str
 
 	ingressInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	ingressInternalIP := ingressInternalIPArray.Get("instances.1").Get("network_interface.0").Get("ip_address")
-	mapIP.ingressInternalIP = ingressInternalIP.Str
+	mapIP.IngressInternalIP = ingressInternalIP.Str
 
 	postgresExternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	postgresExternalIP := postgresExternalIPArray.Get("instances.2").Get("network_interface.0").Get("nat_ip_address")
-	mapIP.postgresExternalIP = postgresExternalIP.Str
+	mapIP.PostgresExternalIP = postgresExternalIP.Str
 
 	postgresInternalIPArray := gjson.Parse(string(data)).Get("resources.2").Get("instances.0").Get("attributes")
 	postgresInternalIP := postgresInternalIPArray.Get("instances.2").Get("network_interface.0").Get("ip_address")
-	mapIP.postgresInternalIP = postgresInternalIP.Str
+	mapIP.PostgresInternalIP = postgresInternalIP.Str
 
-	return mapIP, nil
+	return &mapIP, nil
 }
 
-// installTerraform - установить terraform, если не установлен
-func (t *Terraform) installTerraform() error {
+// install
+// установить terraform, если не установлен
+func (t *Terraform) install() error {
 	llog.Infoln("Preparing the installation terraform...")
 
 	downloadArchiveCmd := exec.Command("curl", "-O",
@@ -237,5 +341,20 @@ func (t *Terraform) installTerraform() error {
 		return merry.Prepend(err, "failed to add Tab complete to terraform")
 	}
 
+	return nil
+}
+
+// init - подготовить среду для развертывания
+func (t *Terraform) init() error {
+	llog.Infoln("Initializating terraform...")
+
+	initCmd := exec.Command("terraform", "init")
+	initCmd.Dir = t.WorkDirectory
+	initCmdResult := initCmd.Run()
+	if initCmdResult != nil {
+		return merry.Wrap(initCmdResult)
+	}
+
+	llog.Infoln("Terraform initialized")
 	return nil
 }

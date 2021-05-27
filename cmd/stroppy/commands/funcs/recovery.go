@@ -1,8 +1,9 @@
 package funcs
 
 import (
-	"gitlab.com/picodata/stroppy/pkg/database"
 	"sync"
+
+	"gitlab.com/picodata/stroppy/pkg/database"
 
 	"gitlab.com/picodata/stroppy/internal/model"
 

@@ -1,14 +1,15 @@
 package funcs
 
 import (
-	"gitlab.com/picodata/stroppy/pkg/database"
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gitlab.com/picodata/stroppy/pkg/database"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/database/config"
 
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"

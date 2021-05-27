@@ -1,4 +1,4 @@
-package funcs
+package terraform
 
 import (
 	"fmt"
@@ -22,7 +22,7 @@ const defaultMasterDisk = 15
 const providerFilePath = "benchmark/deploy/yandex_compute_instance_group.tf"
 
 func randStringID() string {
-	var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 
 	const idLength = 5
 	b := make([]rune, idLength)
@@ -282,8 +282,9 @@ func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal
 	masterBody.SetAttributeTraversal("metadata", stringSSHKeys)
 }
 
-// Prepare - сформировать файл конфигурации для провайдера
-func Prepare(cpu int, ram int, disk int, platform string, nodes int) error {
+// prepareConfig
+// сформировать файл конфигурации для провайдера
+func prepareConfig(cpu int, ram int, disk int, platform string, nodes int) error {
 	llog.Infoln("Starting generation provider configuration file")
 
 	providerFile := hclwrite.NewEmptyFile()

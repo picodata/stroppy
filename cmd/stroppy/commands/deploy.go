@@ -1,12 +1,13 @@
 package commands
 
 import (
+	"math/rand"
+	"time"
+
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/cmd/stroppy/commands/funcs"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"math/rand"
-	"time"
 )
 
 func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {

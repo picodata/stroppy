@@ -1,10 +1,11 @@
 package funcs
 
 import (
+	"runtime"
+
 	"gitlab.com/picodata/stroppy/pkg/database"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"runtime"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
