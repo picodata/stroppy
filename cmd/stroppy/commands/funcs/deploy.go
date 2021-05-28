@@ -2,6 +2,7 @@ package funcs
 
 import (
 	"bufio"
+	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"io/ioutil"
 	"log"
 	"os"
@@ -178,6 +179,13 @@ func Deploy(settings *config.DeploySettings) (err error) {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 	defer k.Stop()
+
+	if settings.UseChaos {
+		chaosMesh := chaos.CreateController(sc, k)
+		if err = chaosMesh.Deploy(); err != nil {
+			return merry.Prepend(err, "failed to deploy and start chaos")
+		}
+	}
 
 	if settings.DBType == "postgres" {
 		pg := postgres.CreatePostgresCluster(sc, k, addressMap)

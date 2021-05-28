@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -91,6 +92,53 @@ func (k *Kubernetes) Deploy() (err error) {
 		return merry.Prepend(portForward.Error, "failed to port forward")
 	}
 
+	return
+}
+
+func (k *Kubernetes) execCommandInternal(text string) (session *ssh.Session, err error) {
+	if session, err = k.sc.GetNewSession(); err != nil {
+		return
+	}
+
+	return
+}
+
+func (k *Kubernetes) executeCommand(text string) (err error) {
+	var commandSessionObject *ssh.Session
+	if commandSessionObject, err = k.sc.GetNewSession(); err != nil {
+		return merry.Prepend(err, "failed to open ssh connection")
+	}
+
+	if _, err = commandSessionObject.CombinedOutput(text); err != nil {
+		return merry.Prepend(err, "output collect failed")
+	}
+
+	if err = commandSessionObject.Close(); err != nil {
+		llog.Warnf("failed to close command session: %v", err)
+	}
+
+	return
+}
+
+func (k *Kubernetes) runCommand(text string) (stdout io.Reader, session *ssh.Session, err error) {
+	if session, err = k.sc.GetNewSession(); err != nil {
+		err = merry.Prepend(err, "failed to open ssh connection")
+		return
+	}
+
+	if stdout, err = session.StdoutPipe(); err != nil {
+		err = merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
+
+		if err = session.Close(); err != nil {
+			llog.Warnf("runCommand: k8s ssh session can not closed: %v", err)
+		}
+	}
+
+	return
+}
+
+func (k *Kubernetes) ExecuteCommand(text string) (err error) {
+	err = k.executeCommand(text)
 	return
 }
 
@@ -190,81 +238,47 @@ func (k *Kubernetes) deploy() (err error) {
 		return
 	}
 
-	var deployOneStep *ssh.Session
-	if deployOneStep, err = k.sc.GetNewSession(); err != nil {
-		return merry.Prepend(err, "failed to open ssh connection for first step deploy")
-	}
-
-	if _, err = deployOneStep.CombinedOutput(deployk8sFirstStepCmd); err != nil {
-		return merry.Prepend(err, "failed first step deploy k8s")
+	if err = k.executeCommand(deployk8sFirstStepCmd); err != nil {
+		return merry.Prepend(err, "first step deployment failed")
 	}
 	log.Printf("First step deploy k8s: success")
 
-	if err = deployOneStep.Close(); err != nil {
-		llog.Warnf("failed to close deploy first step session: %v", err)
-	}
-
-	var deploySecondStep *ssh.Session
-	if deploySecondStep, err = k.sc.GetNewSession(); err != nil {
-		return merry.Prepend(err, "failed to open ssh connection for second step deploy")
-	}
-
 	mapIP := k.addressMap
-	deployk8sSecondStepCmd := fmt.Sprintf(deployk8sSecondStepTemplate,
+	secondStepCommandText := fmt.Sprintf(deployk8sSecondStepTemplate,
 		mapIP.MasterInternalIP, mapIP.MasterInternalIP,
 		mapIP.MetricsInternalIP, mapIP.MetricsInternalIP,
 		mapIP.IngressInternalIP, mapIP.IngressInternalIP,
 		mapIP.PostgresInternalIP, mapIP.PostgresInternalIP,
 	)
-
-	if _, err = deploySecondStep.CombinedOutput(deployk8sSecondStepCmd); err != nil {
+	if err = k.executeCommand(secondStepCommandText); err != nil {
 		return merry.Prepend(err, "failed second step deploy k8s")
 	}
 	log.Printf("Second step deploy k8s: success")
 
-	if err = deploySecondStep.Close(); err != nil {
-		llog.Warnf("failed to close deploy first step session: %v", err)
-	}
-
-	deployThirdStep, err := k.sc.GetNewSession()
-	if err != nil {
-		return merry.Prepend(err, "failed to open ssh connection for second step deploy k8s")
-	}
-
-	_, err = deployThirdStep.CombinedOutput(deployk8sThirdStepCmd)
-	if err != nil {
+	if err = k.executeCommand(deployk8sThirdStepCmd); err != nil {
 		return merry.Prepend(err, "failed third step deploy k8s")
 	}
 	log.Printf("Third step deploy k8s: success")
 
-	if err = deployThirdStep.Close(); err != nil {
-		llog.Warnf("failed to close deploy first step session: %v", err)
-	}
+	const fooStepCommand = "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
 
-	deployFooStep, err := k.sc.GetNewSession()
-	if err != nil {
-		return merry.Prepend(err, "failed to open ssh connection for third step deploy k8s")
-	}
-
-	deployFooStepCmd := "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
-	stdout, err := deployFooStep.StdoutPipe()
-	if err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
-	}
-
-	stdoutReader := bufio.NewReader(stdout)
-	go engine.HandleReader(stdoutReader)
-
-	llog.Infof("Waiting for deploying about 20 minutes...")
-	_, err = deployFooStep.CombinedOutput(deployFooStepCmd)
-	if err != nil {
+	var (
+		fooSession *ssh.Session
+		fooStdout  io.Reader
+	)
+	if fooStdout, fooSession, err = k.runCommand(fooStepCommand); err != nil {
 		return merry.Prepend(err, "failed foo step deploy k8s")
 	}
+	go engine.HandleReader(bufio.NewReader(fooStdout))
 
+	llog.Infof("Waiting for deploying about 20 minutes...")
+	_, err = fooSession.CombinedOutput(fooStepCommand)
+	if err != nil {
+		return merry.Prepend(err, "failed foo step deploy k8s waiting")
+	}
 	log.Printf("Foo step deploy k8s: success")
-	deployFooStep.Close()
+	_ = fooSession.Close()
 
-	// defer client.Close()
 	return
 }
 

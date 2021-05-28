@@ -35,6 +35,7 @@ type DeploySettings struct {
 	Flavor   string
 	Nodes    int
 	DBType   string
+	UseChaos bool
 }
 
 // DefaultsDeploy - заполнить параметры деплоя значениями по умолчанию.
@@ -46,6 +47,7 @@ func DefaultsDeploy() *DeploySettings {
 		Flavor:   "small",
 		Nodes:    3,
 		DBType:   "postgres",
+		UseChaos: true,
 	}
 	return &d
 }
