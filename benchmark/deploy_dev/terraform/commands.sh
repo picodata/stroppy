@@ -33,6 +33,7 @@ scp -i id_rsa -o StrictHostKeyChecking=no id_rsa ubuntu@130.193.39.175:/home/ubu
 scp -i id_rsa -o StrictHostKeyChecking=no ../metrics-server.yaml ubuntu@130.193.39.175:/home/ubuntu/metrics-server.yaml
 scp -i id_rsa -o StrictHostKeyChecking=no ../ingress-grafana.yaml ubuntu@130.193.39.175:/home/ubuntu/ingress-grafana.yaml
 scp -i id_rsa -o StrictHostKeyChecking=no ../postgres-manifest.yaml ubuntu@130.193.39.175:/home/ubuntu/postgres-manifest.yaml
+scp -i id_rsa -o StrictHostKeyChecking=no -R grafana-on-premise ubuntu@130.193.39.175:/home/ubuntu/
 ssh -i id_rsa ubuntu@130.193.39.175
 
 
@@ -86,14 +87,25 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
 # monitoring
 kubectl create namespace monitoring
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-helm install loki grafana/loki-stack --namespace monitoring
-helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
+# helm repo add grafana https://grafana.github.io/helm-charts
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm repo update
+# helm install loki grafana/loki-stack --namespace monitoring
+# helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
 kubectl apply -f /home/ubuntu/metrics-server.yaml
-kubectl apply -f /home/ubuntu/ingress-grafana.yaml
+# kubectl apply -f /home/ubuntu/ingress-grafana.yaml
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+# grafana-on-premise
+ansible-galaxy install cloudalchemy.prometheus
+ansible-galaxy install cloudalchemy.grafana
+ansible-galaxy install cloudalchemy.node_exporter
+ansible-galaxy collection install community.grafana
+cd ../grafana-on-premise
+ansible-playbook grafana-on-premise.yml
+ansible-playbook node_exporter.yml
+echo '  - worker-1:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
+echo '  - worker-2:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
+echo '  - worker-3:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
 EOO
 chmod +x deploy_kubernetes.sh
 ./deploy_kubernetes.sh
@@ -109,8 +121,8 @@ scp -i id_rsa -o StrictHostKeyChecking=no ubuntu@130.193.39.175:/home/ubuntu/.ku
 sed -i 's/172.16.1.10/localhost/g' config
 export KUBECONFIG=$(pwd)/config
 
-# GRAFANA ACCESS ON localhost:8080 (admin/prom-operator)
-kubectl port-forward deployment/grafana-stack 8080:3000 -n monitoring
+# GRAFANA ACCESS ON localhost:8080 (admin/admin)
+ssh -i id_rsa -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -L 3000:localhost:3000 ubuntu@130.193.39.175
 
 ### DESTROY CLUSTER (LOCAL)
 # terraform destroy -force
@@ -127,8 +139,9 @@ terraform apply -auto-approve
 
 scp -i picodata.pem -o StrictHostKeyChecking=no picodata.pem ubuntu@130.61.16.109:/home/ubuntu/.ssh
 scp -i picodata.pem -o StrictHostKeyChecking=no ../metrics-server.yaml ubuntu@130.61.16.109:/home/ubuntu/metrics-server.yaml
-scp -i picodata.pem -o StrictHostKeyChecking=no ../ingress-grafana.yaml ubuntu@130.61.16.109:/home/ubuntu/ingress-grafana.yaml
+# scp -i picodata.pem -o StrictHostKeyChecking=no ../ingress-grafana.yaml ubuntu@130.61.16.109:/home/ubuntu/ingress-grafana.yaml
 scp -i picodata.pem -o StrictHostKeyChecking=no ../postgres-manifest.yaml ubuntu@130.61.16.109:/home/ubuntu/postgres-manifest.yaml
+scp -i id_rsa -o StrictHostKeyChecking=no -R grafana-on-premise ubuntu@130.193.39.175:/home/ubuntu/
 ssh -i picodata.pem -o ServerAliveInterval=60 ubuntu@130.61.16.109
 
 ### REMOTE (~20 min):
@@ -189,14 +202,25 @@ sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
 # monitoring
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-kubectl create namespace monitoring
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
-helm install loki grafana/loki-stack --namespace monitoring
-helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
+#kubectl create namespace monitoring
+# helm repo add grafana https://grafana.github.io/helm-charts
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm repo update
+# helm install loki grafana/loki-stack --namespace monitoring
+# helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
 kubectl apply -f /home/ubuntu/metrics-server.yaml
-kubectl apply -f /home/ubuntu/ingress-grafana.yaml
+# kubectl apply -f /home/ubuntu/ingress-grafana.yaml
+# grafana-on-premise
+ansible-galaxy install cloudalchemy.prometheus
+ansible-galaxy install cloudalchemy.grafana
+ansible-galaxy install cloudalchemy.node_exporter
+ansible-galaxy collection install community.grafana
+cd ../grafana-on-premise
+ansible-playbook grafana-on-premise.yml
+ansible-playbook node_exporter.yml
+echo '  - worker-1:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
+echo '  - worker-2:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
+echo '  - worker-3:9100' | sudo tee -a /etc/prometheus/file_sd/node.yml
 EOO
 chmod +x deploy_kubernetes.sh
 ./deploy_kubernetes.sh
@@ -211,8 +235,8 @@ scp -i picodata.pem -o StrictHostKeyChecking=no ubuntu@130.61.16.109:/home/ubunt
 sed -i 's/10.1.20.156/localhost/g' config
 export KUBECONFIG=$(pwd)/config
 
-# GRAFANA ACCESS ON localhost:8080 (admin/prom-operator)
-kubectl port-forward deployment/grafana-stack 8080:3000 -n monitoring
+# GRAFANA ACCESS ON localhost:8080 (admin/admin)
+ssh -i picodata.pem -o StrictHostKeyChecking=no -o ServerAliveInterval=60 -L 3000:localhost:3000 ubuntu@130.61.229.200
 
 ### DESTROY CLUSTER (LOCAL)
 # terraform destroy -force
