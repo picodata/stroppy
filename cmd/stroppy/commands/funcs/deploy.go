@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
+	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
@@ -15,8 +16,6 @@ import (
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 
-	"gitlab.com/picodata/stroppy/pkg/statistics"
-
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -24,9 +23,7 @@ import (
 
 const workingDirectory = "benchmark/deploy"
 
-const configFile = "benchmark/deploy/test_config.json"
-
-// задержка для случаев ожидания переповтора или соблюдения порядка запуска
+const configFile = "deploy/test_config.json"
 
 var _terraform *terraform.Terraform
 
@@ -98,7 +95,7 @@ func readCommandFromInput(portForwardStruct *engine.ClusterTunnel,
 					}
 				}
 			default:
-				llog.Infof("You entered: %v. Expected quit \n", consoleCmd)
+				llog.Printf("You entered: %v. Expected quit \n", consoleCmd)
 			}
 		}
 	}
@@ -139,7 +136,6 @@ func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, 
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read config file")
 	}
-
 	settings.LogLevel = gjson.Parse(string(data)).Get("log_level").Str
 	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
 	settings.DatabaseType = databaseType
@@ -152,11 +148,10 @@ func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, 
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
 	} else if (cmdType == "postgres pay") || (cmdType == "fdb pay") {
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
-		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
+		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("check").Bool()
 		settings.ZIPFian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
 		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
 	}
-
 	return settings, nil
 }
 
@@ -232,11 +227,10 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	popChan := make(chan error)
 	payChan := make(chan error)
 	go readCommandFromInput(portForward, errorExitChan, successExitChan, popChan, payChan)
-
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
-		return merry.Wrap(err)
+		return err
 	case success := <-successExitChan:
 		llog.Infof("destroy cluster %v", success)
 		return nil
