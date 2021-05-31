@@ -11,7 +11,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-const instanceFilePath = "deploy/main_oracle.tf"
+const instanceFilePath = "benchmark/deploy/main_oracle.tf"
 
 func setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	ram int, diskString string, nodesString string) {
@@ -553,31 +553,6 @@ eu-frankfurt-1  = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaaw4ap4pklk3lo5pls5rppt2
 	ociIdentityAvailableDomainBody.SetAttributeValue("ad_number", cty.NumberIntVal(1))
 
 	instanceFileBody.AppendNewline()
-
-	// файл tags.tf
-	/*ociIdentityTagNamespaceBlock := instanceFileBody.AppendNewBlock("resource",
-		[]string{"oci_identity_tag_namespace", "tag-namespace1"})
-	ociIdentityTagNamespaceBody := ociIdentityTagNamespaceBlock.Body()
-	ociIdentityTagNamespaceBody.SetAttributeTraversal("compartment_id", hcl.Traversal{
-		//nolint:exhaustivestruct
-		hcl.TraverseRoot{
-			Name: "var.compartment_ocid",
-		},
-	})
-	ociIdentityTagNamespaceBody.SetAttributeTraversal("description", hcl.Traversal{
-		//nolint:exhaustivestruct
-		hcl.TraverseRoot{
-			Name: "var.tag_namespace_description",
-		},
-	})
-	ociIdentityTagNamespaceBody.SetAttributeTraversal("name", hcl.Traversal{
-		//nolint:exhaustivestruct
-		hcl.TraverseRoot{
-			Name: "var.tag_namespace_name",
-		},
-	})
-
-	instanceFileBody.AppendNewline()*/
 
 	ociCoreSecurityListBlock := instanceFileBody.AppendNewBlock("resource",
 		[]string{"oci_core_security_list", "etcd2_security_list"})

@@ -23,7 +23,7 @@ import (
 
 const workingDirectory = "benchmark/deploy"
 
-const configFile = "deploy/test_config.json"
+const configFile = "benchmark/deploy/test_config.json"
 
 var _terraform *terraform.Terraform
 

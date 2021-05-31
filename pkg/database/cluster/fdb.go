@@ -320,47 +320,59 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 // FetchAccounts - получить массив всех сохранненых счетов.
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
+	var accountKeyValueArray []fdb.KeyValue
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		var accounts []model.Account
-		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: 0, Reverse: false}).Iterator()
+		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: -1, Reverse: false}).Iterator()
 		for r.Advance() {
 			accountKeyValue, err := r.Get()
 			if err != nil {
 				return nil, merry.Wrap(err)
 			}
-			keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
-			if err != nil {
-				return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
-			}
-			var fetchAccount model.Account
-			var fetchAccountValue accountValue
-			fetchAccountValue, err = getAccountValue(tx, accountKeyValue.Key)
-			if err != nil {
-				return nil, err
-			}
-			fetchAccount.Balance = fetchAccountValue.Balance
-			Bic, ok := keyAccountTuple[0].(string)
-			if !ok {
-				return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Bic)
-			}
-			fetchAccount.Bic = Bic
-			Ban, ok := keyAccountTuple[1].(string)
-			if !ok {
-				return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Ban)
-			}
-			fetchAccount.Ban = Ban
-			accounts = append(accounts, fetchAccount)
+			// для скорости обработки возвращаем необработанный массив пар ключ-значение
+			accountKeyValueArray = append(accountKeyValueArray, accountKeyValue)
 		}
-
-		return accounts, nil
+		return accountKeyValueArray, nil
 	})
+
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	accounts, ok := data.([]model.Account)
+
+	accountKeyValues, ok := data.([]fdb.KeyValue)
 	if !ok {
-		return accounts, merry.Errorf("this type data of model.Account is not supported")
+		return nil, merry.Errorf("this type data of model.Account is not supported")
 	}
+
+	for _, accountKeyValue := range accountKeyValues {
+		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
+		}
+
+		var fetchAccount model.Account
+		var fetchAccountValue accountValue
+		if len(accountKeyValue.Value) == 0 {
+			return nil, ErrNoRows
+		}
+		fetchAccountValue, err = deserializeAccountValue(accountKeyValue.Value)
+		if err != nil {
+			return nil, err
+		}
+
+		fetchAccount.Balance = fetchAccountValue.Balance
+		Bic, ok := keyAccountTuple[0].(string)
+		if !ok {
+			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Bic)
+		}
+		fetchAccount.Bic = Bic
+		Ban, ok := keyAccountTuple[1].(string)
+		if !ok {
+			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Ban)
+		}
+		fetchAccount.Ban = Ban
+		accounts = append(accounts, fetchAccount)
+	}
+
 	return accounts, nil
 }
 
