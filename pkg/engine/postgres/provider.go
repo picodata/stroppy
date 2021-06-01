@@ -28,9 +28,9 @@ const maxNotFoundCount = 5
 
 func CreatePostgresCluster(sc *engineSsh.Client,
 	k *kubernetes.Kubernetes,
-	terraformAddressMap terraform.MapAddresses) (pc *PostgreCluster) {
+	terraformAddressMap terraform.MapAddresses) (pc *Cluster) {
 
-	pc = &PostgreCluster{
+	pc = &Cluster{
 		k:          k,
 		addressMap: terraformAddressMap,
 		sc:         sc,
@@ -38,7 +38,7 @@ func CreatePostgresCluster(sc *engineSsh.Client,
 	return
 }
 
-type PostgreCluster struct {
+type Cluster struct {
 	sc         *engineSsh.Client
 	k          *kubernetes.Kubernetes
 	addressMap terraform.MapAddresses
@@ -46,7 +46,7 @@ type PostgreCluster struct {
 
 // Deploy
 // развернуть postgres в кластере
-func (pc *PostgreCluster) Deploy() error {
+func (pc *Cluster) Deploy() error {
 	llog.Infoln("Prepare deploy of postgres")
 
 	sshSession, err := pc.sc.GetNewSession()
@@ -74,18 +74,18 @@ func (pc *PostgreCluster) Deploy() error {
 	return nil
 }
 
-func (pc *PostgreCluster) OpenPortForwarding() error {
+func (pc *Cluster) OpenPortForwarding() error {
 	stopPortForwardPostgres := make(chan struct{})
 	readyPortForwardPostgres := make(chan struct{})
 	errorPortForwardPostgres := make(chan error)
 
-	clientset, err := pc.k.GetClientSet()
+	clientSet, err := pc.k.GetClientSet()
 	if err != nil {
-		return merry.Prepend(err, "failed to get clientset for open port-forward of postgres")
+		return merry.Prepend(err, "failed to get clientSet for open port-forward of postgres")
 	}
 
 	// reqURL - текущий url запроса к сущности k8s в runtime
-	reqURL := clientset.CoreV1().RESTClient().Post().
+	reqURL := clientSet.CoreV1().RESTClient().Post().
 		Resource("pods").
 		Namespace("default").
 		Name("acid-postgres-cluster-0").
@@ -104,8 +104,8 @@ func (pc *PostgreCluster) OpenPortForwarding() error {
 	}
 }
 
-// checkDeployPostgres - проверить, что все поды postgres в running
-func (pc *PostgreCluster) GetStatus() (*engine.ClusterStatus, error) {
+// GetStatus проверить, что все поды postgres в running
+func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 	llog.Infoln("Checking of deploy postgres...")
 
 	var successPodsCount int64
@@ -179,7 +179,7 @@ func (pc *PostgreCluster) GetStatus() (*engine.ClusterStatus, error) {
 }
 
 // getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
-func (pc *PostgreCluster) getPostgresPodsCount() (*int64, error) {
+func (pc *Cluster) getPostgresPodsCount() (*int64, error) {
 	manifestFile, err := ioutil.ReadFile("deploy/postgres-manifest.yaml")
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read postgres-manifest.yaml")

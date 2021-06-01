@@ -21,7 +21,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const workingDirectory = "benchmark/deploy/"
+const workingDirectory = "benchmark/deploy"
 
 const configFile = "benchmark/deploy/test_config.json"
 
@@ -30,7 +30,7 @@ const configFile = "benchmark/deploy/test_config.json"
 var _terraform *terraform.Terraform
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
-func readCommandFromInput(portForwardStruct engine.ClusterTunnel,
+func readCommandFromInput(portForwardStruct *engine.ClusterTunnel,
 	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
 	for {
 		sc := bufio.NewScanner(os.Stdin)
@@ -175,7 +175,10 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	sc, _ := engineSsh.CreateClient(workingDirectory, addressMap.MasterExternalIP)
 
 	k := kubernetes.CreateKubernetes(workingDirectory, addressMap, sc)
-	if err = k.Deploy(); err != nil {
+
+	var portForward *engine.ClusterTunnel
+	var port int
+	if portForward, port, err = k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 	defer k.Stop()
@@ -217,13 +220,13 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	Enter "fdb pay" to start transfers test in FoundationDB.
 	To use kubectl for access kubernetes cluster in another console 
 	execute command for set environment variables KUBECONFIG before using:
-	"export KUBECONFIG=$(pwd)/config"`)
+	"export KUBECONFIG=$(pwd)/config"`, portForward.LocalPort, port)
 
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)
 	popChan := make(chan error)
 	payChan := make(chan error)
-	go readCommandFromInput(engine.ClusterTunnel{}, errorExitChan, successExitChan, popChan, payChan)
+	go readCommandFromInput(portForward, errorExitChan, successExitChan, popChan, payChan)
 
 	select {
 	case err = <-errorExitChan:

@@ -144,12 +144,12 @@ func Populate(settings *config.DatabaseSettings) error {
 	remainder := settings.Count - accountsPerWorker*settings.Workers
 
 	for i := 0; i < settings.Workers; i++ {
-		n_accounts := accountsPerWorker
+		nAccounts := accountsPerWorker
 		if i < remainder {
-			n_accounts++
+			nAccounts++
 		}
 		wg.Add(1)
-		go worker(i+1, n_accounts, &wg)
+		go worker(i+1, nAccounts, &wg)
 	}
 
 	wg.Wait()

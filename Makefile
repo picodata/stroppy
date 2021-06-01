@@ -32,3 +32,6 @@ lint:
 
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
+
+test:
+	go test ./...

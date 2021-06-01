@@ -44,54 +44,59 @@ func CreateKubernetes(wd string,
 	sshClient *engineSsh.Client) (k *Kubernetes) {
 
 	k = &Kubernetes{
-		workingDirectory: wd,
-		privateKeyFile:   filepath.Join(wd, "id_rsa"),
-		addressMap:       terraformAddressMap,
-		sc:               sshClient,
+		workingDirectory:  wd,
+		privateKeyFile:    filepath.Join(wd, "id_rsa"),
+		clusterConfigFile: filepath.Join(wd, "config"),
+
+		addressMap: terraformAddressMap,
+		sc:         sshClient,
 	}
 	return
 }
 
 type Kubernetes struct {
-	workingDirectory string
-	privateKeyFile   string
-	addressMap       terraform.MapAddresses
-	sc               *engineSsh.Client
+	workingDirectory  string
+	privateKeyFile    string
+	clusterConfigFile string
+
+	addressMap terraform.MapAddresses
+	sshTunnel  engineSsh.Result
+	sc         *engineSsh.Client
 
 	portForward engine.ClusterTunnel
 }
 
-func (k *Kubernetes) Deploy() (err error) {
+func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err error) {
 	if err = k.copyToMaster(); err != nil {
-		return merry.Prepend(err, "failed to сopy RSA to cluster")
+		return nil, 0, merry.Prepend(err, "failed to сopy RSA to cluster")
 	}
 
-	err = k.deploy()
-	if err != nil {
-		return merry.Prepend(err, "failed to deploy k8s")
+	if err = k.deploy(); err != nil {
+		return nil, 0, merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	err = k.copyConfigFromMaster()
-	if err != nil {
-		return merry.Prepend(err, "failed to copy kube config from Master")
+	if err = k.copyConfigFromMaster(); err != nil {
+		return nil, 0, merry.Prepend(err, "failed to copy kube config from Master")
 	}
+
 	sshTunnelChan := make(chan engineSsh.Result)
 	portForwardChan := make(chan engine.ClusterTunnel)
-
 	go k.openSSHTunnel(sshTunnelChan)
-	sshTunnel := <-sshTunnelChan
-	if sshTunnel.Err != nil {
-		return merry.Prepend(sshTunnel.Err, "failed to create ssh tunnel")
+
+	k.sshTunnel = <-sshTunnelChan
+	if k.sshTunnel.Err != nil {
+		return nil, 0, merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 	}
-	defer sshTunnel.Tunnel.Close()
 
 	go k.openMonitoringPortForward(portForwardChan)
 	portForward := <-portForwardChan
 	llog.Println(portForward)
 	if portForward.Error != nil {
-		return merry.Prepend(portForward.Error, "failed to port forward")
+		return nil, 0, merry.Prepend(portForward.Error, "failed to port forward")
 	}
 
+	port = k.sshTunnel.Port
+	pPortForward = &portForward
 	return
 }
 
@@ -195,9 +200,9 @@ func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engine.Clust
 		// проверяем доступность резервного порта
 		if !engine.IsLocalPortOpen(reserveClusterMonitoringPort) {
 			portForwardChan <- engine.ClusterTunnel{
-				nil,
-				merry.Prepend(errPortCheck,
-					": ports 8080 and 8081 are not available"), nil,
+				Command:   nil,
+				Error:     merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"),
+				LocalPort: nil,
 			}
 		}
 		monitoringPort = reserveClusterMonitoringPort
@@ -214,9 +219,10 @@ func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engine.Clust
 	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
 	if err := portForwardCmd.Start(); err != nil {
 		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
-		portForwardChan <- engine.ClusterTunnel{nil, err, nil}
+		portForwardChan <- engine.ClusterTunnel{Command: nil, Error: err, LocalPort: nil}
+	} else {
+		portForwardChan <- engine.ClusterTunnel{Command: portForwardCmd, Error: nil, LocalPort: &monitoringPort}
 	}
-	portForwardChan <- engine.ClusterTunnel{portForwardCmd, nil, &monitoringPort}
 }
 
 // deploy - развернуть k8s внутри кластера в cloud
@@ -284,8 +290,7 @@ func (k *Kubernetes) deploy() (err error) {
 
 // getKubeConfig - получить конфигурацию k8s
 func (k *Kubernetes) getKubeConfig() (*rest.Config, error) {
-	kubeConfig := "deploy/config"
-	config, err := clientcmd.BuildConfigFromFlags("", kubeConfig)
+	config, err := clientcmd.BuildConfigFromFlags("", k.clusterConfigFile)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to get config for check deploy of postgres")
 	}
@@ -295,16 +300,16 @@ func (k *Kubernetes) getKubeConfig() (*rest.Config, error) {
 func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {
 	config, err := k.getKubeConfig()
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to get kubeconfig for clientset")
+		return nil, merry.Prepend(err, "failed to get kubeconfig for clientSet")
 	}
 
-	// clientset - клиент для обращения к группам сущностей k8s
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to create clientset")
+	// clientSet - клиент для обращения к группам сущностей k8s
+	var clientSet *kubernetes.Clientset
+	if clientSet, err = kubernetes.NewForConfig(config); err != nil {
+		return nil, merry.Prepend(err, "failed to create clientSet")
 	}
 
-	return clientset, nil
+	return clientSet, nil
 }
 
 // checkDeployMaster
@@ -358,39 +363,42 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 		k8sPort = reserveClusterK8sPort
 		if !engine.IsLocalPortOpen(k8sPort) {
 			sshTunnelChan <- engineSsh.Result{
-				0,
-				nil,
-				merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available"),
+				Port:   0,
+				Tunnel: nil,
+				Err:    merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available"),
 			}
 		}
 
 		// подменяем порт в kubeconfig на локальной машине
 		clusterURL := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
-		if err := editClusterURL(clusterURL); err != nil {
+		if err := k.editClusterURL(clusterURL); err != nil {
 			llog.Infof("failed to replace port: %v", err)
-			sshTunnelChan <- engineSsh.Result{0, nil, err}
+			sshTunnelChan <- engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
 		}
 	}
 
-	authMethod, err := sshtunnel.PrivateKeyFile("benchmark/deploy/id_rsa")
+	authMethod, err := sshtunnel.PrivateKeyFile(k.privateKeyFile)
 	if err != nil {
 		llog.Infof("failed to use private key file: %v", err)
-		sshTunnelChan <- engineSsh.Result{0, nil, err}
+		sshTunnelChan <- engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
+		return
 	}
+
 	// Setup the tunnel, but do not yet start it yet.
-	destinationServerString := fmt.Sprintf("localhost:%v", k8sPort)
-	tunnel, err := sshtunnel.NewSSHTunnel(
+	var tunnel *sshtunnel.SSHTunnel
+	tunnel, err = sshtunnel.NewSSHTunnel(
 		mastersConnectionString,
-		destinationServerString,
+		fmt.Sprintf("localhost:%v", k8sPort),
 		k8sPort,
 		authMethod,
 	)
 	if err != nil {
 		sshTunnelChan <- engineSsh.Result{
-			0,
-			nil,
-			merry.Prepend(err, "failed to create tunnel"),
+			Port:   0,
+			Tunnel: nil,
+			Err:    merry.Prepend(err, "failed to create tunnel"),
 		}
+		return
 	}
 
 	// You can provide a logger for debugging, or remove this line to
@@ -404,14 +412,14 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 
 	if tunnelStarted != nil {
 		sshTunnelChan <- engineSsh.Result{
-			0,
-			nil,
-			merry.Prepend(err, "failed to start tunnel"),
+			Port:   0,
+			Tunnel: nil,
+			Err:    merry.Prepend(err, "failed to start tunnel"),
 		}
 		return
 	}
 
-	sshTunnelChan <- engineSsh.Result{k8sPort, tunnel, nil}
+	sshTunnelChan <- engineSsh.Result{Port: k8sPort, Tunnel: tunnel, Err: nil}
 }
 
 // copyConfigFromMaster
@@ -419,8 +427,8 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
 	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
-	llog.Infoln(copyFromMasterCmd.String())
 	copyFromMasterCmd.Dir = k.workingDirectory
+	llog.Infoln(copyFromMasterCmd.String())
 
 	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
@@ -428,11 +436,11 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
 	clusterURL := "https://localhost:6443"
-	if err = editClusterURL(clusterURL); err != nil {
+	if err = k.editClusterURL(clusterURL); err != nil {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
-	return nil
+	return
 }
 
 /* copyToMaster
@@ -590,6 +598,9 @@ func (k *Kubernetes) Stop() {
 	/* в нормальном случае wait вернет -1, т.к. после дестроя кластера до завершения stroppy
 	процесс port-forward зависает как зомби и wait делает его kill
 	*/
+
+	defer k.sshTunnel.Tunnel.Close()
+
 	closeStatus, err := k.portForward.Command.Process.Wait()
 	if err != nil {
 		llog.Infof("failed to close port-forward channel: %v", err)

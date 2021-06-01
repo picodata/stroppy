@@ -5,16 +5,15 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func editClusterURL(url string) error {
-	kubeConfigPath := "benchmark/deploy/config"
-	kubeConfig, err := clientcmd.LoadFromFile(kubeConfigPath)
+func (k *Kubernetes) editClusterURL(url string) error {
+	kubeConfig, err := clientcmd.LoadFromFile(k.clusterConfigFile)
 	if err != nil {
-		return merry.Prepend(err, "failed to load kubeconfig")
+		return merry.Prepend(err, "failed to load kube config")
 	}
 	// меняем значение адреса кластера внутри kubeconfig
 	kubeConfig.Clusters["cluster.local"].Server = url
 
-	err = clientcmd.WriteToFile(*kubeConfig, kubeConfigPath)
+	err = clientcmd.WriteToFile(*kubeConfig, k.clusterConfigFile)
 	if err != nil {
 		return merry.Prepend(err, "failed to write kubeconfig")
 	}

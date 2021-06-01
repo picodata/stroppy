@@ -33,24 +33,6 @@ func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder strin
 	}
 	t.stateFilePath = filepath.Join(t.WorkDirectory, "terraform.tfstate")
 
-	checkVersionCmd, err := exec.Command("terraform", "version").Output()
-	if err != nil {
-		log.Printf("Failed to find terraform version")
-
-		if errors.Is(err, exec.ErrNotFound) {
-			err := t.install()
-			if err != nil {
-				llog.Fatalf("Failed to install terraform: %v ", err)
-			} else {
-				llog.Infof("Terraform install status: success")
-			}
-		}
-	}
-
-	if strings.Contains(string(checkVersionCmd), "version") {
-		llog.Infof("Founded version %v", string(checkVersionCmd[:17]))
-	}
-
 	return
 }
 
@@ -97,9 +79,8 @@ func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 }
 
 func (t *Terraform) Init() (err error) {
-	var terraformVersionSting []byte
-	terraformVersionSting, err = exec.Command("terraform", "version").Output()
-	if err != nil {
+	var terraformVersionString []byte
+	if terraformVersionString, err = exec.Command("terraform", "version").Output(); err != nil {
 		log.Printf("Failed to find terraform version")
 
 		if errors.Is(err, exec.ErrNotFound) {
@@ -111,9 +92,11 @@ func (t *Terraform) Init() (err error) {
 		}
 	}
 
-	if strings.Contains(string(terraformVersionSting), "version") {
-		llog.Infof("Founded version %v", string(terraformVersionSting[:17]))
+	if strings.Contains(string(terraformVersionString), "version") {
+		llog.Infof("Founded version %v", string(terraformVersionString[:17]))
 	}
+
+	err = t.init()
 	return
 }
 
