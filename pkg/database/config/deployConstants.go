@@ -86,7 +86,7 @@ EOF" | tee -a deploy_kubernetes.sh
 `
 
 	Deployk8sFirstStepOracleCMD = ` echo \
-"echo 'IdentityFile /home/ubuntu/.ssh/picodata.pem' > ~/.ssh/config
+"echo 'IdentityFile /home/ubuntu/.ssh/private_key.pem' > ~/.ssh/config
 sudo iptables --flush
 ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'
 ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'

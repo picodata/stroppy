@@ -43,7 +43,7 @@ func setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 			Name: "string",
 		},
 	})
-	privateKeyPathBody.SetAttributeValue("default", cty.StringVal("picodata.pem"))
+	privateKeyPathBody.SetAttributeValue("default", cty.StringVal("private_key.pem"))
 
 	instanceFileBody.AppendNewline()
 

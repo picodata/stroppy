@@ -2,9 +2,9 @@ fdb.cluster
 .vagrant
 *.log
 .*
-id_rsa.* 
-id_rsa
-picodata.pem
+*.pub 
+private_key
+private_key.pem
 *.tfstate
 *.tfstate.backup
 
