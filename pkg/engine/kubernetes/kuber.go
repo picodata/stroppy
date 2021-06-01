@@ -457,7 +457,7 @@ func (k *Kubernetes) copyToMaster() (err error) {
 	for i := 0; i <= connectionRetryCount; i++ {
 		masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
 		if !masterPortAvailable {
-			llog.Infof("status of Check the master's port 22:%v. Repeat #%v", errPortCheck, i)
+			llog.Infof("status of check the master's port 22: %v. Repeat #%v", errPortCheck, i)
 			time.Sleep(engine.ExecTimeout * time.Second)
 		} else {
 			break

@@ -2,10 +2,11 @@ package funcs
 
 import (
 	"bufio"
-	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"io/ioutil"
 	"log"
 	"os"
+
+	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
@@ -171,7 +172,11 @@ func Deploy(settings *config.DeploySettings) (err error) {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
-	addressMap, _ := _terraform.GetAddressMap()
+	var addressMap terraform.MapAddresses
+	if addressMap, err = _terraform.GetAddressMap(); err != nil {
+		return merry.Prepend(err, "failed to get address map")
+	}
+
 	sc, _ := engineSsh.CreateClient(workingDirectory, addressMap.MasterExternalIP)
 
 	k := kubernetes.CreateKubernetes(workingDirectory, addressMap, sc)

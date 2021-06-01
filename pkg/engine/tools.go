@@ -30,7 +30,7 @@ func IsRemotePortOpen(hostname string, port int) bool {
 	address := hostname + ":" + strconv.Itoa(port)
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
-		llog.Errorf("port %d at '%s' is not available: %v \n", port, hostname, err)
+		llog.Errorf("port %d at '%s' is not available: %v \n", port, address, err)
 		return false
 	}
 

@@ -79,8 +79,7 @@ func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
 		deploySettings.DBType,
 		"database type for deploy")
 
-	deployCmd.PersistentFlags().BoolP("use-chaos",
-		"use-chaos",
+	deployCmd.PersistentFlags().Bool("use-chaos",
 		true,
 		"install and run chaos-mesh on target cluster")
 

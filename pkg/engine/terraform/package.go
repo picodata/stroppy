@@ -67,10 +67,10 @@ type TemplatesConfig struct {
 func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 	if t.addressMap == nil {
 		var _map *MapAddresses
-		_map, err = t.collectInternalExternalAddressMap()
-		if err != nil {
+		if _map, err = t.collectInternalExternalAddressMap(); err != nil {
 			return
 		}
+
 		t.addressMap = _map
 	}
 
@@ -338,6 +338,7 @@ func (t *Terraform) init() error {
 		return merry.Wrap(initCmdResult)
 	}
 
+	t.isInit = true
 	llog.Infoln("Terraform initialized")
 	return nil
 }

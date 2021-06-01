@@ -8,6 +8,10 @@ picodata.pem
 *.tfstate
 *.tfstate.backup
 
+benchmark/deploy/*.tfstate
+benchmark/deploy/*.tfstate.backup
+benchmark/deploy/terraform*.zip
+
 vendor
 bin
 _*
