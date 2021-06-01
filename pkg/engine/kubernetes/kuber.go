@@ -100,14 +100,6 @@ func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err
 	return
 }
 
-func (k *Kubernetes) execCommandInternal(text string) (session *ssh.Session, err error) {
-	if session, err = k.sc.GetNewSession(); err != nil {
-		return
-	}
-
-	return
-}
-
 func (k *Kubernetes) executeCommand(text string) (err error) {
 	var commandSessionObject *ssh.Session
 	if commandSessionObject, err = k.sc.GetNewSession(); err != nil {
