@@ -3,6 +3,7 @@ package ssh
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/ansel1/merry"
@@ -16,10 +17,32 @@ type Result struct {
 	Err    error
 }
 
-func CreateClient(wd, address string) (client *Client, err error) {
+func GetPrivateKeyFile(provider string, workingDirectory string) (string, error) {
+	var privateKeyFile string
+	// проверяем наличие приватного ключа
+	switch provider {
+	case "yandex":
+		privateKeyFile = "private_key"
+	case "oracle":
+		privateKeyFile = "private_key.pem"
+	}
+
+	privateKeyFilePath := filepath.Join(workingDirectory, privateKeyFile)
+	_, err := os.Stat(privateKeyFilePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return privateKeyFile, merry.Prepend(err, "private key file not found. Create it, please.")
+		}
+		return privateKeyFile, merry.Prepend(err, "failed to find private key file")
+	}
+	return privateKeyFile, nil
+}
+
+func CreateClient(wd, address string, provider string, privateKeyFile string) (client *Client, err error) {
 	client = &Client{
 		workingDirectory: wd,
-		privateKeyFile:   filepath.Join(wd, "id_rsa"),
+		provider:         provider,
+		privateKeyFile:   privateKeyFile,
 	}
 
 	client.internalClient, err = client.getClientInstance(address)
@@ -28,6 +51,7 @@ func CreateClient(wd, address string) (client *Client, err error) {
 
 type Client struct {
 	workingDirectory string
+	provider         string
 	privateKeyFile   string
 
 	internalClient *ssh.Client
@@ -41,13 +65,13 @@ func (sc *Client) GetNewSession() (session *ssh.Session, err error) {
 func (sc *Client) getClientInstance(address string) (client *ssh.Client, err error) {
 	var keyBytes []byte
 	if keyBytes, err = ioutil.ReadFile(sc.privateKeyFile); err != nil {
-		err = merry.Prepend(err, "failed to get id_rsa for ssh client")
+		err = merry.Prepend(err, "failed to get private_key for ssh client")
 		return
 	}
 
 	var signer ssh.Signer
 	if signer, err = ssh.ParsePrivateKey(keyBytes); err != nil {
-		err = merry.Prepend(err, "failed to parse id_rsa for ssh client")
+		err = merry.Prepend(err, "failed to parse private_key for ssh client")
 		return
 	}
 

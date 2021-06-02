@@ -57,7 +57,7 @@ https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/l
  | tee -a deploy_kubernetes.sh
 `
 
-	INIfile = `echo \
+	Deployk8sSecondStepTemplate = `echo \
 "tee inventory/local/hosts.ini<<EOF
 [all]
 master ansible_host=%v ip=%v etcd_member_name=etcd1
@@ -85,7 +85,7 @@ kube-node
 EOF" | tee -a deploy_kubernetes.sh
 `
 
-	Deployk8sFirstStepOracleCMD = ` echo \
+	Deployk8sFirstStepOracleTemplate = ` echo \
 "echo 'IdentityFile /home/ubuntu/.ssh/private_key.pem' > ~/.ssh/config
 sudo iptables --flush
 ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'

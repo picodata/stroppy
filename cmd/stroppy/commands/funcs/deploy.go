@@ -95,7 +95,7 @@ func readCommandFromInput(portForwardStruct *engine.ClusterTunnel,
 					}
 				}
 			default:
-				llog.Printf("You entered: %v. Expected quit \n", consoleCmd)
+				llog.Infof("You entered: %v. Expected quit \n", consoleCmd)
 			}
 		}
 	}
@@ -136,6 +136,7 @@ func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, 
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read config file")
 	}
+
 	settings.LogLevel = gjson.Parse(string(data)).Get("log_level").Str
 	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
 	settings.DatabaseType = databaseType
@@ -148,10 +149,11 @@ func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, 
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
 	} else if (cmdType == "postgres pay") || (cmdType == "fdb pay") {
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
-		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("check").Bool()
+		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
 		settings.ZIPFian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
 		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
 	}
+
 	return settings, nil
 }
 
@@ -172,9 +174,14 @@ func Deploy(settings *config.DeploySettings) (err error) {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
-	sc, _ := engineSsh.CreateClient(workingDirectory, addressMap.MasterExternalIP)
+	privateKeyFile, err := engineSsh.GetPrivateKeyFile(settings.Provider, _terraform.WorkDirectory)
+	if err != nil {
+		return merry.Prepend(err, "failed to get private_key for terraform")
+	}
 
-	k := kubernetes.CreateKubernetes(workingDirectory, addressMap, sc)
+	sc, _ := engineSsh.CreateClient(workingDirectory, addressMap.MasterExternalIP, settings.Provider, privateKeyFile)
+
+	k, err := kubernetes.CreateKubernetes(workingDirectory, addressMap, sc, privateKeyFile, settings.Provider)
 
 	var portForward *engine.ClusterTunnel
 	var port int
@@ -230,7 +237,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	select {
 	case err = <-errorExitChan:
 		llog.Errorf("failed to destroy cluster: %v", err)
-		return err
+		return merry.Wrap(err)
 	case success := <-successExitChan:
 		llog.Infof("destroy cluster %v", success)
 		return nil

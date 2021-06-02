@@ -16,3 +16,5 @@ type Configurations struct {
 	Xxlarge  []ConfigurationUnitParams
 	Maximum  []ConfigurationUnitParams
 }
+
+const installableTerraformVersion = "0.15.4"

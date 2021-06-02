@@ -282,7 +282,9 @@ func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal
 	masterBody.SetAttributeTraversal("metadata", stringSSHKeys)
 }
 
-// Prepare - сформировать файл конфигурации для провайдера
+// PrepareYandex
+// сформировать файл конфигурации для провайдера
+// для Yandex.Cloud поддерживается запуск нескольких конфигураций от разных пользователей
 func PrepareYandex(cpu int, ram int, disk int, platform string, nodes int) error {
 	llog.Infoln("Starting generation provider configuration file")
 
@@ -294,7 +296,7 @@ func PrepareYandex(cpu int, ram int, disk int, platform string, nodes int) error
 	чтобы не усложнять код преобразованиями из hcl в cty*/
 	//nolint:exhaustivestruct
 	stringSSHKeys := hcl.Traversal{
-		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"id_rsa"},
+		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"public_key"},
 		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
 	}
 

@@ -321,8 +321,10 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
 	var accountKeyValueArray []fdb.KeyValue
+
+	// StreamingModeWantAll - режим "прочитать всё и как можно быстрее"
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: -1, Reverse: false}).Iterator()
+		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).Iterator()
 		for r.Advance() {
 			accountKeyValue, err := r.Get()
 			if err != nil {
@@ -340,7 +342,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 
 	accountKeyValues, ok := data.([]fdb.KeyValue)
 	if !ok {
-		return nil, merry.Errorf("this type data of model.Account is not supported")
+		return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
 	}
 
 	for _, accountKeyValue := range accountKeyValues {

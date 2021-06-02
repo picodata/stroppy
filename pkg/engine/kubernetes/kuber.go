@@ -18,6 +18,7 @@ import (
 	"github.com/bramvdbogaerde/go-scp"
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
+	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
@@ -39,18 +40,22 @@ const (
 
 var errPortCheck = errors.New("port Check failed")
 
+var errProviderChoice = errors.New("selected provider not found")
+
 func CreateKubernetes(wd string,
 	terraformAddressMap terraform.MapAddresses,
-	sshClient *engineSsh.Client) (k *Kubernetes) {
+	sshClient *engineSsh.Client, privateKeyFile string, provider string) (k *Kubernetes, err error) {
 
 	k = &Kubernetes{
 		workingDirectory:  wd,
-		privateKeyFile:    filepath.Join(wd, "id_rsa"),
 		clusterConfigFile: filepath.Join(wd, "config"),
 
 		addressMap: terraformAddressMap,
 		sc:         sshClient,
+
+		provider: provider,
 	}
+
 	return
 }
 
@@ -64,6 +69,8 @@ type Kubernetes struct {
 	sc         *engineSsh.Client
 
 	portForward engine.ClusterTunnel
+
+	provider string
 }
 
 func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err error) {
@@ -217,6 +224,26 @@ func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engine.Clust
 	}
 }
 
+func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
+	//provider := kubernetes.
+	switch kubernetes.provider {
+	case "yandex":
+		// подставляем константы
+		return Deployk8sFirstStepYandexCMD, Deployk8sThirdStepYandexCMD, nil
+
+	case "oracle":
+
+		deployk8sFirstStepOracleCMD := fmt.Sprintf(Deployk8sFirstStepOracleTemplate,
+			kubernetes.addressMap.MetricsInternalIP, kubernetes.addressMap.IngressInternalIP, kubernetes.addressMap.PostgresInternalIP)
+		deployk8sThirdStepOracleCMD := Deployk8sThirdStepOracleCMD
+
+		return deployk8sFirstStepOracleCMD, deployk8sThirdStepOracleCMD, nil
+
+	default:
+		return "", "", errProviderChoice
+	}
+}
+
 // deploy - развернуть k8s внутри кластера в cloud
 func (k *Kubernetes) deploy() (err error) {
 	/* Последовательно формируем файл deploy_kubernetes.sh,
@@ -236,13 +263,19 @@ func (k *Kubernetes) deploy() (err error) {
 		return
 	}
 
+	deployk8sFirstStepCmd, deployk8sThirdStepCmd, err := getProviderDeployCommands(k)
+	if err != nil {
+		return merry.Prepend(err, "failed to get deploy commands")
+	}
+
 	if err = k.executeCommand(deployk8sFirstStepCmd); err != nil {
 		return merry.Prepend(err, "first step deployment failed")
 	}
 	log.Printf("First step deploy k8s: success")
 
 	mapIP := k.addressMap
-	secondStepCommandText := fmt.Sprintf(deployk8sSecondStepTemplate,
+
+	secondStepCommandText := fmt.Sprintf(config.Deployk8sSecondStepTemplate,
 		mapIP.MasterInternalIP, mapIP.MasterInternalIP,
 		mapIP.MetricsInternalIP, mapIP.MetricsInternalIP,
 		mapIP.IngressInternalIP, mapIP.IngressInternalIP,
@@ -308,7 +341,8 @@ func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {
 // проверить, что все поды k8s в running, что подтверждает успешность деплоя k8s
 func (k *Kubernetes) checkDeployMaster() (bool, error) {
 	masterExternalIP := k.addressMap.MasterExternalIP
-	sshClient, err := engineSsh.CreateClient(k.workingDirectory, masterExternalIP)
+
+	sshClient, err := engineSsh.CreateClient(k.workingDirectory, masterExternalIP, k.provider, k.privateKeyFile)
 	if err != nil {
 		return false, merry.Prependf(err, "failed to establish ssh client to '%s' address", masterExternalIP)
 	}
@@ -418,7 +452,7 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 // скопировать файл kube config c мастер-инстанса кластера и применить для использования
 func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
-	copyFromMasterCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no", connectCmd, ".")
+	copyFromMasterCmd := exec.Command("scp", "-i", k.privateKeyFile, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
 	llog.Infoln(copyFromMasterCmd.String())
 
@@ -436,40 +470,40 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 }
 
 /* copyToMaster
- * скопировать на мастер-ноду ключ id_rsa для работы мастера с воркерами
+ * скопировать на мастер-ноду private_key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
 func (k *Kubernetes) copyToMaster() (err error) {
-	// проверяем наличие файла id_rsa
 
-	privateKeyFile := fmt.Sprintf("%s/id_rsa", k.workingDirectory)
-	if _, err = os.Stat(privateKeyFile); err != nil {
-		if os.IsNotExist(err) {
-			return merry.Prepend(err, "private key file not found. Create it, please.")
-		}
-		return merry.Prepend(err, "failed to find private key file")
+	privateKeyFile, err := engineSsh.GetPrivateKeyFile(k.provider, k.workingDirectory)
+	if err != nil {
+		return merry.Prepend(err, "failed to get private key file")
 	}
 
-	/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
-	если кластер пока не готов*/
 	masterExternalIP := k.addressMap.MasterExternalIP
-	llog.Infoln("Checking status of port 22 on the cluster's master...")
-	var masterPortAvailable bool
-	for i := 0; i <= connectionRetryCount; i++ {
-		masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
-		if !masterPortAvailable {
-			llog.Infof("status of check the master's port 22: %v. Repeat #%v", errPortCheck, i)
-			time.Sleep(engine.ExecTimeout * time.Second)
-		} else {
-			break
+	llog.Infoln(masterExternalIP)
+
+	if k.provider == "yandex" {
+		/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
+		если кластер пока не готов*/
+		llog.Infoln("Checking status of port 22 on the cluster's master...")
+		var masterPortAvailable bool
+		for i := 0; i <= connectionRetryCount; i++ {
+			masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
+			if !masterPortAvailable {
+				llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
+				time.Sleep(execTimeout * time.Second)
+			} else {
+				break
+			}
 		}
-	}
-	if !masterPortAvailable {
-		return merry.Prepend(errPortCheck, "master's port 22 is not available")
+		if !masterPortAvailable {
+			return merry.Prepend(errPortCheck, "master's port 22 is not available")
+		}
 	}
 
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
-	copyPrivateKeyCmd := exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
-		"id_rsa", mastersConnectionString)
+	copyPrivateKeyCmd := exec.Command("scp", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
+		privateKeyFile, mastersConnectionString)
 	llog.Infof(copyPrivateKeyCmd.String())
 	copyPrivateKeyCmd.Dir = k.workingDirectory
 
@@ -478,19 +512,21 @@ func (k *Kubernetes) copyToMaster() (err error) {
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("failed to copy RSA key onto master: %v %v \n", string(copyMasterCmdResult), err)
-			copyPrivateKeyCmd = exec.Command("scp", "-i", "id_rsa", "-o", "StrictHostKeyChecking=no",
-				"id_rsa", mastersConnectionString)
-			time.Sleep(engine.ExecTimeout * time.Second)
+			llog.Errorf("failed to copy private_key key onto master: %v %v \n", string(copyMasterCmdResult), err)
+			copyPrivateKeyCmd = exec.Command("scp", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
+				privateKeyFile, mastersConnectionString)
+			time.Sleep(execTimeout * time.Second)
 			continue
 		}
-		llog.Tracef("result of copy RSA: %v \n", string(copyMasterCmdResult))
+		llog.Tracef("result of copy private_key: %v \n", string(copyMasterCmdResult))
 		break
 	}
 
 	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
+
+	privateKeyFilePath := fmt.Sprintf("%v/%v", k.workingDirectory, privateKeyFile)
 	//nolint:gosec
-	clientSSHConfig, _ := auth.PrivateKey("ubuntu", privateKeyFile, ssh.InsecureIgnoreHostKey())
+	clientSSHConfig, _ := auth.PrivateKey("ubuntu", privateKeyFilePath, ssh.InsecureIgnoreHostKey())
 	masterAddressPort := fmt.Sprintf("%v:22", masterExternalIP)
 
 	client := scp.NewClient(masterAddressPort, &clientSSHConfig)
@@ -500,6 +536,7 @@ func (k *Kubernetes) copyToMaster() (err error) {
 	}
 
 	metricsServerFileDir := filepath.Join(k.workingDirectory, "metrics-server.yaml")
+
 	metricsServerFile, _ := os.Open(metricsServerFileDir)
 	err = client.CopyFile(metricsServerFile, "/home/ubuntu/metrics-server.yaml", "0664")
 	if err != nil {
