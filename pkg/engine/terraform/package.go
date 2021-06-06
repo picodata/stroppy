@@ -22,7 +22,7 @@ import (
 // размер ответа terraform show при незапущенном кластере
 const linesNotInitTerraformShow = 13
 
-const templatesFileName = "templates.yml"
+const templatesFileName = "templates.yaml"
 
 var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
@@ -30,11 +30,7 @@ var errVersionParsed = errors.New("failed to parse version")
 
 var errChooseProvider = errors.New("failed to choose provider. Unexpected provider's name")
 
-func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
-	version, err := getTerraformVersion()
-	if err != nil {
-		return &Terraform{}
-	}
+func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string, version terraformVersion) (t *Terraform) {
 
 	t = &Terraform{
 		settings:          settings,
@@ -100,28 +96,6 @@ func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 	}
 
 	addressMap = *t.addressMap
-	return
-}
-
-func (t *Terraform) Init() (err error) {
-	var terraformVersionString []byte
-	if terraformVersionString, err = exec.Command("terraform", "version").Output(); err != nil {
-		log.Printf("Failed to find terraform version")
-
-		if errors.Is(err, exec.ErrNotFound) {
-			if err = t.install(); err != nil {
-				llog.Fatalf("Failed to install terraform: %v ", err)
-				return merry.Prepend(err, "failed to install terraform")
-			}
-			llog.Infof("Terraform install status: success")
-		}
-	}
-
-	if strings.Contains(string(terraformVersionString), "version") {
-		llog.Infof("Founded version %v", string(terraformVersionString[:17]))
-	}
-
-	err = t.init()
 	return
 }
 
@@ -220,7 +194,7 @@ func (t *Terraform) readTemplates() (*TemplatesConfig, error) {
 	return &templatesConfig, nil
 }
 
-func getTerraformVersion() (terraformVersion, error) {
+func GetTerraformVersion() (terraformVersion, error) {
 	var installedVersion terraformVersion
 	getVersionCMD, err := exec.Command("terraform", "version").Output()
 	if err != nil {

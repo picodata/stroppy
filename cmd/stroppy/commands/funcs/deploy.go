@@ -160,10 +160,12 @@ func readConfig(cmdType string, databaseType string) (*config.DatabaseSettings, 
 func Deploy(settings *config.DeploySettings) (err error) {
 	llog.Traceln(settings)
 
-	_terraform = terraform.CreateTerraform(settings, workingDirectory, workingDirectory)
-	if err = _terraform.Init(); err != nil {
-		return merry.Prepend(err, "terraform init failed")
+	terraformVersion, err := terraform.GetTerraformVersion()
+	if err != nil {
+		return merry.Prepend(err, "failed to get terraform version")
 	}
+
+	_terraform = terraform.CreateTerraform(settings, workingDirectory, workingDirectory, terraformVersion)
 
 	if err = _terraform.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
