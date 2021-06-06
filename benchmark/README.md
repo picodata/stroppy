@@ -40,7 +40,7 @@ ln -s /opt/local/lib/libfdb_c.dylib /usr/local/lib/libfdb_c.dylib
 перед развертыванием кластера необходило в директории benchmark/deploy/
 выполнить команду для генерации ключей RSA, которые будут использоваться для доступа к кластеру:
 
-ssh-keygen -q -t rsa -N '' -f id_rsa <<<y 2>&1 >/dev/null
+ssh-keygen -q -t rsa -N '' -f private_key <<<y 2>&1 >/dev/null
 
 # Пример последовательности команд для тестирования Postgresql:
 

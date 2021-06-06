@@ -21,7 +21,7 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-const workingDirectory = "benchmark/deploy"
+const workingDirectory = "benchmark/deploy/"
 
 const configFile = "benchmark/deploy/test_config.json"
 
@@ -178,7 +178,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 
 	privateKeyFile, err := engineSsh.GetPrivateKeyFile(settings.Provider, _terraform.WorkDirectory)
 	if err != nil {
-		return merry.Prepend(err, "failed to get private_key for terraform")
+		return merry.Prepend(err, "failed to get private key for terraform")
 	}
 
 	sc, _ := engineSsh.CreateClient(workingDirectory, addressMap.MasterExternalIP, settings.Provider, privateKeyFile)

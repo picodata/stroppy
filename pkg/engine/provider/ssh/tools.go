@@ -22,7 +22,8 @@ func GetPrivateKeyFile(provider string, workingDirectory string) (string, error)
 	// проверяем наличие приватного ключа
 	switch provider {
 	case "yandex":
-		privateKeyFile = "private_key"
+		// переименовать единообразно ключи нельзя, т.к. Yandex.Cloud ожидает именно id_rsa
+		privateKeyFile = "id_rsa"
 	case "oracle":
 		privateKeyFile = "private_key.pem"
 	}
@@ -64,14 +65,16 @@ func (sc *Client) GetNewSession() (session *ssh.Session, err error) {
 
 func (sc *Client) getClientInstance(address string) (client *ssh.Client, err error) {
 	var keyBytes []byte
-	if keyBytes, err = ioutil.ReadFile(sc.privateKeyFile); err != nil {
-		err = merry.Prepend(err, "failed to get private_key for ssh client")
+
+	privateKeyFilePath := filepath.Join(sc.workingDirectory, sc.privateKeyFile)
+	if keyBytes, err = ioutil.ReadFile(privateKeyFilePath); err != nil {
+		err = merry.Prepend(err, "failed to get private key for ssh client")
 		return
 	}
 
 	var signer ssh.Signer
 	if signer, err = ssh.ParsePrivateKey(keyBytes); err != nil {
-		err = merry.Prepend(err, "failed to parse private_key for ssh client")
+		err = merry.Prepend(err, "failed to parse private key for ssh client")
 		return
 	}
 

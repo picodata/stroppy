@@ -18,7 +18,6 @@ import (
 	"github.com/bramvdbogaerde/go-scp"
 	"github.com/bramvdbogaerde/go-scp/auth"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
@@ -48,6 +47,7 @@ func CreateKubernetes(wd string,
 
 	k = &Kubernetes{
 		workingDirectory:  wd,
+		privateKeyFile:    privateKeyFile,
 		clusterConfigFile: filepath.Join(wd, "config"),
 
 		addressMap: terraformAddressMap,
@@ -113,13 +113,15 @@ func (k *Kubernetes) executeCommand(text string) (err error) {
 		return merry.Prepend(err, "failed to open ssh connection")
 	}
 
-	if _, err = commandSessionObject.CombinedOutput(text); err != nil {
+	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
+		// вывводим, чтобы было проще диагностировать
+		llog.Errorln(result)
 		return merry.Prepend(err, "output collect failed")
 	}
 
-	if err = commandSessionObject.Close(); err != nil {
+	/*if err = commandSessionObject.Close(); err != nil {
 		llog.Warnf("failed to close command session: %v", err)
-	}
+	}*/
 
 	return
 }
@@ -271,11 +273,11 @@ func (k *Kubernetes) deploy() (err error) {
 	if err = k.executeCommand(deployk8sFirstStepCmd); err != nil {
 		return merry.Prepend(err, "first step deployment failed")
 	}
-	log.Printf("First step deploy k8s: success")
+	llog.Printf("First step deploy k8s: success")
 
 	mapIP := k.addressMap
 
-	secondStepCommandText := fmt.Sprintf(config.Deployk8sSecondStepTemplate,
+	secondStepCommandText := fmt.Sprintf(Deployk8sSecondStepTemplate,
 		mapIP.MasterInternalIP, mapIP.MasterInternalIP,
 		mapIP.MetricsInternalIP, mapIP.MetricsInternalIP,
 		mapIP.IngressInternalIP, mapIP.IngressInternalIP,
@@ -284,12 +286,12 @@ func (k *Kubernetes) deploy() (err error) {
 	if err = k.executeCommand(secondStepCommandText); err != nil {
 		return merry.Prepend(err, "failed second step deploy k8s")
 	}
-	log.Printf("Second step deploy k8s: success")
+	llog.Printf("Second step deploy k8s: success")
 
 	if err = k.executeCommand(deployk8sThirdStepCmd); err != nil {
 		return merry.Prepend(err, "failed third step deploy k8s")
 	}
-	log.Printf("Third step deploy k8s: success")
+	llog.Printf("Third step deploy k8s: success")
 
 	const fooStepCommand = "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
 
@@ -303,11 +305,12 @@ func (k *Kubernetes) deploy() (err error) {
 	go engine.HandleReader(bufio.NewReader(fooStdout))
 
 	llog.Infof("Waiting for deploying about 20 minutes...")
-	_, err = fooSession.CombinedOutput(fooStepCommand)
+	fooSessionResult, err := fooSession.CombinedOutput(fooStepCommand)
 	if err != nil {
+		llog.Infoln(string(fooSessionResult))
 		return merry.Prepend(err, "failed foo step deploy k8s waiting")
 	}
-	log.Printf("Foo step deploy k8s: success")
+	llog.Printf("Foo step deploy k8s: success")
 	_ = fooSession.Close()
 
 	return
@@ -403,7 +406,8 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 		}
 	}
 
-	authMethod, err := sshtunnel.PrivateKeyFile(k.privateKeyFile)
+	privateKeyFilePath := filepath.Join(k.workingDirectory, k.privateKeyFile)
+	authMethod, err := sshtunnel.PrivateKeyFile(privateKeyFilePath)
 	if err != nil {
 		llog.Infof("failed to use private key file: %v", err)
 		sshTunnelChan <- engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
@@ -470,7 +474,7 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 }
 
 /* copyToMaster
- * скопировать на мастер-ноду private_key для работы мастера с воркерами
+ * скопировать на мастер-ноду private key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
 func (k *Kubernetes) copyToMaster() (err error) {
 
@@ -512,13 +516,13 @@ func (k *Kubernetes) copyToMaster() (err error) {
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("failed to copy private_key key onto master: %v %v \n", string(copyMasterCmdResult), err)
+			llog.Errorf("failed to copy private key key onto master: %v %v \n", string(copyMasterCmdResult), err)
 			copyPrivateKeyCmd = exec.Command("scp", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
 				privateKeyFile, mastersConnectionString)
 			time.Sleep(execTimeout * time.Second)
 			continue
 		}
-		llog.Tracef("result of copy private_key: %v \n", string(copyMasterCmdResult))
+		llog.Tracef("result of copy private key: %v \n", string(copyMasterCmdResult))
 		break
 	}
 
@@ -645,7 +649,7 @@ func (k *Kubernetes) Stop() {
 				llog.Infoln("status of port-forward's kill: success")
 				break
 			}
-			log.Printf("status of port-forward's kill: %v. Repeat...", err)
+			llog.Printf("status of port-forward's kill: %v. Repeat...", err)
 		}
 		time.Sleep(engine.ExecTimeout * time.Second)
 	}

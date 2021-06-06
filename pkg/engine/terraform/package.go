@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -84,16 +83,14 @@ type terraformVersion struct {
 	bugfix int
 }
 
-//GetAddressMap - получить карту(map) адресов кластера
+//GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
-	if t.addressMap == nil {
-		var _map *MapAddresses
-		if _map, err = t.collectInternalExternalAddressMap(); err != nil {
-			return
-		}
-
-		t.addressMap = _map
+	var _map *MapAddresses
+	if _map, err = t.collectInternalExternalAddressMap(); err != nil {
+		return
 	}
+
+	t.addressMap = _map
 
 	addressMap = *t.addressMap
 	return
@@ -149,7 +146,7 @@ func (t *Terraform) apply() (err error) {
 		return merry.Prependf(err, "terraform apply error, possible output '%s'", string(result))
 	}
 
-	log.Printf("Terraform applied")
+	llog.Printf("Terraform applied\n")
 	return
 }
 
@@ -183,12 +180,12 @@ func (t *Terraform) readTemplates() (*TemplatesConfig, error) {
 	var templatesConfig TemplatesConfig
 	data, err := ioutil.ReadFile(t.templatesFilePath)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to read templates.yml")
+		return nil, merry.Prepend(err, "failed to read templates.yaml")
 	}
 
 	err = yaml.Unmarshal(data, &templatesConfig)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to unmarshall templates.yml")
+		return nil, merry.Prepend(err, "failed to unmarshall templates.yaml")
 	}
 
 	return &templatesConfig, nil

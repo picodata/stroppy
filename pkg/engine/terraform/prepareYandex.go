@@ -296,7 +296,7 @@ func PrepareYandex(cpu int, ram int, disk int, platform string, nodes int) error
 	чтобы не усложнять код преобразованиями из hcl в cty*/
 	//nolint:exhaustivestruct
 	stringSSHKeys := hcl.Traversal{
-		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"public_key"},
+		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"id_rsa"},
 		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
 	}
 
