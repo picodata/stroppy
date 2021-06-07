@@ -48,7 +48,16 @@ sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
 kubectl apply -f \
-https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml" \
+https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+# monitoring
+kubectl create namespace monitoring
+helm repo add grafana https://grafana.github.io/helm-charts
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo update
+helm install loki grafana/loki-stack --namespace monitoring
+helm install grafana-stack prometheus-community/kube-prometheus-stack --namespace monitoring
+kubectl apply -f /home/ubuntu/metrics-server.yaml
+kubectl apply -f /home/ubuntu/ingress-grafana.yaml" \
 | tee -a deploy_kubernetes.sh
 `
 
@@ -112,8 +121,8 @@ mkdir -p $HOME/.kube
 yes | sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config 
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
-# monitoring
 kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+# monitoring
 kubectl create namespace monitoring
 helm repo add grafana https://grafana.github.io/helm-charts
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts

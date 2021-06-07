@@ -115,13 +115,9 @@ func (k *Kubernetes) executeCommand(text string) (err error) {
 
 	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
 		// вывводим, чтобы было проще диагностировать
-		llog.Errorln(result)
+		llog.Errorln(string(result))
 		return merry.Prepend(err, "output collect failed")
 	}
-
-	/*if err = commandSessionObject.Close(); err != nil {
-		llog.Warnf("failed to close command session: %v", err)
-	}*/
 
 	return
 }
