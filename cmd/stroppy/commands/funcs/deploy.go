@@ -229,7 +229,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	Enter "fdb pay" to start transfers test in FoundationDB.
 	To use kubectl for access kubernetes cluster in another console 
 	execute command for set environment variables KUBECONFIG before using:
-	"export KUBECONFIG=$(pwd)/config"`, portForward.LocalPort, port)
+	"export KUBECONFIG=$(pwd)/config"`, *portForward.LocalPort, port)
 
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)

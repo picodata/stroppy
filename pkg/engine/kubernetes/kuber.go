@@ -104,6 +104,8 @@ func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err
 
 	port = k.sshTunnel.Port
 	pPortForward = &portForward
+	k.portForward = portForward
+
 	return
 }
 
@@ -623,29 +625,19 @@ func (k *Kubernetes) copyToMaster() (err error) {
 }
 
 func (k *Kubernetes) Stop() {
-	llog.Infof("Closing of port-forward...")
-	/* в нормальном случае wait вернет -1, т.к. после дестроя кластера до завершения stroppy
-	процесс port-forward зависает как зомби и wait делает его kill
-	*/
-
 	defer k.sshTunnel.Tunnel.Close()
 
-	closeStatus, err := k.portForward.Command.Process.Wait()
-	if err != nil {
-		llog.Infof("failed to close port-forward channel: %v", err)
-	}
-
 	// если вдруг что-то пошло не так, то kill принудительно до победного либо до истечения кол-ва попыток
-	for i := 0; closeStatus.ExitCode() != -1 || i < connectionRetryCount; i++ {
-		llog.Errorf("port-forward is not closed. Executing kill...")
-		err = k.portForward.Command.Process.Kill()
+	for i := 0; k.portForward.Command.ProcessState.ExitCode() != -1 || i < connectionRetryCount; i++ {
+		llog.Infoln("port-forward is not closed. Executing kill...")
+		err := k.portForward.Command.Process.Kill()
 		if err != nil {
 			// если процесс уже убит
 			if errors.Is(err, os.ErrProcessDone) {
 				llog.Infoln("status of port-forward's kill: success")
 				break
 			}
-			llog.Printf("status of port-forward's kill: %v. Repeat...", err)
+			llog.Errorf("status of port-forward's kill: %v. Repeat...", err)
 		}
 		time.Sleep(engine.ExecTimeout * time.Second)
 	}
