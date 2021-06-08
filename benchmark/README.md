@@ -37,10 +37,18 @@ ln -s /opt/local/lib/libfdb_c.dylib /usr/local/lib/libfdb_c.dylib
 ```
 
 # Примечание:
-перед развертыванием кластера необходило в директории benchmark/deploy/
+При работе с Yandex.Cloud перед развертыванием кластера необходимо в директории benchmark/deploy/
 выполнить команду для генерации ключей RSA, которые будут использоваться для доступа к кластеру:
 
-ssh-keygen -q -t rsa -N '' -f private_key <<<y 2>&1 >/dev/null
+ssh-keygen -q -t rsa -N '' -f id_rsa <<<y 2>&1 >/dev/null
+
+# Важно!  
+
+Yandex.Cloud не поддерживает наименование ключей, отличное от указанных в команде выше.  
+
+При работе с Oracle.Cloud приватный ключ(поддерживаются PEM-ключи, RSA не поддерживается)  
+необходимо получить через web-интерфейс Oracle.Cloud и положить его в директорию benchmark/deploy/ ,   
+переименовав его в private_key.pem  
 
 # Пример последовательности команд для тестирования Postgresql:
 
