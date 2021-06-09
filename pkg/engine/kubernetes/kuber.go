@@ -609,6 +609,26 @@ func (k *Kubernetes) copyToMaster() (err error) {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
 	}
 
+	grafanaDir := "grafana-on-premise"
+	destinationPath := fmt.Sprintf("ubuntu@%v:/home/ubuntu/", masterExternalIP)
+	// go-scp не поддерживает копирование директории, поэтому используем exec.
+	copyGrafanaDirCmd := exec.Command("scp", "-r", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
+		grafanaDir, destinationPath)
+	llog.Infoln(copyGrafanaDirCmd)
+	copyGrafanaDirCmd.Dir = k.workingDirectory
+
+	copyGrafanaDirCmdResult, err := copyGrafanaDirCmd.CombinedOutput()
+	if err != nil {
+		llog.Errorln(string(copyGrafanaDirCmdResult))
+		return merry.Prepend(err, "error while copying directory grafana-on-premise")
+	}
+
+	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
+	err = client.Connect()
+	if err != nil {
+		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	}
+
 	fdbClusterClientFileDir := filepath.Join(k.workingDirectory, "cluster_with_client.yaml")
 	fdbClusterClientFile, _ := os.Open(fdbClusterClientFileDir)
 	err = client.CopyFile(fdbClusterClientFile, "/home/ubuntu/cluster_with_client.yaml", "0664")

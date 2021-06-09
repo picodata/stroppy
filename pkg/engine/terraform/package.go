@@ -421,7 +421,7 @@ func (t *Terraform) init() error {
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
 		//чтобы понимать, что пошло не так, т.к. в error вернет exit code без конкретики
-		llog.Errorln(initCmdResult)
+		llog.Errorln(string(initCmdResult))
 		return merry.Wrap(err)
 	}
 
