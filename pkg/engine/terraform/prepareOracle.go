@@ -383,7 +383,7 @@ eu-frankfurt-1  = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaaw4ap4pklk3lo5pls5rppt2
 	ociCOreVolumeAttachmentBody.SetAttributeTraversal("use_chap", hcl.Traversal{
 		//nolint:exhaustivestruct
 		hcl.TraverseRoot{
-			Name: "true",
+			Name: "false",
 		},
 	})
 	instanceFileBody.AppendNewline()
