@@ -322,30 +322,53 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
 	var accountKeyValueArray []fdb.KeyValue
 
+	beginKey, endKey := cluster.model.accounts.FDBRangeKeys()
 	// StreamingModeWantAll - режим "прочитать всё и как можно быстрее"
-	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).Iterator()
-		for r.Advance() {
-			accountKeyValue, err := r.Get()
+	selectorBeginKey := fdb.FirstGreaterOrEqual(beginKey)
+	selectorEndKey := fdb.LastLessOrEqual(endKey)
+
+	settings, err := cluster.FetchSettings()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
+	}
+	/*
+		foundationdb поддерживает чтение по диапазонам - https://apple.github.io/foundationdb/developer-guide.html#range-reads
+		Итерация реализуется смещением offset у begin и end selector-ов
+	*/
+	var data interface{}
+	selectorEndKey.Offset = selectorEndKey.Offset - settings.Count + 10000
+
+	for i := 0; i < settings.Count; i = i + 10000 {
+		data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+			keyValueArray, err := tx.GetRange(fdb.SelectorRange{
+				Begin: selectorBeginKey,
+				End:   selectorEndKey,
+			},
+				fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
 			if err != nil {
 				return nil, merry.Wrap(err)
 			}
-			// для скорости обработки возвращаем необработанный массив пар ключ-значение
-			accountKeyValueArray = append(accountKeyValueArray, accountKeyValue)
+
+			return keyValueArray, nil
+		})
+
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to fetch accounts")
 		}
-		return accountKeyValueArray, nil
-	})
 
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to fetch accounts")
+		accountsKeyValues, ok := data.([]fdb.KeyValue)
+		if !ok {
+			return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
+		}
+
+		accountKeyValueArray = append(accountKeyValueArray, accountsKeyValues...)
+		selectorBeginKey.Offset = selectorBeginKey.Offset + 10000
+		selectorEndKey.Offset = selectorEndKey.Offset + 10000
+
 	}
-
-	accountKeyValues, ok := data.([]fdb.KeyValue)
-	if !ok {
-		return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
-	}
-
-	for _, accountKeyValue := range accountKeyValues {
+	// если брать полный массив, но захватывает начальный пустой ключ
+	accountKeyValueSlice := accountKeyValueArray[1:]
+	for _, accountKeyValue := range accountKeyValueSlice {
 		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
