@@ -317,59 +317,55 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	return nil
 }
 
-// FetchAccounts - получить массив всех сохранненых счетов.
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
-	var accountKeyValueArray []fdb.KeyValue
+	var accountKeyValuesArray []fdb.KeyValue
 
 	beginKey, endKey := cluster.model.accounts.FDBRangeKeys()
-	// StreamingModeWantAll - режим "прочитать всё и как можно быстрее"
-	selectorBeginKey := fdb.FirstGreaterOrEqual(beginKey)
-	selectorEndKey := fdb.LastLessOrEqual(endKey)
 
 	settings, err := cluster.FetchSettings()
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
 	}
-	/*
-		foundationdb поддерживает чтение по диапазонам - https://apple.github.io/foundationdb/developer-guide.html#range-reads
-		Итерация реализуется смещением offset у begin и end selector-ов
-	*/
-	var data interface{}
-	selectorEndKey.Offset = selectorEndKey.Offset - settings.Count + 10000
 
-	for i := 0; i < settings.Count; i = i + 10000 {
-		data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-			keyValueArray, err := tx.GetRange(fdb.SelectorRange{
-				Begin: selectorBeginKey,
-				End:   selectorEndKey,
-			},
-				fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
+	var data interface{}
+	if settings.Count > 10000 && settings.Count%10000 == 0 {
+
+		for i := 0; i < settings.Count; i = i + 10000 {
+			data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+				keyValueArray, err := tx.GetRange(fdb.KeyRange{
+					Begin: beginKey,
+					End:   endKey,
+				},
+					fdb.RangeOptions{Limit: 10000, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
+				if err != nil {
+					return nil, merry.Wrap(err)
+				}
+
+				return keyValueArray, nil
+			})
+
 			if err != nil {
-				return nil, merry.Wrap(err)
+				return nil, merry.Prepend(err, "failed to fetch accounts")
 			}
 
-			return keyValueArray, nil
-		})
+			accountsKeyValues, ok := data.([]fdb.KeyValue)
+			if !ok {
+				return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
+			}
 
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to fetch accounts")
+			/*
+				добавляем полученную порцию в массив, затем получаем следующий за последним элементом массива
+				ключ и задаем его началом следующего диапазона
+			*/
+			accountKeyValuesArray = append(accountKeyValuesArray, accountsKeyValues...)
+			selectorkey := fdb.FirstGreaterOrEqual(accountKeyValuesArray[len(accountKeyValuesArray)-1].Key)
+			beginKey = selectorkey.Key
+
 		}
-
-		accountsKeyValues, ok := data.([]fdb.KeyValue)
-		if !ok {
-			return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
-		}
-
-		accountKeyValueArray = append(accountKeyValueArray, accountsKeyValues...)
-		selectorBeginKey.Offset = selectorBeginKey.Offset + 10000
-		selectorEndKey.Offset = selectorEndKey.Offset + 10000
-
 	}
-	// если брать полный массив, но захватывает начальный пустой ключ
-	accountKeyValueSlice := accountKeyValueArray[1:]
-	for _, accountKeyValue := range accountKeyValueSlice {
-		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
+	for _, accountKeyValue := range accountKeyValuesArray {
+		accountKeyTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
 		}
@@ -385,12 +381,12 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		}
 
 		fetchAccount.Balance = fetchAccountValue.Balance
-		Bic, ok := keyAccountTuple[0].(string)
+		Bic, ok := accountKeyTuple[0].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Bic)
 		}
 		fetchAccount.Bic = Bic
-		Ban, ok := keyAccountTuple[1].(string)
+		Ban, ok := accountKeyTuple[1].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Ban)
 		}
