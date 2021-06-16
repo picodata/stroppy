@@ -152,7 +152,7 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 
 // InsertAccount - сохранить новый счет.
 func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
-	data, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
+	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		keyAccount := cluster.getAccountKey(acc)
 		checkUniq, err := tx.Get(keyAccount).Get()
 		if checkUniq != nil {
@@ -176,31 +176,6 @@ func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 			return ErrDuplicateKey
 		}
 		return merry.Prepend(err, "failed to insert account")
-	}
-
-	initialBalance := inf.NewDec(0, 10)
-
-	addedBalance, ok := data.(*inf.Dec)
-	if !ok {
-		return merry.Prepend(err, "this data type account balance is not supported")
-	}
-
-	currentBalance, err := cluster.FetchTotal()
-
-	if err != nil {
-		if !errors.Is(err, ErrNoRows) {
-			return merry.Prepend(err, "failed to get current total balance")
-		}
-		//если мы выполняемся первый раз и пришло пустое значение, то инициализируем нулем
-		currentBalance = initialBalance
-	}
-
-	// добавляем баланс аккаунта к общему балансу
-	currentBalance.Add(currentBalance, addedBalance)
-
-	err = cluster.PersistTotal(*currentBalance)
-	if err != nil {
-		return merry.Prepend(err, "failed to keep total balance")
 	}
 
 	return nil
@@ -255,19 +230,66 @@ func (cluster *FDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
-	var fetchResult []model.Account
-	// присваиваем ноль, т.к. инициализируется как nil, иначе не сработает расчет итогового баланса
-	amount := inf.NewDec(0, 10)
 
-	fetchResult, err := cluster.FetchAccounts()
+	totalBalance := inf.NewDec(0, 10)
+
+	beginKey, endKey := cluster.model.accounts.FDBRangeKeys()
+
+	settings, err := cluster.FetchSettings()
 	if err != nil {
-		return amount, merry.Prepend(err, "failed to get Accounts array")
+		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
 	}
-	for i := range fetchResult {
-		fetchAccount := fetchResult[i]
-		amount = amount.Add(amount, fetchAccount.Balance)
+
+	var data interface{}
+	if settings.Count > 10000 && settings.Count%10000 == 0 {
+
+		for i := 0; i < settings.Count; i = i + 10000 {
+			data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+				keyValueArray, err := tx.GetRange(fdb.KeyRange{
+					Begin: beginKey,
+					End:   endKey,
+				},
+					fdb.RangeOptions{Limit: 10000, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
+				if err != nil {
+					return nil, merry.Wrap(err)
+				}
+
+				return keyValueArray, nil
+			})
+
+			if err != nil {
+				return nil, merry.Prepend(err, "failed to fetch accounts")
+			}
+
+			accountsKeyValues, ok := data.([]fdb.KeyValue)
+			if !ok {
+				return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
+			}
+
+			/*
+				добавляем полученную порцию в массив, затем получаем следующий за последним элементом массива
+				ключ и задаем его началом следующего диапазона
+			*/
+
+			selectorkey := fdb.FirstGreaterOrEqual(accountsKeyValues[len(accountsKeyValues)-1].Key)
+			beginKey = selectorkey.Key
+
+			for _, accountKeyValue := range accountsKeyValues {
+
+				var fetchAccountValue accountValue
+				if len(accountKeyValue.Value) == 0 {
+					return nil, ErrNoRows
+				}
+				fetchAccountValue, err = deserializeAccountValue(accountKeyValue.Value)
+				if err != nil {
+					return nil, err
+				}
+
+				totalBalance.Add(totalBalance, fetchAccountValue.Balance)
+			}
+		}
 	}
-	return amount, nil
+	return totalBalance, nil
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
