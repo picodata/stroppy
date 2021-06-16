@@ -68,12 +68,12 @@ type Kubernetes struct {
 	sshTunnel  engineSsh.Result
 	sc         *engineSsh.Client
 
-	portForward engine.ClusterTunnel
+	portForward engineSsh.Result
 
 	provider string
 }
 
-func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err error) {
+func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
 	if err = k.copyToMaster(); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to сopy RSA to cluster")
 	}
@@ -87,8 +87,8 @@ func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err
 	}
 
 	sshTunnelChan := make(chan engineSsh.Result)
-	portForwardChan := make(chan engine.ClusterTunnel)
-	go k.openSSHTunnel(sshTunnelChan)
+	portForwardChan := make(chan engineSsh.Result)
+	go k.openSSHTunnel("kubernetes", sshTunnelChan, clusterK8sPort, reserveClusterK8sPort)
 
 	k.sshTunnel = <-sshTunnelChan
 	if k.sshTunnel.Err != nil {
@@ -97,9 +97,9 @@ func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err
 
 	go k.openMonitoringPortForward(portForwardChan)
 	portForward := <-portForwardChan
-	llog.Println(portForward)
-	if portForward.Error != nil {
-		return nil, 0, merry.Prepend(portForward.Error, "failed to port forward")
+
+	if portForward.Err != nil {
+		return nil, 0, merry.Prepend(portForward.Err, "failed to port forward")
 	}
 
 	port = k.sshTunnel.Port
@@ -189,39 +189,8 @@ func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.
 
 // openMonitoringPortForward
 // запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engine.ClusterTunnel) {
-	// проверяем доступность портов 8080 и 8081 на локальной машине
-	llog.Infof("Checking the status of port '%d' of the localhost for monitoring...", clusterMonitoringPort)
-	monitoringPort := clusterMonitoringPort
-	if !engine.IsLocalPortOpen(clusterMonitoringPort) {
-		llog.Infoln("Checking the status of port 8081 of the localhost for monitoring...")
-
-		// проверяем доступность резервного порта
-		if !engine.IsLocalPortOpen(reserveClusterMonitoringPort) {
-			portForwardChan <- engine.ClusterTunnel{
-				Command:   nil,
-				Error:     merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"),
-				LocalPort: nil,
-			}
-		}
-		monitoringPort = reserveClusterMonitoringPort
-	}
-
-	// формируем строку с указанием портов для port-forward
-	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
-	// уровень --v=4 соответствует debug
-	portForwardCmd := exec.Command("kubectl", "port-forward", "--kubeconfig=config", "--log-file=portforward.log",
-		"--v=4", "deployment/grafana-stack", portForwardSpec, "-n", "monitoring")
-	llog.Infof(portForwardCmd.String())
-	portForwardCmd.Dir = k.workingDirectory
-
-	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
-	if err := portForwardCmd.Start(); err != nil {
-		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
-		portForwardChan <- engine.ClusterTunnel{Command: nil, Error: err, LocalPort: nil}
-	} else {
-		portForwardChan <- engine.ClusterTunnel{Command: portForwardCmd, Error: nil, LocalPort: &monitoringPort}
-	}
+func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engineSsh.Result) {
+	k.openSSHTunnel("monitoring", portForwardChan, clusterMonitoringPort, reserveClusterMonitoringPort)
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
@@ -378,17 +347,17 @@ func (k *Kubernetes) checkDeployMaster() (bool, error) {
 
 // openSSHTunnel
 // открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
+func (k *Kubernetes) openSSHTunnel(caller string, sshTunnelChan chan engineSsh.Result, mainPort int, reservePort int) {
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v", k.addressMap.MasterExternalIP)
 
+	tunnelPort := mainPort
 	/*	проверяем доступность портов для postgres на локальной машине */
-	llog.Infoln("Checking the status of port 6443 of the localhost for k8s...")
-	k8sPort := clusterK8sPort
-	if !engine.IsLocalPortOpen(k8sPort) {
-		llog.Infoln("Checking the status of port 6444 of the localhost for k8s...")
+	llog.Infof("Checking the status of port %v of the localhost for %v...\n", caller, tunnelPort)
+	if !engine.IsLocalPortOpen(tunnelPort) {
 		// проверяем резервный порт в случае недоступности основного
-		k8sPort = reserveClusterK8sPort
-		if !engine.IsLocalPortOpen(k8sPort) {
+		tunnelPort = reservePort
+		llog.Infof("Checking the status of port %v of the localhost for %v...\n", caller, tunnelPort)
+		if !engine.IsLocalPortOpen(tunnelPort) {
 			sshTunnelChan <- engineSsh.Result{
 				Port:   0,
 				Tunnel: nil,
@@ -416,8 +385,8 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 	var tunnel *sshtunnel.SSHTunnel
 	tunnel, err = sshtunnel.NewSSHTunnel(
 		mastersConnectionString,
-		fmt.Sprintf("localhost:%v", k8sPort),
-		k8sPort,
+		fmt.Sprintf("localhost:%v", tunnelPort),
+		mainPort,
 		authMethod,
 	)
 	if err != nil {
@@ -447,7 +416,7 @@ func (k *Kubernetes) openSSHTunnel(sshTunnelChan chan engineSsh.Result) {
 		return
 	}
 
-	sshTunnelChan <- engineSsh.Result{Port: k8sPort, Tunnel: tunnel, Err: nil}
+	sshTunnelChan <- engineSsh.Result{Port: tunnelPort, Tunnel: tunnel, Err: nil}
 }
 
 // copyConfigFromMaster
@@ -647,20 +616,9 @@ func (k *Kubernetes) copyToMaster() (err error) {
 func (k *Kubernetes) Stop() {
 	defer k.sshTunnel.Tunnel.Close()
 
-	// если вдруг что-то пошло не так, то kill принудительно до победного либо до истечения кол-ва попыток
-	for i := 0; k.portForward.Command.ProcessState.ExitCode() != -1 || i < connectionRetryCount; i++ {
-		llog.Infoln("port-forward is not closed. Executing kill...")
-		err := k.portForward.Command.Process.Kill()
-		if err != nil {
-			// если процесс уже убит
-			if errors.Is(err, os.ErrProcessDone) {
-				llog.Infoln("status of port-forward's kill: success")
-				break
-			}
-			llog.Errorf("status of port-forward's kill: %v. Repeat...", err)
-		}
-		time.Sleep(engine.ExecTimeout * time.Second)
-	}
+	llog.Infoln("status of ssh tunnel close: success")
+
+	defer k.portForward.Tunnel.Close()
 
 	llog.Infoln("status of port-forward's close: success")
 }

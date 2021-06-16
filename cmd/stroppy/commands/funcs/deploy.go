@@ -10,7 +10,6 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/engine/postgres"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
@@ -28,7 +27,7 @@ const configFile = "benchmark/deploy/test_config.json"
 var _terraform *terraform.Terraform
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
-func readCommandFromInput(portForwardStruct *engine.ClusterTunnel,
+func readCommandFromInput(portForwardStruct *engineSsh.Result,
 	errorExit chan error, successExit chan bool, popChan chan error, payChan chan error) {
 	for {
 		sc := bufio.NewScanner(os.Stdin)
@@ -39,12 +38,7 @@ func readCommandFromInput(portForwardStruct *engine.ClusterTunnel,
 			case "quit":
 				llog.Println("Exiting...")
 
-				err := portForwardStruct.Command.Process.Kill()
-				if err != nil {
-					llog.Errorf("failed to kill process port forward %v. \n Repeat...", err.Error())
-				}
-
-				err = _terraform.Destroy()
+				err := _terraform.Destroy()
 				if err != nil {
 					errorExit <- merry.Prepend(err, "failed to destroy terraform")
 				} else {
@@ -185,7 +179,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 
 	k, err := kubernetes.CreateKubernetes(workingDirectory, addressMap, sc, privateKeyFile, settings.Provider)
 
-	var portForward *engine.ClusterTunnel
+	var portForward *engineSsh.Result
 	var port int
 	if portForward, port, err = k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
@@ -229,7 +223,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	Enter "fdb pay" to start transfers test in FoundationDB.
 	To use kubectl for access kubernetes cluster in another console 
 	execute command for set environment variables KUBECONFIG before using:
-	"export KUBECONFIG=$(pwd)/config"`, *portForward.LocalPort, port)
+	"export KUBECONFIG=$(pwd)/config"`, *&portForward.Port, port)
 
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)

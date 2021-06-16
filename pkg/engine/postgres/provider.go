@@ -132,7 +132,7 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 
 	for successPodsCount < *postgresPodsCount && notFoundCount < maxNotFoundCount {
 		llog.Infof("waiting for checking %v minutes...\n", engine.ExecTimeout)
-		time.Sleep(engine.ExecTimeout * time.Second)
+		time.Sleep(engine.ExecTimeout * time.Minute)
 
 		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
 		//nolint:exhaustivestruct
