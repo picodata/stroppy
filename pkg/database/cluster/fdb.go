@@ -152,7 +152,7 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 
 // InsertAccount - сохранить новый счет.
 func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
-	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
+	data, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		keyAccount := cluster.getAccountKey(acc)
 		checkUniq, err := tx.Get(keyAccount).Get()
 		if checkUniq != nil {
@@ -169,7 +169,7 @@ func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 		}
 		tx.Set(keyAccount, valueAccountSet)
 		// оставляем просто err, т.к. обработчик определен после транзакции
-		return nil, err
+		return valueAccount.Balance, err
 	})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateKey) {
@@ -177,6 +177,32 @@ func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 		}
 		return merry.Prepend(err, "failed to insert account")
 	}
+
+	initialBalance := inf.NewDec(0, 10)
+
+	addedBalance, ok := data.(*inf.Dec)
+	if !ok {
+		return merry.Prepend(err, "this data type account balance is not supported")
+	}
+
+	currentBalance, err := cluster.FetchTotal()
+
+	if err != nil {
+		if !errors.Is(err, ErrNoRows) {
+			return merry.Prepend(err, "failed to get current total balance")
+		}
+		//если мы выполняемся первый раз и пришло пустое значение, то инициализируем нулем
+		currentBalance = initialBalance
+	}
+
+	// добавляем баланс аккаунта к общему балансу
+	currentBalance.Add(currentBalance, addedBalance)
+
+	err = cluster.PersistTotal(*currentBalance)
+	if err != nil {
+		return merry.Prepend(err, "failed to keep total balance")
+	}
+
 	return nil
 }
 
@@ -232,6 +258,7 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 	var fetchResult []model.Account
 	// присваиваем ноль, т.к. инициализируется как nil, иначе не сработает расчет итогового баланса
 	amount := inf.NewDec(0, 10)
+
 	fetchResult, err := cluster.FetchAccounts()
 	if err != nil {
 		return amount, merry.Prepend(err, "failed to get Accounts array")
@@ -317,6 +344,7 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	return nil
 }
 
+// FetchAccounts - получить список аккаунтов
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
 	var accountKeyValuesArray []fdb.KeyValue
