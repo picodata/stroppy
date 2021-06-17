@@ -436,39 +436,13 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	return
 }
 
-/* copyToMaster
- * скопировать на мастер-ноду private key для работы мастера с воркерами
- * и файлы для развертывания мониторинга и postgres */
-func (k *Kubernetes) copyToMaster() (err error) {
-
+func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err error) {
 	privateKeyFile, err := engineSsh.GetPrivateKeyFile(k.provider, k.workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get private key file")
 	}
 
 	masterExternalIP := k.addressMap.MasterExternalIP
-	llog.Infoln(masterExternalIP)
-
-	if k.provider == "yandex" {
-		/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
-		если кластер пока не готов*/
-		llog.Infoln("Checking status of port 22 on the cluster's master...")
-		var masterPortAvailable bool
-		for i := 0; i <= connectionRetryCount; i++ {
-			masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
-			if !masterPortAvailable {
-				llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
-				time.Sleep(execTimeout * time.Second)
-			} else {
-				break
-			}
-		}
-		if !masterPortAvailable {
-			return merry.Prepend(errPortCheck, "master's port 22 is not available")
-		}
-		llog.Infoln("status of check the master's port 22: available")
-	}
-
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
 		privateKeyFile, mastersConnectionString)
@@ -503,108 +477,78 @@ func (k *Kubernetes) copyToMaster() (err error) {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
 	}
 
-	metricsServerFileDir := filepath.Join(k.workingDirectory, "metrics-server.yaml")
-
-	metricsServerFile, _ := os.Open(metricsServerFileDir)
-	err = client.CopyFile(metricsServerFile, "/home/ubuntu/metrics-server.yaml", "0664")
+	metricsServerFile, _ := os.Open(sourceFilePath)
+	err = client.CopyFile(metricsServerFile, destinationFilePath, "0664")
 	if err != nil {
 		metricsServerFile.Close()
 		return merry.Prepend(err, "error while copying file metrics-server.yaml")
 	}
+
 	metricsServerFile.Close()
 	client.Close()
+	return
+}
+
+/* copyFilesToMaster
+ * скопировать на мастер-ноду private key для работы мастера с воркерами
+ * и файлы для развертывания мониторинга и postgres */
+func (k *Kubernetes) copyFilesToMaster() (err error) {
+	masterExternalIP := k.addressMap.MasterExternalIP
+	llog.Infoln(masterExternalIP)
+
+	if k.provider == "yandex" {
+		/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
+		если кластер пока не готов*/
+		llog.Infoln("Checking status of port 22 on the cluster's master...")
+		var masterPortAvailable bool
+		for i := 0; i <= connectionRetryCount; i++ {
+			masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
+			if !masterPortAvailable {
+				llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
+				time.Sleep(execTimeout * time.Second)
+			} else {
+				break
+			}
+		}
+		if !masterPortAvailable {
+			return merry.Prepend(errPortCheck, "master's port 22 is not available")
+		}
+	}
+
+	metricsServerFilePath := filepath.Join(k.workingDirectory, "metrics-server.yaml")
+	if err = k.LoadFile(metricsServerFilePath, "/home/ubuntu/metrics-server.yaml"); err != nil {
+		return
+	}
 	llog.Infoln("copying metrics-server.yaml: success")
 
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
-	err = client.Connect()
-	if err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	ingressGrafanaFilePath := filepath.Join(k.workingDirectory, "ingress-grafana.yaml")
+	if err = k.LoadFile(ingressGrafanaFilePath, "/home/ubuntu/ingress-grafana.yaml"); err != nil {
+		return
 	}
-
-	ingressGrafanaFileDir := filepath.Join(k.workingDirectory, "ingress-grafana.yaml")
-	ingressGrafanaFile, _ := os.Open(ingressGrafanaFileDir)
-	err = client.CopyFile(ingressGrafanaFile, "/home/ubuntu/ingress-grafana.yaml", "0664")
-	if err != nil {
-		ingressGrafanaFile.Close()
-		return merry.Prepend(err, "error while copying file ingress-grafana.yaml")
-	}
-
-	ingressGrafanaFile.Close()
-	client.Close()
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
-	err = client.Connect()
-	if err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	postgresManifestFilePath := filepath.Join(k.workingDirectory, "postgres-manifest.yaml")
+	if err = k.LoadFile(postgresManifestFilePath, "/home/ubuntu/postgres-manifest.yaml"); err != nil {
+		return
 	}
-
-	postgresManifestFileDir := filepath.Join(k.workingDirectory, "postgres-manifest.yaml")
-	postgresManifestFile, _ := os.Open(postgresManifestFileDir)
-	err = client.CopyFile(postgresManifestFile, "/home/ubuntu/postgres-manifest.yaml", "0664")
-	if err != nil {
-		postgresManifestFile.Close()
-		return merry.Prepend(err, "error while copying file postgres-manifest.yaml")
-	}
-
-	postgresManifestFile.Close()
-	client.Close()
 	llog.Infoln("copying postgres-manifest.yaml: success")
 
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
-	err = client.Connect()
-	if err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
-	}
-
 	postgresDeployFilePath := filepath.Join(k.workingDirectory, "deploy_operator.sh")
-	postgresDeployFile, _ := os.Open(postgresDeployFilePath)
-	err = client.CopyFile(postgresDeployFile, "/home/ubuntu/deploy_operator.sh", "0664")
-	if err != nil {
-		postgresManifestFile.Close()
-		return merry.Prepend(err, "error while copying file deploy_operator.sh")
+	if err = k.LoadFile(postgresDeployFilePath, "/home/ubuntu/deploy_operator.sh"); err != nil {
+		return
 	}
-
-	postgresManifestFile.Close()
-	client.Close()
 	llog.Infoln("copying deploy_operator.sh: success")
 
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
-	err = client.Connect()
-	if err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+	grafanaFilePath := filepath.Join(k.workingDirectory, "grafana-on-premise")
+	if err = k.LoadFile(postgresDeployFilePath, "/home/ubuntu/grafana-on-premise"); err != nil {
+		return
 	}
+	llog.Infoln("copying grafana-on-premise: success")
 
-	grafanaDir := "grafana-on-premise"
-	destinationPath := fmt.Sprintf("ubuntu@%v:/home/ubuntu/", masterExternalIP)
-	// go-scp не поддерживает копирование директории, поэтому используем exec.
-	copyGrafanaDirCmd := exec.Command("scp", "-r", "-i", privateKeyFile, "-o", "StrictHostKeyChecking=no",
-		grafanaDir, destinationPath)
-	llog.Infoln(copyGrafanaDirCmd)
-	copyGrafanaDirCmd.Dir = k.workingDirectory
-
-	copyGrafanaDirCmdResult, err := copyGrafanaDirCmd.CombinedOutput()
-	if err != nil {
-		llog.Errorln(string(copyGrafanaDirCmdResult))
-		return merry.Prepend(err, "error while copying directory grafana-on-premise")
+	fdbClusterClientFilePath := filepath.Join(k.workingDirectory, "cluster_with_client.yaml")
+	if err = k.LoadFile(fdbClusterClientFilePath, "/home/ubuntu/cluster_with_client.yaml"); err != nil {
+		return
 	}
-
-	client = scp.NewClient(masterAddressPort, &clientSSHConfig)
-	err = client.Connect()
-	if err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
-	}
-
-	fdbClusterClientFileDir := filepath.Join(k.workingDirectory, "cluster_with_client.yaml")
-	fdbClusterClientFile, _ := os.Open(fdbClusterClientFileDir)
-	err = client.CopyFile(fdbClusterClientFile, "/home/ubuntu/cluster_with_client.yaml", "0664")
-	if err != nil {
-		fdbClusterClientFile.Close()
-		return merry.Prepend(err, "error while copying file cluster_with_client.yaml")
-	}
-
-	fdbClusterClientFile.Close()
-	client.Close()
 	llog.Infoln("copying cluster_with_client.yaml: success")
 
 	return
