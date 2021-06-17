@@ -9,7 +9,23 @@ import (
 
 const defaultCountCPU = 4
 
+const workingDirectory = "benchmark/deploy"
+
+type BaseSettings struct {
+	WorkingDirectory string
+	DBType           string
+}
+
+func defaultBaseSettings() BaseSettings {
+	return BaseSettings{
+		WorkingDirectory: workingDirectory,
+		DBType:           "postgres",
+	}
+}
+
 type DatabaseSettings struct {
+	BaseSettings
+
 	LogLevel string
 	Workers  int
 	Count    int
@@ -24,17 +40,17 @@ type DatabaseSettings struct {
 	Check   bool
 
 	// TODO: add type validation in cli
-	DatabaseType       string
 	DBURL              string
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 }
 
 type DeploySettings struct {
+	BaseSettings
+
 	Provider string
 	Flavor   string
 	Nodes    int
-	DBType   string
 	UseChaos bool
 }
 
@@ -46,8 +62,9 @@ func DefaultsDeploy() *DeploySettings {
 		Provider: "yandex",
 		Flavor:   "small",
 		Nodes:    3,
-		DBType:   "postgres",
 		UseChaos: true,
+
+		BaseSettings: defaultBaseSettings(),
 	}
 	return &d
 }
@@ -66,9 +83,9 @@ func Defaults() *DatabaseSettings {
 		Seed:               time.Now().UnixNano(),
 		ZIPFian:            false,
 		Oracle:             false,
-		DatabaseType:       "postgres",
 		DBURL:              "",
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
+		BaseSettings:       defaultBaseSettings(),
 	}
 }

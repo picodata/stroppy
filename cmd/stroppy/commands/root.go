@@ -49,15 +49,20 @@ bandwidth along the way.`,
 		settings.Password,
 		"Database password")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseType,
+	rootCmd.PersistentFlags().StringVarP(&settings.DBType,
 		"database", "d",
-		settings.DatabaseType,
+		settings.DBType,
 		"Database type, postgreSQL if not set.")
 
 	rootCmd.PersistentFlags().StringVar(&settings.DBURL,
 		"url",
 		settings.DBURL,
 		"Connection string, required flag")
+
+	rootCmd.PersistentFlags().StringVarP(&settings.WorkingDirectory,
+		"working-directory", "wd",
+		settings.WorkingDirectory,
+		"Working directory, if not specified used ./benchmark/deploy")
 
 	rootCmd.PersistentFlags().Float64VarP(&settings.BanRangeMultiplier,
 		"banRangeMultiplier", "r",
