@@ -23,14 +23,13 @@ const linesNotInitTerraformShow = 13
 
 const templatesFileName = "templates.yaml"
 
-var errChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
+var (
+	errChooseConfig   = errors.New("failed to choose configuration. Unexpected configuration cluster template")
+	errVersionParsed  = errors.New("failed to parse version")
+	errChooseProvider = errors.New("failed to choose provider. Unexpected provider's name")
+)
 
-var errVersionParsed = errors.New("failed to parse version")
-
-var errChooseProvider = errors.New("failed to choose provider. Unexpected provider's name")
-
-func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string, version terraformVersion) (t *Terraform) {
-
+func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
 	t = &Terraform{
 		settings:          settings,
 		exePath:           filepath.Join(exeFolder, "terraform"),
@@ -39,7 +38,6 @@ func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder strin
 		addressMap:        &MapAddresses{},
 		isInit:            false,
 		WorkDirectory:     cfgFolder,
-		version:           version,
 	}
 	t.stateFilePath = filepath.Join(t.WorkDirectory, "terraform.tfstate")
 
@@ -69,7 +67,7 @@ type Terraform struct {
 
 	WorkDirectory string
 
-	version terraformVersion
+	version version
 }
 
 type TemplatesConfig struct {
@@ -77,13 +75,13 @@ type TemplatesConfig struct {
 	Oracle Configurations
 }
 
-type terraformVersion struct {
+type version struct {
 	major  int
 	minor  int
 	bugfix int
 }
 
-//GetAddressMap - получить структуру с адресами кластера
+// GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 	var _map *MapAddresses
 	if _map, err = t.collectInternalExternalAddressMap(); err != nil {
@@ -169,9 +167,9 @@ func (t *Terraform) Destroy() error {
 	llog.Infoln("Destroying terraform...")
 	err := destroyCmd.Run()
 	if err != nil {
-
 		return merry.Wrap(err)
 	}
+
 	llog.Infoln("Terraform destroyed")
 	return nil
 }
@@ -191,18 +189,18 @@ func (t *Terraform) readTemplates() (*TemplatesConfig, error) {
 	return &templatesConfig, nil
 }
 
-func GetTerraformVersion() (terraformVersion, error) {
-	var installedVersion terraformVersion
+func (t *Terraform) getTerraformVersion() (version, error) {
+	var installedVersion version
 	getVersionCMD, err := exec.Command("terraform", "version").Output()
 	if err != nil {
-		return terraformVersion{}, merry.Wrap(err)
+		return version{}, merry.Wrap(err)
 	}
 
-	//получаем из строки идентификатор версии в виде: v0.15.4 (как пример)
+	// получаем из строки идентификатор версии в виде: v0.15.4 (как пример)
 	searchExpressionString := regexp.MustCompile(`v[0-9]+.[0-9]+.[0-9]+`)
 	installedVersionString := searchExpressionString.FindString(string(getVersionCMD))
 	if len(installedVersionString) == 0 {
-		return terraformVersion{}, errVersionParsed
+		return version{}, errVersionParsed
 	}
 
 	versionArray := strings.Split(installedVersionString, ".")
@@ -211,7 +209,7 @@ func GetTerraformVersion() (terraformVersion, error) {
 	minor, _ := strconv.Atoi(versionArray[1])
 	bugfix, _ := strconv.Atoi(versionArray[2])
 
-	installedVersion = terraformVersion{
+	installedVersion = version{
 		major:  major,
 		minor:  minor,
 		bugfix: bugfix,
@@ -413,15 +411,19 @@ func (t *Terraform) install() error {
 }
 
 // init - подготовить среду для развертывания
-func (t *Terraform) init() error {
+func (t *Terraform) init() (err error) {
 	llog.Infoln("Initializating terraform...")
+
+	if t.version, err = t.getTerraformVersion(); err != nil {
+		return merry.Prepend(err, "failed to get terraform version")
+	}
 
 	initCmd := exec.Command("terraform", "init")
 	initCmd.Dir = t.WorkDirectory
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
 		//вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
-		return merry.Errorf(string(initCmdResult))
+		return merry.Errorf("terraform init '%s' command return error: %v", string(initCmdResult), err)
 	}
 
 	t.isInit = true

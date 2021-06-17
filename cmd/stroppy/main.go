@@ -4,6 +4,7 @@ import (
 	"os"
 
 	"gitlab.com/picodata/stroppy/cmd/stroppy/commands"
+
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	llog "github.com/sirupsen/logrus"

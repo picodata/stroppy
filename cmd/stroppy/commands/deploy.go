@@ -4,9 +4,10 @@ import (
 	"math/rand"
 	"time"
 
+	"gitlab.com/picodata/stroppy/internal/deployment"
+
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gitlab.com/picodata/stroppy/cmd/stroppy/commands/funcs"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
@@ -35,7 +36,8 @@ func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
 		},
 		PreRunE: nil,
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := funcs.Deploy(deploySettings); err != nil {
+			d := deployment.CreateDeployment(deploySettings, deploySettings.WorkingDirectory)
+			if err := d.Deploy(); err != nil {
 				llog.Fatalf("status of exit: %v", err)
 			}
 			llog.Infoln("status of exit: success")

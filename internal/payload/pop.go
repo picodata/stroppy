@@ -1,4 +1,4 @@
-package funcs
+package payload
 
 import (
 	"errors"
@@ -7,16 +7,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
-
+	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
-
-	"github.com/ansel1/merry"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
-	llog "github.com/sirupsen/logrus"
 	"gopkg.in/inf.v0"
 )
 
@@ -38,69 +36,26 @@ type PopStats struct {
 	duplicates uint64
 }
 
-// executePop - выполнить загрузку счетов в указанную БД
-func executePop(cmdType string, databaseType string) error {
-	settings, err := readConfig(cmdType, databaseType)
-	if err != nil {
-		return merry.Prepend(err, "failed to read config")
-	}
-
-	if err := Populate(settings); err != nil {
-		llog.Errorf("%v", err)
-	}
-
-	balance, err := Check(settings, nil)
-	if err != nil {
-		llog.Errorf("%v", err)
-	}
-
-	llog.Infof("Total balance: %v", balance)
-	return nil
-}
-
-func Populate(settings *config.DatabaseSettings) error {
-	var (
-		err           error
-		targetCluster ClusterPopulatable
-	)
-
-	switch settings.DatabaseType {
-	case cluster.PostgresType:
-		var closeConns func()
-		targetCluster, closeConns, err = cluster.NewPostgresCluster(settings.DBURL)
-		if err != nil {
-			return merry.Wrap(err)
-		}
-		defer closeConns()
-	case cluster.FDBType:
-		targetCluster, err = cluster.NewFDBCluster(settings.DBURL)
-		if err != nil {
-			return merry.Wrap(err)
-		}
-
-	default:
-		return merry.Errorf("unknown database type for setup")
-	}
-
+func (p *BasePayload) Pop(_ *config.DatabaseSettings, _ string) (err error) {
 	stats := PopStats{}
 
-	if err := targetCluster.BootstrapDB(settings.Count, int(settings.Seed)); err != nil {
-		return merry.Wrap(err)
+	if err = p.cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
+		return merry.Prepend(err, "cluster bootstrap failed")
 	}
 
-	clusterSettings, err := targetCluster.FetchSettings()
-	if err != nil {
-		return merry.Wrap(err)
+	var clusterSettings cluster.ClusterSettings
+	if clusterSettings, err = p.cluster.FetchSettings(); err != nil {
+		return merry.Prepend(err, "cluster settings fetch failed")
 	}
 
-	worker := func(id int, n_accounts int, wg *sync.WaitGroup) {
+	worker := func(id, nAccounts int, wg *sync.WaitGroup) {
 		defer wg.Done()
 
 		var rand fixed_random_source.FixedRandomSource
-		rand.Init(clusterSettings.Count, clusterSettings.Seed, settings.BanRangeMultiplier)
+		rand.Init(clusterSettings.Count, clusterSettings.Seed, p.config.BanRangeMultiplier)
 
-		llog.Tracef("Worker %d inserting %d accounts", id, n_accounts)
-		for i := 0; i < n_accounts; {
+		llog.Tracef("Worker %d inserting %d accounts", id, nAccounts)
+		for i := 0; i < nAccounts; {
 			cookie := statistics.StatsRequestStart()
 			bic, ban := rand.NewBicAndBan()
 			balance := rand.NewStartBalance()
@@ -111,9 +66,10 @@ func Populate(settings *config.DatabaseSettings) error {
 				PendingAmount: &inf.Dec{},
 				Found:         false,
 			}
+
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
 			for {
-				err := targetCluster.InsertAccount(acc)
+				err := p.cluster.InsertAccount(acc)
 				if err != nil {
 					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
@@ -135,19 +91,19 @@ func Populate(settings *config.DatabaseSettings) error {
 				}
 			}
 		}
-		llog.Tracef("Worker %d done %d accounts", id, n_accounts)
+		llog.Tracef("Worker %d done %d accounts", id, nAccounts)
 	}
 
 	llog.Infof("Creating %d accounts using %d workers on %d cores \n",
-		settings.Count, settings.Workers,
+		p.config.Count, p.config.Workers,
 		runtime.NumCPU())
 
 	var wg sync.WaitGroup
 
-	accountsPerWorker := settings.Count / settings.Workers
-	remainder := settings.Count - accountsPerWorker*settings.Workers
+	accountsPerWorker := p.config.Count / p.config.Workers
+	remainder := p.config.Count - accountsPerWorker*p.config.Workers
 
-	for i := 0; i < settings.Workers; i++ {
+	for i := 0; i < p.config.Workers; i++ {
 		nAccounts := accountsPerWorker
 		if i < remainder {
 			nAccounts++
@@ -158,8 +114,8 @@ func Populate(settings *config.DatabaseSettings) error {
 
 	wg.Wait()
 	llog.Infof("Done %v accounts, %v errors, %v duplicates",
-		settings.Count, stats.errors, stats.duplicates)
+		p.config.Count, stats.errors, stats.duplicates)
 
 	statistics.StatsReportSummary()
-	return nil
+	return
 }

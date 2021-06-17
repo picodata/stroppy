@@ -73,8 +73,8 @@ type Kubernetes struct {
 	provider string
 }
 
-func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
-	if err = k.copyToMaster(); err != nil {
+func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err error) {
+	if err = k.copyFilesToMaster(); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to сopy RSA to cluster")
 	}
 
@@ -190,7 +190,7 @@ func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
-	//provider := kubernetes.
+	// provider := kubernetes.
 	switch kubernetes.provider {
 	case "yandex":
 		// подставляем константы

@@ -599,7 +599,7 @@ func PrepareOracle(cpu int, ram int, disk int, nodes int) error {
 	nodesString := fmt.Sprintf("%d", nodes)
 	diskString := fmt.Sprintf("%d", disk)
 	setVariableBlock(instanceFileBody, cpu, ram, diskString, nodesString)
-	err := ioutil.WriteFile(instanceFilePath, instanceFile.Bytes(), 0600)
+	err := ioutil.WriteFile(instanceFilePath, instanceFile.Bytes(), 0o600)
 	if err != nil {
 		return merry.Prepend(err, "failed to write provider configuration file")
 	}

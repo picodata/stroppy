@@ -3,8 +3,9 @@ package commands
 import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gitlab.com/picodata/stroppy/cmd/stroppy/commands/funcs"
+	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gopkg.in/inf.v0"
 )
 
 func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
@@ -15,12 +16,17 @@ func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
 		Example: "./lightest populate -n 100000000",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			if err := funcs.Populate(settings); err != nil {
+			p, err := payload.CreateBasePayload(settings)
+			if err != nil {
+				llog.Fatalf("payload creation failed: %v", err)
+			}
+
+			if err = p.Pop(settings, ""); err != nil {
 				llog.Fatalf("%v", err)
 			}
 
-			balance, err := funcs.Check(settings, nil)
-			if err != nil {
+			var balance *inf.Dec
+			if balance, err = p.Check(nil); err != nil {
 				llog.Fatalf("%v", err)
 			}
 			llog.Infof("Total balance: %v", balance)

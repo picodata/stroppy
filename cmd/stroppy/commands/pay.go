@@ -3,8 +3,9 @@ package commands
 import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
-	"gitlab.com/picodata/stroppy/cmd/stroppy/commands/funcs"
+	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gopkg.in/inf.v0"
 )
 
 func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
@@ -13,21 +14,28 @@ func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
 		Aliases: []string{"transfer"},
 		Short:   "Run the payments workload",
 		Run: func(cmd *cobra.Command, args []string) {
-			sum, err := funcs.Check(settings, nil)
+			p, err := payload.CreateBasePayload(settings)
 			if err != nil {
+				llog.Fatalf("%v", err)
+			}
+
+			var sum *inf.Dec
+			if sum, err = p.Check(nil); err != nil {
 				llog.Fatalf("%v", err)
 			}
 
 			llog.Infof("Initial balance: %v", sum)
 
-			if err := funcs.Pay(settings); err != nil {
+			if err = p.Pay(settings, ""); err != nil {
 				llog.Fatalf("%v", err)
 			}
+
 			if settings.Check {
-				balance, err := funcs.Check(settings, sum)
+				balance, err := p.Check(sum)
 				if err != nil {
 					llog.Fatalf("%v", err)
 				}
+
 				llog.Infof("Final balance: %v", balance)
 			}
 		},

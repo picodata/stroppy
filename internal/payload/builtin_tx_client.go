@@ -1,4 +1,4 @@
-package funcs
+package payload
 
 import (
 	"errors"
@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"gopkg.in/inf.v0"
 
 	"gitlab.com/picodata/stroppy/pkg/database"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -24,13 +26,20 @@ const maxTxRetries = 10
 
 var maxSleepDuration, _ = time.ParseDuration("1s")
 
-// BuiltinTxTransfer
+type CheckableCluster interface {
+	FetchTotal() (*inf.Dec, error)
+	CheckBalance() (*inf.Dec, error)
+	PersistTotal(total inf.Dec) error
+}
+
+// BasicTxTransfer
 // This interface describe the interaction between general Pay code and
 // some db cluster that is capable of performing ACID transactions.
 //
 // should satisfy PredictableCluster interface
-type BuiltinTxTransfer interface {
+type BasicTxTransfer interface {
 	GetClusterType() cluster.DBClusterType
+
 	// provide seed and count of accounts for this cluster.
 	FetchSettings() (cluster.ClusterSettings, error)
 
@@ -41,22 +50,22 @@ type BuiltinTxTransfer interface {
 	database.PredictableCluster
 }
 
-type ClientBuiltinTx struct {
-	cluster BuiltinTxTransfer
+type ClientBasicTx struct {
+	cluster BasicTxTransfer
 	// oracle is optional, because it is to hard to implement
 	// for large dbs
 	oracle   *database.Oracle
 	payStats *PayStats
 }
 
-func (c *ClientBuiltinTx) Init(cluster BuiltinTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func (c *ClientBasicTx) Init(cluster BasicTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	c.cluster = cluster
 	c.oracle = oracle
 	c.payStats = payStats
 }
 
 //nolint:gosec
-func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
+func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
@@ -102,14 +111,14 @@ func payWorkerBuiltinTx(
 	settings *config.DatabaseSettings,
 	nTransfers int,
 	zipfian bool,
-	dbCluster BuiltinTxTransfer,
+	dbCluster CustomTxTransfer,
 	oracle *database.Oracle,
 	payStats *PayStats,
 	wg *sync.WaitGroup,
 ) {
 	defer wg.Done()
 
-	var client ClientBuiltinTx
+	var client ClientBasicTx
 	var randSource fixed_random_source.FixedRandomSource
 	client.Init(dbCluster, oracle, payStats)
 	clusterSettings, err := dbCluster.FetchSettings()
@@ -139,7 +148,7 @@ func payWorkerBuiltinTx(
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
 //nolint:unparam
-func payBuiltinTx(settings *config.DatabaseSettings, cluster BuiltinTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup
 		payStats PayStats

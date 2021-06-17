@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strconv"
 
+	"github.com/google/uuid"
+
 	"gitlab.com/picodata/stroppy/internal/model"
 
 	"github.com/ansel1/merry"
@@ -25,6 +27,50 @@ const limitRange = 100001
 type FDBCluster struct {
 	pool  fdb.Database
 	model modelFDB
+}
+
+func (cluster *FDBCluster) InsertTransfer(_ *model.Transfer) error {
+	return errors.New("implement me")
+}
+
+func (cluster *FDBCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
+	return errors.New("implement me")
+}
+
+func (cluster *FDBCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+	panic("implement me")
+}
+
+func (cluster *FDBCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
 }
 
 // modelFDB - объявление модели данных.
@@ -407,7 +453,6 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		llog.Println("count of elements inside loop of transaction", len(accountKeyValueArray))
 		return accountKeyValueArray, nil
 	})
-
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}

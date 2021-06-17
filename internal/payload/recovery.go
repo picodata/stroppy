@@ -1,4 +1,4 @@
-package funcs
+package payload
 
 import (
 	"sync"

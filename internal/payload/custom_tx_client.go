@@ -1,4 +1,4 @@
-package funcs
+package payload
 
 import (
 	"math/rand"
@@ -28,8 +28,9 @@ import (
 //
 // Should also satisfy PredictableCluster interface
 type CustomTxTransfer interface {
-	GetClusterType() cluster.DBClusterType
-	FetchSettings() (cluster.ClusterSettings, error)
+	BasicTxTransfer
+	CheckableCluster
+	ClusterPopulatable
 
 	InsertTransfer(transfer *model.Transfer) error
 	DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error
@@ -44,8 +45,6 @@ type CustomTxTransfer interface {
 
 	LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error)
 	UnlockAccount(bic string, ban string, transferId model.TransferId) error
-
-	database.PredictableCluster
 }
 
 type ClientCustomTx struct {

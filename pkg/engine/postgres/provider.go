@@ -27,7 +27,7 @@ const successPostgresPodsCount = 3
 
 const maxNotFoundCount = 5
 
-const workingDirectory = "benchmark/deploy/"
+const workingDirectory = "benchmark/deploy"
 
 func CreatePostgresCluster(sc *engineSsh.Client,
 	k *kubernetes.Kubernetes,
@@ -178,7 +178,6 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 
 // getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
 func (pc *Cluster) getPostgresPodsCount() (*int64, error) {
-
 	manifestFilePath := filepath.Join(workingDirectory, "postgres-manifest.yaml")
 	manifestFile, err := ioutil.ReadFile(manifestFilePath)
 	if err != nil {
