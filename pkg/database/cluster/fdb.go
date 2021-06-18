@@ -17,6 +17,10 @@ import (
 
 const versionAPI = 620
 
+const iterRange = 100000
+
+const limitRange = 100001
+
 // FDBCluster - объявление соединения к FDB и ссылки на модель данных.
 type FDBCluster struct {
 	pool  fdb.Database
@@ -169,7 +173,7 @@ func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 		}
 		tx.Set(keyAccount, valueAccountSet)
 		// оставляем просто err, т.к. обработчик определен после транзакции
-		return valueAccount.Balance, err
+		return nil, nil
 	})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateKey) {
@@ -233,23 +237,30 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 
 	totalBalance := inf.NewDec(0, 10)
 
+	var accountsKeyValuesArray []fdb.KeyValue
+
+	var data interface{}
+
 	beginKey, endKey := cluster.model.accounts.FDBRangeKeys()
 
 	settings, err := cluster.FetchSettings()
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
 	}
+	/*
+		Если кол-во счетов больше iterRange, получаем счета пачками по iterRange и в цикле складывает балансы,
+		по всему массиву, кроме последнего элемента. На последней итерации складываем балансы всего массива.
+		Если кол-во меньше, то получаем весь массив счетов и в цикле складываем балансы сразу по всему массиву
+	*/
+	if settings.Count >= iterRange {
 
-	var data interface{}
-	if settings.Count > 10000 && settings.Count%10000 == 0 {
-
-		for i := 0; i < settings.Count; i = i + 10000 {
+		for i := 0; i < settings.Count; i = i + iterRange {
 			data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 				keyValueArray, err := tx.GetRange(fdb.KeyRange{
 					Begin: beginKey,
 					End:   endKey,
 				},
-					fdb.RangeOptions{Limit: 10000, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
+					fdb.RangeOptions{Limit: limitRange, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
 				if err != nil {
 					return nil, merry.Wrap(err)
 				}
@@ -266,29 +277,40 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 				return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
 			}
 
-			/*
-				добавляем полученную порцию в массив, затем получаем следующий за последним элементом массива
-				ключ и задаем его началом следующего диапазона
-			*/
+			if len(accountsKeyValues) == limitRange {
+				accountsKeyValuesArray = accountsKeyValues[:len(accountsKeyValues)-1]
+			} else {
+				accountsKeyValuesArray = accountsKeyValues
+			}
 
-			selectorkey := fdb.FirstGreaterOrEqual(accountsKeyValues[len(accountsKeyValues)-1].Key)
-			beginKey = selectorkey.Key
-
-			for _, accountKeyValue := range accountsKeyValues {
+			for _, accountKeyValue := range accountsKeyValuesArray {
 
 				var fetchAccountValue accountValue
-				if len(accountKeyValue.Value) == 0 {
-					return nil, ErrNoRows
-				}
+
 				fetchAccountValue, err = deserializeAccountValue(accountKeyValue.Value)
 				if err != nil {
 					return nil, err
 				}
 
-				totalBalance.Add(totalBalance, fetchAccountValue.Balance)
+				totalBalance = totalBalance.Add(totalBalance, fetchAccountValue.Balance)
 			}
+
+			beginKey = accountsKeyValues[len(accountsKeyValues)-1].Key
+
 		}
+	} else {
+
+		fetchResult, err := cluster.FetchAccounts()
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to get Accounts array")
+		}
+		for i := range fetchResult {
+			fetchAccount := fetchResult[i]
+			totalBalance = totalBalance.Add(totalBalance, fetchAccount.Balance)
+		}
+
 	}
+
 	return totalBalance, nil
 }
 
@@ -369,53 +391,35 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 // FetchAccounts - получить список аккаунтов
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
-	var accountKeyValuesArray []fdb.KeyValue
+	var accountKeyValueArray []fdb.KeyValue
 
-	beginKey, endKey := cluster.model.accounts.FDBRangeKeys()
-
-	settings, err := cluster.FetchSettings()
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
-	}
-
-	var data interface{}
-	if settings.Count > 10000 && settings.Count%10000 == 0 {
-
-		for i := 0; i < settings.Count; i = i + 10000 {
-			data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-				keyValueArray, err := tx.GetRange(fdb.KeyRange{
-					Begin: beginKey,
-					End:   endKey,
-				},
-					fdb.RangeOptions{Limit: 10000, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceWithError()
-				if err != nil {
-					return nil, merry.Wrap(err)
-				}
-
-				return keyValueArray, nil
-			})
-
+	// StreamingModeWantAll - режим "прочитать всё и как можно быстрее"
+	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+		r := tx.GetRange(cluster.model.accounts, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).Iterator()
+		for r.Advance() {
+			accountKeyValue, err := r.Get()
 			if err != nil {
-				return nil, merry.Prepend(err, "failed to fetch accounts")
+				return nil, merry.Wrap(err)
 			}
-
-			accountsKeyValues, ok := data.([]fdb.KeyValue)
-			if !ok {
-				return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
-			}
-
-			/*
-				добавляем полученную порцию в массив, затем получаем следующий за последним элементом массива
-				ключ и задаем его началом следующего диапазона
-			*/
-			accountKeyValuesArray = append(accountKeyValuesArray, accountsKeyValues...)
-			selectorkey := fdb.FirstGreaterOrEqual(accountKeyValuesArray[len(accountKeyValuesArray)-1].Key)
-			beginKey = selectorkey.Key
-
+			// для скорости обработки возвращаем необработанный массив пар ключ-значение
+			accountKeyValueArray = append(accountKeyValueArray, accountKeyValue)
 		}
+		llog.Println("count of elements inside loop of transaction", len(accountKeyValueArray))
+		return accountKeyValueArray, nil
+	})
+
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	for _, accountKeyValue := range accountKeyValuesArray {
-		accountKeyTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
+
+	accountKeyValues, ok := data.([]fdb.KeyValue)
+	if !ok {
+		return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
+	}
+
+	llog.Println("count of elements outside loop of transaction", len(accountKeyValueArray))
+	for i, accountKeyValue := range accountKeyValues {
+		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
 		}
@@ -429,14 +433,14 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		if err != nil {
 			return nil, err
 		}
-
+		llog.Println(i)
 		fetchAccount.Balance = fetchAccountValue.Balance
-		Bic, ok := accountKeyTuple[0].(string)
+		Bic, ok := keyAccountTuple[0].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Bic)
 		}
 		fetchAccount.Bic = Bic
-		Ban, ok := accountKeyTuple[1].(string)
+		Ban, ok := keyAccountTuple[1].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Ban)
 		}
