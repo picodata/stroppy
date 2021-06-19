@@ -88,6 +88,7 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 
 	sshTunnelChan := make(chan engineSsh.Result)
 	portForwardChan := make(chan engineSsh.Result)
+	// открываем туннель для доступа к кластеру k8s с локальной машины
 	go k.openSSHTunnel("kubernetes", sshTunnelChan, clusterK8sPort, reserveClusterK8sPort)
 
 	k.sshTunnel = <-sshTunnelChan
@@ -95,7 +96,8 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 		return nil, 0, merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 	}
 
-	go k.openMonitoringPortForward(portForwardChan)
+	// открываем туннель для доступа к мониторингу кластера с локальной машины
+	go k.openSSHTunnel("monitoring", portForwardChan, clusterMonitoringPort, reserveClusterMonitoringPort)
 	portForward := <-portForwardChan
 
 	if portForward.Err != nil {
@@ -185,12 +187,6 @@ func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.
 		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
 		errorPortForward <- err
 	}
-}
-
-// openMonitoringPortForward
-// запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func (k *Kubernetes) openMonitoringPortForward(portForwardChan chan engineSsh.Result) {
-	k.openSSHTunnel("monitoring", portForwardChan, clusterMonitoringPort, reserveClusterMonitoringPort)
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
@@ -385,8 +381,8 @@ func (k *Kubernetes) openSSHTunnel(caller string, sshTunnelChan chan engineSsh.R
 	var tunnel *sshtunnel.SSHTunnel
 	tunnel, err = sshtunnel.NewSSHTunnel(
 		mastersConnectionString,
-		fmt.Sprintf("localhost:%v", tunnelPort),
-		mainPort,
+		fmt.Sprintf("localhost:%v", mainPort),
+		tunnelPort,
 		authMethod,
 	)
 	if err != nil {
@@ -470,6 +466,7 @@ func (k *Kubernetes) copyToMaster() (err error) {
 		if !masterPortAvailable {
 			return merry.Prepend(errPortCheck, "master's port 22 is not available")
 		}
+		llog.Infoln("status of check the master's port 22: available")
 	}
 
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)

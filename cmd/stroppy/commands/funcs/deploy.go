@@ -7,11 +7,11 @@ import (
 	"os"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
+	"gitlab.com/picodata/stroppy/pkg/engine/postgres"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	"gitlab.com/picodata/stroppy/pkg/engine/postgres"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 
@@ -181,9 +181,11 @@ func Deploy(settings *config.DeploySettings) (err error) {
 
 	var portForward *engineSsh.Result
 	var port int
+
 	if portForward, port, err = k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
+
 	defer k.Stop()
 
 	if settings.UseChaos {
@@ -200,12 +202,14 @@ func Deploy(settings *config.DeploySettings) (err error) {
 		}
 
 		statusSet, err := pg.GetStatus()
+
 		if err != nil {
 			return merry.Prepend(err, "failed to check deploy of postgres")
 		}
 		if statusSet.Err != nil {
 			return merry.Prepend(err, "deploy of postgres is failed")
 		}
+		llog.Infoln("Сhecking of deploy postgres: success")
 
 		if err = pg.OpenPortForwarding(); err != nil {
 			return merry.Prepend(err, "failed to open port-forward channel of postgres")
@@ -223,7 +227,7 @@ func Deploy(settings *config.DeploySettings) (err error) {
 	Enter "fdb pay" to start transfers test in FoundationDB.
 	To use kubectl for access kubernetes cluster in another console 
 	execute command for set environment variables KUBECONFIG before using:
-	"export KUBECONFIG=$(pwd)/config"`, *&portForward.Port, port)
+	"export KUBECONFIG=$(pwd)/config"`, portForward.Port, port)
 
 	errorExitChan := make(chan error)
 	successExitChan := make(chan bool)

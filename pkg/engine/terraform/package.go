@@ -420,9 +420,8 @@ func (t *Terraform) init() error {
 	initCmd.Dir = t.WorkDirectory
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
-		//чтобы понимать, что пошло не так, т.к. в error вернет exit code без конкретики
-		llog.Errorln(string(initCmdResult))
-		return merry.Wrap(err)
+		//вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
+		return merry.Errorf(string(initCmdResult))
 	}
 
 	t.isInit = true

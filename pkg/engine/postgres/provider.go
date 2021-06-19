@@ -132,7 +132,7 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 
 	for successPodsCount < *postgresPodsCount && notFoundCount < maxNotFoundCount {
 		llog.Infof("waiting for checking %v minutes...\n", engine.ExecTimeout)
-		time.Sleep(engine.ExecTimeout * time.Minute)
+		time.Sleep(engine.ExecTimeout * time.Second)
 
 		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
 		//nolint:exhaustivestruct
@@ -165,11 +165,6 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 			notFoundCount = 0
 		}
 
-		// чтобы не ждать до следующей итерации
-		if successPodsCount >= successPostgresPodsCount {
-			llog.Infoln("Сhecking of deploy postgres: success")
-			break
-		}
 	}
 
 	if notFoundCount >= maxNotFoundCount {

@@ -12,7 +12,7 @@ const (
 	DeployFail    Status = "fail"
 )
 
-const ExecTimeout = 5
+const ExecTimeout = 20
 
 var ErrorPodsNotFound = errors.New("one of pods is not found")
 

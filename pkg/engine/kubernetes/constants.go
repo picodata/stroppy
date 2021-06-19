@@ -17,13 +17,13 @@ const (
 const (
 	Deployk8sFirstStepYandexCMD = `echo \
 "export DEBIAN_FRONTEND='noninteractive'
-sudo apt-get update
+sudo apt-get update -y
 sudo apt-get install -y sshpass python3-pip git htop sysstat
 curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
 sudo apt-get install apt-transport-https --yes
 echo "deb https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
-sudo apt-get update
-sudo apt-get install helm
+sudo apt-get update -y
+sudo apt-get install helm -y
 git clone https://github.com/kubernetes-incubator/kubespray
 cd kubespray
 sudo pip3 install -r requirements.txt
@@ -46,15 +46,15 @@ kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisione
 # monitoring: kube-prometheus-stack
 kubectl create namespace monitoring
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo update
+helm repo update -y
 helm install grafana-stack prometheus-community/kube-prometheus-stack --set grafana.enables=false --namespace monitoring
 # monitoring: grafana-on-premise
 cd 
 ansible-galaxy install cloudalchemy.grafana
 ansible-galaxy collection install community.grafana
 cd grafana-on-premise
-export prometheus_cluster_ip=$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk \"{ print$ 3 }\")
-sed -i 's/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/$prometheus_cluster_ip:9090/g' grafana-on-premise.yml
+prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
+sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
 ansible-playbook grafana-on-premise.yml
 " \
 | tee -a deploy_kubernetes.sh
@@ -131,8 +131,8 @@ cd
 ansible-galaxy install cloudalchemy.grafana
 ansible-galaxy collection install community.grafana
 cd grafana-on-premise
-export prometheus_cluster_ip=$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk \"{ print$ 3 }\")
-sed -i 's/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/$prometheus_cluster_ip:9090/g' grafana-on-premise.yml
+prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
+sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
 ansible-playbook grafana-on-premise.yml
 " | tee -a deploy_kubernetes.sh
 `
