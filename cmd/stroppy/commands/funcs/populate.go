@@ -15,6 +15,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"github.com/ansel1/merry"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	llog "github.com/sirupsen/logrus"
 	"gopkg.in/inf.v0"
 )
@@ -119,7 +120,10 @@ func Populate(settings *config.DatabaseSettings) error {
 						break
 					}
 					atomic.AddUint64(&stats.errors, 1)
-					if errors.Is(err, cluster.ErrTimeoutExceeded) {
+					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
+					if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
+						Code: 1037,
+					}) {
 						llog.Errorf("Retrying after request error: %v", err)
 						time.Sleep(time.Millisecond)
 					}

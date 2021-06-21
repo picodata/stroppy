@@ -16,6 +16,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"github.com/ansel1/merry"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	llog "github.com/sirupsen/logrus"
 )
 
@@ -60,7 +61,10 @@ func (c *ClientBuiltinTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	applied := false
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
-			if errors.Is(err, cluster.ErrTxRollback) {
+			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
+			if errors.Is(err, cluster.ErrTxRollback) || errors.Is(err, fdb.Error{
+				Code: 1037,
+			}) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
