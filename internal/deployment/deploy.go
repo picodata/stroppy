@@ -153,6 +153,15 @@ func (d *Deployment) Deploy() (err error) {
 		}
 	}
 
+	var (
+		port        int
+		portForward *engineSsh.Result
+	)
+	if portForward, port, err = d.k.Deploy(); err != nil {
+		return merry.Prepend(err, "failed to start kubernetes")
+	}
+	defer d.k.Stop()
+
 	if d.settings.DatabaseSettings.DBType == "postgres" {
 		pg := postgres.CreatePostgresCluster(d.sc, d.k, addressMap, d.workingDirectory)
 		if err = pg.Deploy(); err != nil {
@@ -172,14 +181,6 @@ func (d *Deployment) Deploy() (err error) {
 		}
 	}
 
-	var (
-		port        int
-		portForward *engineSsh.Result
-	)
-	if portForward, port, err = d.k.Deploy(); err != nil {
-		return merry.Prepend(err, "failed to start kubernetes")
-	}
-	defer d.k.Stop()
 	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)
 
 	if d.payload, err = payload.CreateBasePayload(d.settings, d.chaosMesh); err != nil {
