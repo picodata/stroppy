@@ -95,32 +95,39 @@ type accountValue struct {
 func NewFDBCluster(dbURL string) (*FDBCluster, error) {
 	llog.Infof("Establishing connection to FDB on %v", dbURL)
 	poolConfig := dbURL
+
 	err := fdb.APIVersion(versionAPI)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to check version FDB API")
 	}
-	FDBPool, err := fdb.OpenDatabase(poolConfig)
-	if err != nil {
+
+	var FDBPool fdb.Database
+	if FDBPool, err = fdb.OpenDatabase(poolConfig); err != nil {
 		return nil, merry.Prepend(err, "failed to open connect to FDB")
 	}
 	llog.Infof("Creating or opening the subspaces... \n")
 	// создаем или открываем Directory - часть Directory cо своими метаданынми
+
 	accounts, err := directory.CreateOrOpen(FDBPool, []string{"accounts"}, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create accounts directory")
 	}
+
 	transfers, err := directory.CreateOrOpen(FDBPool, []string{"transfers"}, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create transfers directory")
 	}
+
 	settings, err := directory.CreateOrOpen(FDBPool, []string{"settings"}, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create settings directory")
 	}
+
 	checkSum, err := directory.CreateOrOpen(FDBPool, []string{"checksum"}, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create checksum directory")
 	}
+
 	return &FDBCluster{
 		pool: FDBPool,
 		model: modelFDB{

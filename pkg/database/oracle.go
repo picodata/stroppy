@@ -10,9 +10,10 @@ import (
 )
 
 type PredictableCluster interface {
-	// Return list of all present accounts
+	// FetchAccounts returns list of all present accounts
 	FetchAccounts() ([]model.Account, error)
-	// Provide balance and pending amount for an account for Oracle.
+
+	// FetchBalance returns balance and pending amount for an account for Oracle.
 	FetchBalance(bic string, ban string) (balance *inf.Dec, pendingAmount *inf.Dec, err error)
 }
 
@@ -81,9 +82,9 @@ func (o *Oracle) Init(cluster PredictableCluster) {
 }
 
 func (o *Oracle) lookupAccounts(acs []model.Account) (*TrackingAccount, *TrackingAccount) {
-	from, from_found := o.acs[acs[0].Bic+acs[0].Ban]
-	to, to_found := o.acs[acs[1].Bic+acs[1].Ban]
-	if (!from_found || !to_found) && acs[0].Found && acs[1].Found {
+	from, fromFound := o.acs[acs[0].Bic+acs[0].Ban]
+	to, toFound := o.acs[acs[1].Bic+acs[1].Ban]
+	if (!fromFound || !toFound) && acs[0].Found && acs[1].Found {
 		llog.Fatalf("One of the accounts is found, while it's missing")
 	}
 	return from, to

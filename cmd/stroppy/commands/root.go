@@ -9,7 +9,7 @@ import (
 )
 
 func Execute() {
-	settings := config.Defaults()
+	settings := config.DefaultSettings()
 
 	rootCmd := &cobra.Command{
 		Use:   "lightest [pop|pay|deploy]",
@@ -21,52 +21,65 @@ checking correctness. It collects client-side metrics for latency and
 bandwidth along the way.`,
 		Version: "0.9",
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			if l, err := llog.ParseLevel(settings.LogLevel); err != nil {
+			dbSettings := settings.DatabaseSettings
+			if l, err := llog.ParseLevel(dbSettings.LogLevel); err != nil {
 				return merry.Wrap(err)
 			} else {
 				llog.SetLevel(l)
 			}
-			if settings.Workers > settings.Count && settings.Count > 0 {
-				settings.Workers = settings.Count
+			if dbSettings.Workers > dbSettings.Count && dbSettings.Count > 0 {
+				dbSettings.Workers = dbSettings.Count
 			}
-			statistics.StatsSetTotal(settings.Count)
+			statistics.StatsSetTotal(dbSettings.Count)
 			return nil
 		},
 	}
 
-	rootCmd.PersistentFlags().StringVarP(&settings.LogLevel,
+	rootCmd.PersistentFlags().BoolVar(&settings.UseChaos, "use-chaos",
+		settings.UseChaos,
+		"install and run chaos-mesh on target cluster")
+
+	rootCmd.PersistentFlags().BoolVar(&settings.Local, "local",
+		settings.Local,
+		"operate with local cluster")
+
+	rootCmd.PersistentFlags().StringVarP(&settings.ChaosParameter,
+		"chaos-parameter", "c",
+		settings.ChaosParameter, "specify chaos parameter of in free form")
+
+	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.LogLevel,
 		"log-level", "v",
-		settings.LogLevel,
+		settings.DatabaseSettings.LogLevel,
 		"Log level (trace, debug, info, warn, error, fatal, panic")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.User,
+	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.User,
 		"user", "u",
-		settings.User,
+		settings.DatabaseSettings.User,
 		"Database user")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.Password,
+	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.Password,
 		"password", "p",
-		settings.Password,
+		settings.DatabaseSettings.Password,
 		"Database password")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.DBType,
+	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.DBType,
 		"database", "d",
-		settings.DBType,
+		settings.DatabaseSettings.DBType,
 		"Database type, postgreSQL if not set.")
 
-	rootCmd.PersistentFlags().StringVar(&settings.DBURL,
+	rootCmd.PersistentFlags().StringVar(&settings.DatabaseSettings.DBURL,
 		"url",
-		settings.DBURL,
+		settings.DatabaseSettings.DBURL,
 		"Connection string, required flag")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.WorkingDirectory,
-		"working-directory", "wd",
+	rootCmd.PersistentFlags().StringVar(&settings.WorkingDirectory,
+		"dir",
 		settings.WorkingDirectory,
 		"Working directory, if not specified used ./benchmark/deploy")
 
-	rootCmd.PersistentFlags().Float64VarP(&settings.BanRangeMultiplier,
+	rootCmd.PersistentFlags().Float64VarP(&settings.DatabaseSettings.BanRangeMultiplier,
 		"banRangeMultiplier", "r",
-		settings.BanRangeMultiplier,
+		settings.DatabaseSettings.BanRangeMultiplier,
 		`
 ban range multiplier (next brm) is a number that defines
 the ratio of BAN (Bank Identifier Number) per BIC (Bank Identifier Code). 
@@ -77,14 +90,14 @@ than we saved during DB population process (that is achieved if brm > 1).
 The recommended range of brm is from 1.01 to 1.1. 
 The default value of banRangeMultipluer is 1.1.`)
 
-	rootCmd.PersistentFlags().IntVarP(&settings.Workers,
+	rootCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Workers,
 		"workers", "w",
-		settings.Workers,
+		settings.DatabaseSettings.Workers,
 		"Number of workers, 4 * NumCPU if not set.")
 
-	rootCmd.AddCommand(newPopulateCommand(settings),
+	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),
-		newDeployCommand(config.DefaultsDeploy()))
+		newDeployCommand(settings))
 
 	_ = rootCmd.Execute()
 }

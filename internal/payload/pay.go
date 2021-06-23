@@ -1,9 +1,8 @@
 package payload
 
 import (
+	"fmt"
 	"runtime"
-
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -29,14 +28,19 @@ type PayStats struct {
 	recoveries        uint64
 }
 
-func (p *BasePayload) Pay(settings *config.DatabaseSettings, _ string) (err error) {
+func (p *BasePayload) Pay(_ string) (err error) {
 	llog.Infof("Establishing connection to the cluster")
 
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
 		p.config.Count, p.config.Workers, runtime.NumCPU())
 
+	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
+	if err = p.chaos.ExecuteCommand(chaosCommand); err != nil {
+		llog.Errorf("failed to execute chaos command: %v", err)
+	}
+
 	var payStats *PayStats
-	if payStats, err = p.payFunc(settings, p.cluster, p.oracle); err != nil {
+	if payStats, err = p.payFunc(p.config, p.cluster, p.oracle); err != nil {
 		return merry.Prepend(err, "pay function failed")
 	}
 
@@ -47,5 +51,5 @@ func (p *BasePayload) Pay(settings *config.DatabaseSettings, _ string) (err erro
 		payStats.NoSuchAccount,
 		payStats.InsufficientFunds)
 
-	return nil
+	return
 }

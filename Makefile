@@ -1,7 +1,11 @@
-all:
+cache:
 	go mod tidy
 	go mod vendor
+
+build:
 	go build -o bin/stroppy ./cmd/stroppy
+
+all: cache build
 
 clean:
 	rm -rf _data

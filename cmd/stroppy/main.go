@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"runtime/debug"
 
 	"gitlab.com/picodata/stroppy/cmd/stroppy/commands"
 
@@ -19,6 +20,14 @@ func main() {
 	formatter.FullTimestamp = true
 	formatter.ForceColors = true
 	llog.SetFormatter(formatter)
+
+	defer func() {
+		if r := recover(); r != nil {
+			llog.Errorf("main: panic caught: '%v'\n\nstack:\n%s\n\n",
+				r,
+				string(debug.Stack()))
+		}
+	}()
 
 	statistics.StatsInit()
 	commands.Execute()

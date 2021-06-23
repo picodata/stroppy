@@ -8,13 +8,13 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
+func newPayCommand(settings *config.Settings) *cobra.Command {
 	payCmd := &cobra.Command{
 		Use:     "pay",
 		Aliases: []string{"transfer"},
 		Short:   "Run the payments workload",
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := payload.CreateBasePayload(settings)
+			p, err := payload.CreateBasePayload(settings, createChaos(settings))
 			if err != nil {
 				llog.Fatalf("%v", err)
 			}
@@ -26,11 +26,11 @@ func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
 
 			llog.Infof("Initial balance: %v", sum)
 
-			if err = p.Pay(settings, ""); err != nil {
+			if err = p.Pay(""); err != nil {
 				llog.Fatalf("%v", err)
 			}
 
-			if settings.Check {
+			if settings.DatabaseSettings.Check {
 				balance, err := p.Check(sum)
 				if err != nil {
 					llog.Fatalf("%v", err)
@@ -41,20 +41,20 @@ func newPayCommand(settings *config.DatabaseSettings) *cobra.Command {
 		},
 	}
 
-	payCmd.PersistentFlags().IntVarP(&settings.Count,
-		"count", "n", settings.Count,
+	payCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Count,
+		"count", "n", settings.DatabaseSettings.Count,
 		"Number of transfers to make")
-	payCmd.PersistentFlags().BoolVarP(&settings.ZIPFian,
-		"zipfian", "z", settings.ZIPFian,
+	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.ZIPFian,
+		"zipfian", "z", settings.DatabaseSettings.ZIPFian,
 		"Use zipfian distribution for payments")
-	payCmd.PersistentFlags().BoolVarP(&settings.Oracle,
-		"oracle", "o", settings.Oracle,
+	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Oracle,
+		"oracle", "o", settings.DatabaseSettings.Oracle,
 		"Check all payments against the built-in oracle.")
-	payCmd.PersistentFlags().BoolVarP(&settings.Check,
-		"check", "", settings.Check,
+	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Check,
+		"check", "", settings.DatabaseSettings.Check,
 		"Check the final balance to match the original one (set to false if benchmarking).")
-	payCmd.PersistentFlags().BoolVarP(&settings.UseCustomTx,
-		"tx", "t", settings.UseCustomTx,
+	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.UseCustomTx,
+		"tx", "t", settings.DatabaseSettings.UseCustomTx,
 		"Use custom implementation of atomic transactions (workaround for dbs without built-in ACID transactions).")
 
 	return payCmd

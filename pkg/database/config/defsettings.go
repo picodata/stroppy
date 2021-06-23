@@ -11,21 +11,33 @@ const defaultCountCPU = 4
 
 const workingDirectory = "benchmark/deploy"
 
-type BaseSettings struct {
+type Settings struct {
 	WorkingDirectory string
-	DBType           string
+
+	Local bool
+
+	UseChaos       bool
+	ChaosParameter string
+
+	DatabaseSettings *DatabaseSettings
+	DeploySettings   *DeploySettings
 }
 
-func defaultBaseSettings() BaseSettings {
-	return BaseSettings{
+func DefaultSettings() *Settings {
+	return &Settings{
 		WorkingDirectory: workingDirectory,
-		DBType:           "postgres",
+		UseChaos:         false,
+		ChaosParameter:   "container",
+
+		Local: false,
+
+		DeploySettings:   deployDefaults(),
+		DatabaseSettings: DatabaseDefaults(),
 	}
 }
 
 type DatabaseSettings struct {
-	BaseSettings
-
+	DBType   string
 	LogLevel string
 	Workers  int
 	Count    int
@@ -45,34 +57,9 @@ type DatabaseSettings struct {
 	BanRangeMultiplier float64
 }
 
-type DeploySettings struct {
-	BaseSettings
-
-	Provider string
-	Flavor   string
-	Nodes    int
-	UseChaos bool
-}
-
-// DefaultsDeploy - заполнить параметры деплоя значениями по умолчанию.
+// DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию
 // линтер требует указания всех полей структуры при присвоении переменной
-//nolint:exhaustivestruct
-func DefaultsDeploy() *DeploySettings {
-	d := DeploySettings{
-		Provider: "yandex",
-		Flavor:   "small",
-		Nodes:    3,
-		UseChaos: true,
-
-		BaseSettings: defaultBaseSettings(),
-	}
-	return &d
-}
-
-// Defaults - заполнить параметры для запуска тестов значениями по умолчанию
-//линтер требует указания всех полей структуры при присвоении переменной
-//nolint:exhaustivestruct
-func Defaults() *DatabaseSettings {
+func DatabaseDefaults() *DatabaseSettings {
 	return &DatabaseSettings{
 		LogLevel:           llog.InfoLevel.String(),
 		Workers:            defaultCountCPU * runtime.NumCPU(),
@@ -86,6 +73,23 @@ func Defaults() *DatabaseSettings {
 		DBURL:              "",
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
-		BaseSettings:       defaultBaseSettings(),
+		DBType:             "postgres",
 	}
+}
+
+type DeploySettings struct {
+	Provider string
+	Flavor   string
+	Nodes    int
+}
+
+// DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.
+// линтер требует указания всех полей структуры при присвоении переменной
+func deployDefaults() *DeploySettings {
+	d := DeploySettings{
+		Provider: "yandex",
+		Flavor:   "small",
+		Nodes:    3,
+	}
+	return &d
 }

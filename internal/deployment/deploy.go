@@ -21,21 +21,21 @@ import (
 	llog "github.com/sirupsen/logrus"
 )
 
-func CreateDeployment(config *config.DeploySettings, wd string) (d *Deployment) {
+func CreateDeployment(config *config.Settings) (d *Deployment) {
 	d = &Deployment{
 		settings:         config,
 		stdinScanner:     bufio.NewScanner(os.Stdin),
-		workingDirectory: wd,
+		workingDirectory: config.WorkingDirectory,
 	}
 	return
 }
 
 type Deployment struct {
 	tf *terraform.Terraform
-	sc *engineSsh.Client
+	sc engineSsh.Client
 	k  *kubernetes.Kubernetes
 
-	settings  *config.DeploySettings
+	settings  *config.Settings
 	chaosMesh *chaos.Controller
 	payload   payload.Payload
 
@@ -72,7 +72,7 @@ func (d *Deployment) gracefulShutdown(portForwarding *engine.ClusterTunnel) (err
 }
 
 func (d *Deployment) Shutdown() (err error) {
-	// \todo: Fix this
+	// \todo: Fix port forwarding
 	err = d.gracefulShutdown(nil)
 	return
 }
@@ -90,7 +90,7 @@ func (d *Deployment) readCommandFromInput(portForwarding *engine.ClusterTunnel) 
 		case "pop":
 			llog.Println("Starting accounts populating for postgres...")
 
-			if err = d.executePop(command, params); err != nil {
+			if err = d.executePop(params); err != nil {
 				llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
 					command, err, params)
 			} else {
@@ -101,7 +101,7 @@ func (d *Deployment) readCommandFromInput(portForwarding *engine.ClusterTunnel) 
 		case "pay":
 			llog.Println("Starting transfer tests for postgres...")
 
-			if err = d.executePay(command, params); err != nil {
+			if err = d.executePay(params); err != nil {
 				llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
 					command, err, params)
 			} else {
@@ -125,7 +125,8 @@ func (d *Deployment) readCommandFromInput(portForwarding *engine.ClusterTunnel) 
 func (d *Deployment) Deploy() (err error) {
 	llog.Traceln(d.settings)
 
-	d.tf = terraform.CreateTerraform(d.settings, d.workingDirectory, d.workingDirectory)
+	deploySettings := d.settings.DeploySettings
+	d.tf = terraform.CreateTerraform(deploySettings, d.workingDirectory, d.workingDirectory)
 	if err = d.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}
@@ -135,31 +136,28 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
-	privateKeyFile, err := engineSsh.GetPrivateKeyFile(d.settings.Provider, d.tf.WorkDirectory)
-	if err != nil {
-		return merry.Prepend(err, "failed to get private key for terraform")
-	}
-
-	d.sc, err = engineSsh.CreateClient(d.workingDirectory, addressMap.MasterExternalIP, d.settings.Provider, privateKeyFile)
+	d.sc, err = engineSsh.CreateClient(d.workingDirectory,
+		addressMap.MasterExternalIP,
+		deploySettings.Provider,
+		d.settings.Local)
 	if err != nil {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
 
-	d.k, err = kubernetes.CreateKubernetes(d.workingDirectory, addressMap, d.sc, privateKeyFile, d.settings.Provider)
+	d.k, err = kubernetes.CreateKubernetes(d.settings, addressMap, d.sc)
 	if err != nil {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
-	defer d.k.Stop()
 
 	if d.settings.UseChaos {
-		d.chaosMesh = chaos.CreateController(d.sc, d.k, d.workingDirectory)
+		d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory)
 		if err = d.chaosMesh.Deploy(); err != nil {
 			return merry.Prepend(err, "failed to deploy and start chaos")
 		}
 	}
 
-	if d.settings.DBType == "postgres" {
-		pg := postgres.CreatePostgresCluster(d.sc, d.k, addressMap)
+	if d.settings.DatabaseSettings.DBType == "postgres" {
+		pg := postgres.CreatePostgresCluster(d.sc, d.k, addressMap, d.workingDirectory)
 		if err = pg.Deploy(); err != nil {
 			return merry.Prepend(err, "failed to deploy of postgres")
 		}
@@ -184,7 +182,12 @@ func (d *Deployment) Deploy() (err error) {
 	if portForward, port, err = d.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
+	defer d.k.Stop()
 	log.Printf(interactiveUsageHelpTemplate, *portForward.LocalPort, port)
+
+	if d.payload, err = payload.CreateBasePayload(d.settings, d.chaosMesh); err != nil {
+		return merry.Prepend(err, "failed to init payload")
+	}
 
 	if err = d.readCommandFromInput(portForward); err != nil {
 		llog.Error(err)

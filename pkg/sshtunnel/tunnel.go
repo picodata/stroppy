@@ -38,23 +38,29 @@ func newConnectionWaiter(listener net.Listener, c chan net.Conn) {
 	c <- conn
 }
 
-func (tunnel *SSHTunnel) Start(started chan error) {
-	listener, err := net.Listen("tcp", tunnel.Local.String())
-	if err != nil {
-		started <- err
+func (tunnel *SSHTunnel) Start() (err error) {
+	var listener net.Listener
+	if listener, err = net.Listen("tcp", tunnel.Local.String()); err != nil {
+		return merry.Prepend(err, "net listen failed")
 	}
+
 	tunnel.isOpen = true
 	tunnel.Local.Port = listener.Addr().(*net.TCPAddr).Port
 
-	serverConn, err := ssh.Dial("tcp", tunnel.Server.String(), tunnel.Config)
-	if err != nil {
+	var serverConn *ssh.Client
+	if serverConn, err = ssh.Dial("tcp", tunnel.Server.String(), tunnel.Config); err != nil {
 		tunnel.logf("server dial error: %s", err)
-		started <- err
+		return merry.Prepend(err, "server dial error")
 	}
+
 	tunnel.logf("established ssh connection to remote")
 	tunnel.serverConn = serverConn
 
-	started <- nil
+	go tunnel.tunnelProcess(listener)
+	return
+}
+
+func (tunnel *SSHTunnel) tunnelProcess(listener net.Listener) {
 	for {
 		if !tunnel.isOpen {
 			break
@@ -74,11 +80,12 @@ func (tunnel *SSHTunnel) Start(started chan error) {
 			go tunnel.forward(conn)
 		}
 	}
+
+	var err error
 	total := len(tunnel.Conns)
 	for i, conn := range tunnel.Conns {
 		tunnel.logf("closing the netConn (%d of %d)", i+1, total)
-		err := conn.Close()
-		if err != nil {
+		if err = conn.Close(); err != nil {
 			tunnel.logf(err.Error())
 		}
 	}

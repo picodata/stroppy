@@ -8,7 +8,7 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
+func newPopCommand(settings *config.Settings) *cobra.Command {
 	popCmd := &cobra.Command{
 		Use:     "pop",
 		Aliases: []string{"populate"},
@@ -16,12 +16,12 @@ func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
 		Example: "./lightest populate -n 100000000",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := payload.CreateBasePayload(settings)
+			p, err := payload.CreateBasePayload(settings, createChaos(settings))
 			if err != nil {
 				llog.Fatalf("payload creation failed: %v", err)
 			}
 
-			if err = p.Pop(settings, ""); err != nil {
+			if err = p.Pop(""); err != nil {
 				llog.Fatalf("%v", err)
 			}
 
@@ -33,9 +33,9 @@ func newPopulateCommand(settings *config.DatabaseSettings) *cobra.Command {
 		},
 	}
 
-	popCmd.PersistentFlags().IntVarP(&settings.Count,
+	popCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Count,
 		"count", "n",
-		settings.Count,
+		settings.DatabaseSettings.Count,
 		"Number of accounts to create")
 	// заполняем все поля, для неиспользуемых указвыаем nil, согласно требованиям линтера
 	//nolint:gofumpt

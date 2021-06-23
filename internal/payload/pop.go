@@ -2,6 +2,7 @@ package payload
 
 import (
 	"errors"
+	"fmt"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -12,7 +13,6 @@ import (
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"gopkg.in/inf.v0"
@@ -36,7 +36,7 @@ type PopStats struct {
 	duplicates uint64
 }
 
-func (p *BasePayload) Pop(_ *config.DatabaseSettings, _ string) (err error) {
+func (p *BasePayload) Pop(_ string) (err error) {
 	stats := PopStats{}
 
 	if err = p.cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
@@ -102,6 +102,11 @@ func (p *BasePayload) Pop(_ *config.DatabaseSettings, _ string) (err error) {
 
 	accountsPerWorker := p.config.Count / p.config.Workers
 	remainder := p.config.Count - accountsPerWorker*p.config.Workers
+
+	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
+	if err = p.chaos.ExecuteCommand(chaosCommand); err != nil {
+		llog.Errorf("failed to execute chaos command: %v", err)
+	}
 
 	for i := 0; i < p.config.Workers; i++ {
 		nAccounts := accountsPerWorker

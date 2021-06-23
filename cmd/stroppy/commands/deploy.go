@@ -11,9 +11,10 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
-func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
+func newDeployCommand(settings *config.Settings) *cobra.Command {
 	rand.Seed(time.Now().UnixNano())
 
+	deploySettings := settings.DeploySettings
 	deployCmd := &cobra.Command{
 		Use:                    "dep",
 		Aliases:                []string{"deploy"},
@@ -36,7 +37,7 @@ func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
 		},
 		PreRunE: nil,
 		Run: func(cmd *cobra.Command, args []string) {
-			d := deployment.CreateDeployment(deploySettings, deploySettings.WorkingDirectory)
+			d := deployment.CreateDeployment(settings)
 			if err := d.Deploy(); err != nil {
 				llog.Fatalf("status of exit: %v", err)
 			}
@@ -76,14 +77,10 @@ func newDeployCommand(deploySettings *config.DeploySettings) *cobra.Command {
 		deploySettings.Nodes,
 		"count nodes of cluster")
 
-	deployCmd.PersistentFlags().StringVar(&deploySettings.DBType,
+	deployCmd.PersistentFlags().StringVar(&settings.DatabaseSettings.DBType,
 		"dbtype",
-		deploySettings.DBType,
+		settings.DatabaseSettings.DBType,
 		"database type for deploy")
-
-	deployCmd.PersistentFlags().Bool("use-chaos",
-		true,
-		"install and run chaos-mesh on target cluster")
 
 	return deployCmd
 }

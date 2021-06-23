@@ -359,12 +359,15 @@ func payWorkerCustomTx(
 }
 
 //nolint:unparam
-func payCustomTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+func payCustomTx(settings *config.DatabaseSettings,
+	cluster CustomTxTransfer,
+	oracle *database.Oracle) (*PayStats, error) {
+
 	var wg sync.WaitGroup
 	var payStats PayStats
 
-	transfers_per_worker := settings.Count / settings.Workers
-	remainder := settings.Count - transfers_per_worker*settings.Workers
+	transfersPerWorker := settings.Count / settings.Workers
+	remainder := settings.Count - transfersPerWorker*settings.Workers
 
 	RecoveryStart(cluster, oracle, &payStats)
 
@@ -375,11 +378,11 @@ func payCustomTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, or
 
 	for i := 0; i < settings.Workers; i++ {
 		wg.Add(1)
-		n_transfers := transfers_per_worker
+		nTransfers := transfersPerWorker
 		if i < remainder {
-			n_transfers++
+			nTransfers++
 		}
-		go payWorkerCustomTx(*settings, n_transfers, settings.ZIPFian, clusterCustomTx, oracle, &payStats, &wg)
+		go payWorkerCustomTx(*settings, nTransfers, settings.ZIPFian, clusterCustomTx, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()

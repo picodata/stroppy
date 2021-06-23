@@ -33,6 +33,7 @@ func NewPostgresCluster(dbURL string) (*PostgresCluster, func(), error) {
 	if err != nil {
 		return nil, nil, merry.Wrap(err)
 	}
+
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {
 		return nil, nil, merry.Wrap(err)

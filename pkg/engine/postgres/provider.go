@@ -23,28 +23,30 @@ import (
 
 const runningPodStatus = "Running"
 
-const successPostgresPodsCount = 3
+const (
+	maxNotFoundCount         = 5
+	successPostgresPodsCount = 3
+)
 
-const maxNotFoundCount = 5
-
-const workingDirectory = "benchmark/deploy"
-
-func CreatePostgresCluster(sc *engineSsh.Client,
+func CreatePostgresCluster(sc engineSsh.Client,
 	k *kubernetes.Kubernetes,
-	terraformAddressMap terraform.MapAddresses) (pc *Cluster) {
+	terraformAddressMap terraform.MapAddresses,
+	wd string) (pc *Cluster) {
 
 	pc = &Cluster{
 		k:          k,
 		addressMap: terraformAddressMap,
 		sc:         sc,
+		wd:         wd,
 	}
 	return
 }
 
 type Cluster struct {
-	sc         *engineSsh.Client
+	sc         engineSsh.Client
 	k          *kubernetes.Kubernetes
 	addressMap terraform.MapAddresses
+	wd         string
 }
 
 // Deploy
@@ -60,6 +62,7 @@ func (pc *Cluster) Deploy() error {
 
 	llog.Infoln("Starting deploy of postgres")
 	deployCmd := "chmod +x deploy_operator.sh && ./deploy_operator.sh"
+
 	stdout, err := sshSession.StdoutPipe()
 	if err != nil {
 		return merry.Prepend(err, "failed creating command stdoutpipe")
@@ -68,8 +71,7 @@ func (pc *Cluster) Deploy() error {
 	stdoutReader := bufio.NewReader(stdout)
 	go engine.HandleReader(stdoutReader)
 
-	_, err = sshSession.CombinedOutput(deployCmd)
-	if err != nil {
+	if _, err = sshSession.CombinedOutput(deployCmd); err != nil {
 		return merry.Wrap(err)
 	}
 
@@ -176,25 +178,24 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 	return clusterStatus, nil
 }
 
-// getPostgresPodsCount - получить кол-во подов postgres, которые должны быть созданы
+// getPostgresPodsCount возвращает кол-во подов postgres, которые должны быть созданы
 func (pc *Cluster) getPostgresPodsCount() (*int64, error) {
-	manifestFilePath := filepath.Join(workingDirectory, "postgres-manifest.yaml")
+	manifestFilePath := filepath.Join(pc.wd, "postgres-manifest.yaml")
 	manifestFile, err := ioutil.ReadFile(manifestFilePath)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read postgres-manifest.yaml")
 	}
 
-	//nolint:exhaustivestruct
 	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode(manifestFile, nil, &v1.Postgresql{})
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to decode postgres-manifest.yaml")
 	}
+
 	postgresSQLconfig, ok := obj.(*v1.Postgresql)
 	if !ok {
 		return nil, merry.Prepend(err, "failed to check format postgres-manifest.yaml")
 	}
 
 	podsCount := int64(postgresSQLconfig.Spec.NumberOfInstances)
-
 	return &podsCount, nil
 }
