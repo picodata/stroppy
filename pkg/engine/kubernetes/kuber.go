@@ -2,9 +2,11 @@ package kubernetes
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gopkg.in/yaml.v2"
 
 	"github.com/ansel1/merry"
 	"github.com/bramvdbogaerde/go-scp"
@@ -25,6 +28,9 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 	"gitlab.com/picodata/stroppy/pkg/sshtunnel"
 	"golang.org/x/crypto/ssh"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -101,6 +107,16 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	if k.sshTunnel = k.openSSHTunnel("kubernetes", clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
+	}
+
+	pod, err := k.DeployStroppy()
+
+	if err != nil {
+		return nil, 0, merry.Prepend(err, "failed to deploy stroppy pod")
+	}
+
+	if pod.Status.Phase != "Running" {
+		return nil, 0, merry.Prepend(err, "stroppy pod status is not running")
 	}
 
 	pPortForward = k.openSSHTunnel("monitoring", clusterMonitoringPort, reserveClusterMonitoringPort)
@@ -583,6 +599,41 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	llog.Infoln("copying cluster_with_client.yaml: success")
 
 	return
+}
+
+func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
+
+	clientSet, err := k.GetClientSet()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to get clientset for deploy stroppy")
+	}
+
+	deployConfigStroppyPath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
+	deployConfig, err := ioutil.ReadFile(deployConfigStroppyPath)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to read config file for deploy stroppy")
+	}
+
+	stroppy := applyconfig.Pod("stroppy-client", "default")
+
+	err = yaml.Unmarshal([]byte(deployConfig), &stroppy)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
+	}
+
+	llog.Infoln("Applying the stroppy pod...")
+	pod, err := clientSet.CoreV1().Pods("default").Apply(context.TODO(), stroppy, metav1.ApplyOptions{
+		TypeMeta:     metav1.TypeMeta{},
+		DryRun:       []string{},
+		Force:        false,
+		FieldManager: "stroppy-deploy",
+	})
+
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to apply pod stroppy")
+	}
+
+	return pod, nil
 }
 
 func (k *Kubernetes) Stop() {
