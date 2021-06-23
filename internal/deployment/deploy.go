@@ -11,7 +11,6 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/engine/postgres"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
@@ -57,12 +56,10 @@ func (d *Deployment) scanInteractiveCommand() (stillAlive bool, command string, 
 	return
 }
 
-func (d *Deployment) gracefulShutdown(portForwarding *engine.ClusterTunnel) (err error) {
+func (d *Deployment) gracefulShutdown(portForwarding *engineSsh.Result) (err error) {
 	llog.Println("Exiting...")
 
-	if err = portForwarding.Command.Process.Kill(); err != nil {
-		llog.Errorf("failed to kill process port forward %v. \n Repeat...", err.Error())
-	}
+	portForwarding.Tunnel.Close()
 
 	if err = d.tf.Destroy(); err != nil {
 		return merry.Prepend(err, "failed to destroy terraform")
@@ -78,7 +75,7 @@ func (d *Deployment) Shutdown() (err error) {
 }
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
-func (d *Deployment) readCommandFromInput(portForwarding *engine.ClusterTunnel) (err error) {
+func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err error) {
 	for stillAlive, command, params := d.scanInteractiveCommand(); stillAlive; {
 		statistics.StatsInit()
 
@@ -177,13 +174,13 @@ func (d *Deployment) Deploy() (err error) {
 
 	var (
 		port        int
-		portForward *engine.ClusterTunnel
+		portForward *engineSsh.Result
 	)
 	if portForward, port, err = d.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 	defer d.k.Stop()
-	log.Printf(interactiveUsageHelpTemplate, *portForward.LocalPort, port)
+	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)
 
 	if d.payload, err = payload.CreateBasePayload(d.settings, d.chaosMesh); err != nil {
 		return merry.Prepend(err, "failed to init payload")

@@ -80,12 +80,12 @@ type Kubernetes struct {
 	isSshKeyFileOnMaster bool
 	sessionIsLocal       bool
 
-	portForward engineSsh.Result
+	portForward *engineSsh.Result
 
 	provider string
 }
 
-func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err error) {
+func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
 	if err = k.copyFilesToMaster(); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to сopy RSA to cluster")
 	}
@@ -98,20 +98,19 @@ func (k *Kubernetes) Deploy() (pPortForward *engine.ClusterTunnel, port int, err
 		return nil, 0, merry.Prepend(err, "failed to copy kube config from Master")
 	}
 
-	if k.sshTunnel = k.openSSHTunnel("kubernetes"); k.sshTunnel.Err != nil {
+	if k.sshTunnel = k.openSSHTunnel("kubernetes", clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
 	}
 
-	portForward := k.openMonitoringPortForward("monitoring")
-	llog.Println(portForward)
-	if portForward.Error != nil {
-		return nil, 0, merry.Prepend(portForward.Error, "failed to port forward")
+	pPortForward = k.openSSHTunnel("monitoring", clusterMonitoringPort, reserveClusterMonitoringPort)
+	llog.Println(pPortForward)
+	if pPortForward.Err != nil {
+		return nil, 0, merry.Prepend(pPortForward.Err, "failed to port forward")
 	}
 
 	port = k.sshTunnel.Port
-	pPortForward = &portForward
-	k.portForward = portForward
+	k.portForward = pPortForward
 
 	return
 }
@@ -131,7 +130,7 @@ func (k *Kubernetes) executeCommand(text string) (err error) {
 	return
 }
 
-func (k *Kubernetes) runCommand(text string) (stdout io.Reader, session *ssh.Session, err error) {
+func (k *Kubernetes) getSessionObject() (stdout io.Reader, session engineSsh.Session, err error) {
 	if session, err = k.sc.GetNewSession(); err != nil {
 		err = merry.Prepend(err, "failed to open ssh connection")
 		return
@@ -192,45 +191,6 @@ func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.
 		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
 		errorPortForward <- err
 	}
-}
-
-// openMonitoringPortForward
-// запустить kubectl port-forward для доступа к мониторингу кластера с локального хоста
-func (k *Kubernetes) openMonitoringPortForward() engine.ClusterTunnel {
-	// проверяем доступность портов 8080 и 8081 на локальной машине
-	llog.Infof("Checking the status of port '%d' of the localhost for monitoring...", clusterMonitoringPort)
-
-	monitoringPort := clusterMonitoringPort
-	if !engine.IsLocalPortOpen(clusterMonitoringPort) {
-		llog.Infoln("Checking the status of port 8081 of the localhost for monitoring...")
-
-		// проверяем доступность резервного порта
-		if !engine.IsLocalPortOpen(reserveClusterMonitoringPort) {
-			return engine.ClusterTunnel{
-				Command:   nil,
-				Error:     merry.Prepend(errPortCheck, ": ports 8080 and 8081 are not available"),
-				LocalPort: nil,
-			}
-		}
-		monitoringPort = reserveClusterMonitoringPort
-	}
-
-	// формируем строку с указанием портов для port-forward
-	portForwardSpec := fmt.Sprintf("%v:3000", monitoringPort)
-
-	// уровень --v=4 соответствует debug
-	portForwardCmd := exec.Command("kubectl", "port-forward", "--kubeconfig=config", "--log-file=portforward.log",
-		"--v=4", "deployment/grafana-stack", portForwardSpec, "-n", "monitoring")
-	portForwardCmd.Dir = k.workingDirectory
-	llog.Infof(portForwardCmd.String())
-
-	// используем метод старт, т.к. нужно оставить команду запущенной в фоне
-	if err := portForwardCmd.Start(); err != nil {
-		llog.Infof("failed to execute command  port-forward kubectl:%v ", err)
-		return engine.ClusterTunnel{Command: nil, Error: err, LocalPort: nil}
-	}
-
-	return engine.ClusterTunnel{Command: portForwardCmd, Error: nil, LocalPort: &monitoringPort}
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
@@ -611,7 +571,7 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	llog.Infoln("copying deploy_operator.sh: success")
 
 	grafanaFilePath := filepath.Join(k.workingDirectory, "grafana-on-premise")
-	if err = k.LoadFile(postgresDeployFilePath, "/home/ubuntu/grafana-on-premise"); err != nil {
+	if err = k.LoadFile(grafanaFilePath, "/home/ubuntu/grafana-on-premise"); err != nil {
 		return
 	}
 	llog.Infoln("copying grafana-on-premise: success")

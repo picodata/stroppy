@@ -24,7 +24,9 @@ import (
 const runningPodStatus = "Running"
 
 const (
-	maxNotFoundCount         = 5
+	maxNotFoundCount = 5
+
+	// nolint
 	successPostgresPodsCount = 3
 )
 
