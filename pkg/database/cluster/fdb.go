@@ -367,76 +367,63 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
-	tx, err := cluster.pool.CreateTransaction()
-	if err != nil {
-		tx.Cancel()
-		return merry.Prepend(err, "failed to create tx FDB")
-	}
-	err = cluster.setTransfer(tx, transfer)
-	if err != nil {
-		tx.Cancel()
-		return ErrTxRollback
-	}
-	srcAccount := model.Account{
-		Bic:             transfer.Acs[0].Bic,
-		Ban:             transfer.Acs[0].Ban,
-		Balance:         &inf.Dec{},
-		PendingAmount:   &inf.Dec{},
-		PendingTransfer: [16]byte{},
-		Found:           false,
-	}
-	sourceAccountKey := cluster.getAccountKey(srcAccount)
-	sourceAccountValue, err := getAccountValue(tx, sourceAccountKey)
-	if err != nil {
-		if errors.Is(err, ErrNoRows) {
-			tx.Cancel()
-			return ErrNoRows
+	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
+
+		err := cluster.setTransfer(tx, transfer)
+		if err != nil {
+			return nil, err
 		}
-		tx.Cancel()
-		return merry.Prepend(err, "failed to get source account")
-	}
-	sourceAccountValue.Balance.Sub(sourceAccountValue.Balance, transfer.Amount)
-	if sourceAccountValue.Balance.UnscaledBig().Int64() < 0 {
-		tx.Cancel()
-		return ErrInsufficientFunds
-	}
-	setSourceAccountValue, err := serializeValue(sourceAccountValue)
-	if err != nil {
-		tx.Cancel()
-		return merry.Prepend(err, "failed to serialize source account")
-	}
-	tx.Set(sourceAccountKey, setSourceAccountValue)
-	destAccount := model.Account{
-		Bic:             transfer.Acs[1].Bic,
-		Ban:             transfer.Acs[1].Ban,
-		Balance:         &inf.Dec{},
-		PendingAmount:   &inf.Dec{},
-		PendingTransfer: [16]byte{},
-		Found:           false,
-	}
-	destAccountKey := cluster.getAccountKey(destAccount)
-	destAccountValue, err := getAccountValue(tx, destAccountKey)
-	if err != nil {
-		if errors.Is(err, ErrNoRows) {
-			tx.Cancel()
-			return ErrNoRows
+		srcAccount := model.Account{
+			Bic:             transfer.Acs[0].Bic,
+			Ban:             transfer.Acs[0].Ban,
+			Balance:         &inf.Dec{},
+			PendingAmount:   &inf.Dec{},
+			PendingTransfer: [16]byte{},
+			Found:           false,
 		}
-		tx.Cancel()
-		return merry.Prepend(err, "failed to get destination account")
-	}
-	destAccountValue.Balance.Add(destAccountValue.Balance, transfer.Amount)
-	setDestAccountValue, err := serializeValue(destAccountValue)
-	if err != nil {
-		tx.Cancel()
-		return merry.Prepend(err, "failed to serialize destination account")
-	}
-	tx.Set(destAccountKey, setDestAccountValue)
-	err = tx.Commit().Get()
-	if err != nil {
-		tx.Cancel()
-		return ErrTxRollback
-	}
-	return nil
+		sourceAccountKey := cluster.getAccountKey(srcAccount)
+		sourceAccountValue, err := getAccountValue(tx, sourceAccountKey)
+		if err != nil {
+			if errors.Is(err, ErrNoRows) {
+				return nil, ErrNoRows
+			}
+			return nil, merry.Prepend(err, "failed to get source account")
+		}
+		sourceAccountValue.Balance.Sub(sourceAccountValue.Balance, transfer.Amount)
+		if sourceAccountValue.Balance.UnscaledBig().Int64() < 0 {
+			return nil, ErrInsufficientFunds
+		}
+		setSourceAccountValue, err := serializeValue(sourceAccountValue)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to serialize source account")
+		}
+		tx.Set(sourceAccountKey, setSourceAccountValue)
+		destAccount := model.Account{
+			Bic:             transfer.Acs[1].Bic,
+			Ban:             transfer.Acs[1].Ban,
+			Balance:         &inf.Dec{},
+			PendingAmount:   &inf.Dec{},
+			PendingTransfer: [16]byte{},
+			Found:           false,
+		}
+		destAccountKey := cluster.getAccountKey(destAccount)
+		destAccountValue, err := getAccountValue(tx, destAccountKey)
+		if err != nil {
+			if errors.Is(err, ErrNoRows) {
+				return nil, ErrNoRows
+			}
+			return nil, merry.Prepend(err, "failed to get destination account")
+		}
+		destAccountValue.Balance.Add(destAccountValue.Balance, transfer.Amount)
+		setDestAccountValue, err := serializeValue(destAccountValue)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to serialize destination account")
+		}
+		tx.Set(destAccountKey, setDestAccountValue)
+		return nil, nil
+	})
+
+	return merry.Wrap(err)
 }
 
 // FetchAccounts - получить список аккаунтов
