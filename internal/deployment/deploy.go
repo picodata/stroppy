@@ -7,13 +7,12 @@ import (
 	"os"
 	"strings"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/db"
-
 	"gitlab.com/picodata/stroppy/internal/payload"
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
+	"gitlab.com/picodata/stroppy/pkg/engine/db"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"

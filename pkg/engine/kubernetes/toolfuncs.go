@@ -2,13 +2,19 @@ package kubernetes
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 )
 
 func (k *Kubernetes) editClusterURL(url string) error {
@@ -97,4 +103,67 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 
 	k.isSshKeyFileOnMaster = true
 	return
+}
+
+func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) error {
+	config, err := k.getKubeConfig()
+	if err != nil {
+		return merry.Prepend(err, "failed to get config for execute remote test")
+	}
+
+	clientSet, err := k.GetClientSet()
+	if err != nil {
+		return merry.Prepend(err, "failed to get clientset for execute remote test")
+	}
+
+	// формируем запрос для API k8s
+	executeRequest := clientSet.CoreV1().RESTClient().Post().Resource("pods").Name("stroppy-client").
+		Namespace("default").SubResource("exec").Timeout(60)
+
+	option := &v1.PodExecOptions{
+		TypeMeta:  metav1.TypeMeta{},
+		Stdin:     true,
+		Stdout:    true,
+		Stderr:    true,
+		TTY:       true,
+		Container: "",
+		Command:   testCmd,
+	}
+
+	executeRequest.VersionedParams(
+		option,
+		scheme.ParameterCodec,
+	)
+
+	// подключаемся к API-серверу
+	exec, err := remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL())
+	if err != nil {
+		return merry.Prepend(err, "failed to execute remote test")
+	}
+
+	logFilePath := filepath.Join(k.workingDirectory, logFileName)
+
+	logFile, err := os.Create(logFilePath)
+	if err != nil {
+		return merry.Prepend(err, "failed to create test log file")
+	}
+
+	defer logFile.Close()
+
+	streamOptions := remotecommand.StreamOptions{
+		Stdin:             os.Stdin,
+		Stdout:            logFile,
+		Stderr:            os.Stderr,
+		Tty:               true,
+		TerminalSizeQueue: nil,
+	}
+
+	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
+	err = exec.Stream(streamOptions)
+	if err != nil {
+		return merry.Prepend(err, "failed to get stream of exec command")
+	}
+
+	return nil
+
 }

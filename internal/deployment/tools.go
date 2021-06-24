@@ -1,62 +1,59 @@
 package deployment
 
 import (
+	"fmt"
 	"io/ioutil"
+	"path/filepath"
+	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 
 	"github.com/ansel1/merry"
-	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gopkg.in/inf.v0"
 )
 
-// executePay - выполнить тест переводов
+// executePay - выполнить тест переводов внутри удаленного пода stroppy
 func (d *Deployment) executePay(_ string) (err error) {
 	var settings *config.DatabaseSettings
 	if settings, err = d.readDatabaseConfig("pay"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	var sum *inf.Dec
-	if sum, err = d.payload.Check(nil); err != nil {
-		llog.Errorf("%v", err)
-	}
-	llog.Infof("Initial balance: %v", sum)
+	payTestCmdTemplate := []string{"./stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pay.txt"}
 
-	if err := d.payload.Pay(""); err != nil {
-		llog.Errorf("%v", err)
+	dateFormat := "01-02-2006_15:04:05"
+	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
+
+	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
+	if err != nil {
+		return merry.Prepend(err, "failed to execute remote transfer test")
 	}
 
-	if settings.Check {
-		balance, err := d.payload.Check(sum)
-		if err != nil {
-			llog.Errorf("%v", err)
-		}
-		llog.Infof("Final balance: %v", balance)
-	}
 	return
 }
 
-// executePop - выполнить загрузку счетов в указанную БД
+// executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
 func (d *Deployment) executePop(_ string) error {
 	settings, err := d.readDatabaseConfig("pop")
 	if err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	d.payload.UpdateSettings(settings)
+	//d.payload.UpdateSettings(settings)
 
-	if err := d.payload.Pop(""); err != nil {
-		llog.Errorf("%v", err)
+	popTestCmdTemplate := []string{"./stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt"}
+	dateFormat := "01-02-2006_15:04:05"
+	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
+
+	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
+	if err != nil {
+		return merry.Prepend(err, "failed to execute remote populate test")
 	}
 
-	var balance *inf.Dec
-	if balance, err = d.payload.Check(nil); err != nil {
-		llog.Errorf("%v", err)
-	}
-
-	llog.Infof("Total balance: %v", balance)
 	return nil
 }
 
@@ -64,7 +61,8 @@ func (d *Deployment) executePop(_ string) error {
 // прочитать конфигурационный файл test_config.json
 func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
 	var data []byte
-	if data, err = ioutil.ReadFile(configFileName); err != nil {
+	configFilePath := filepath.Join(d.workingDirectory, configFileName)
+	if data, err = ioutil.ReadFile(configFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read config file")
 		return
 	}
@@ -76,7 +74,7 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 
 	switch d.settings.DatabaseSettings.DBType {
 	case cluster.Postgres:
-		settings.DBURL = "postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable"
+		settings.DBURL = "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable"
 
 	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"

@@ -64,10 +64,10 @@ helm install grafana-stack prometheus-community/kube-prometheus-stack --set graf
 cd 
 ansible-galaxy install cloudalchemy.grafana
 ansible-galaxy collection install community.grafana
-cd grafana-on-premise
-prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
-sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
-ansible-playbook grafana-on-premise.yml
+#cd grafana-on-premise
+#prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
+#sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
+#ansible-playbook grafana-on-premise.yml
 " \
 | tee -a deploy_kubernetes.sh
 `
