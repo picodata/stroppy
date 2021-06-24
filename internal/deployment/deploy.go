@@ -6,16 +6,15 @@ import (
 	"os"
 	"strings"
 
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/engine/foundationdb"
+	"gitlab.com/picodata/stroppy/pkg/engine/db"
 
 	"gitlab.com/picodata/stroppy/internal/payload"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	"gitlab.com/picodata/stroppy/pkg/engine/postgres"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 
@@ -149,13 +148,6 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
 
-	if d.settings.UseChaos {
-		d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory)
-		if err = d.chaosMesh.Deploy(); err != nil {
-			return merry.Prepend(err, "failed to deploy and start chaos")
-		}
-	}
-
 	var (
 		port        int
 		portForward *engineSsh.Result
@@ -165,34 +157,36 @@ func (d *Deployment) Deploy() (err error) {
 	}
 	defer d.k.Stop()
 
+	if d.settings.UseChaos {
+		d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory)
+		if err = d.chaosMesh.Deploy(); err != nil {
+			return merry.Prepend(err, "failed to deploy and start chaos")
+		}
+	}
+
+	var _cluster db.Cluster
 	switch d.settings.DatabaseSettings.DBType {
 	default:
-		return merry.Errorf("unknown database type '%ss'",
+		return merry.Errorf("unknown database type '%s'",
 			d.settings.DatabaseSettings.DBType)
 
 	case cluster.Postgres:
-		pg := postgres.CreateCluster(d.sc, d.k, d.workingDirectory)
-		if err = pg.Deploy(); err != nil {
-			return merry.Prepend(err, "failed to deploy of postgres")
-		}
-
-		statusSet, err := pg.GetStatus()
-		if err != nil {
-			return merry.Prepend(err, "failed to check deploy of postgres")
-		}
-		if statusSet.Err != nil {
-			return merry.Prepend(err, "deploy of postgres is failed")
-		}
-
-		if err = pg.OpenPortForwarding(); err != nil {
-			return merry.Prepend(err, "failed to open port-forward channel of postgres")
-		}
+		_cluster = db.CreatePostgresCluster(d.sc, d.k, d.workingDirectory)
 
 	case cluster.Foundation:
-		foundation := foundationdb.CreateCluster(d.sc, d.k, d.workingDirectory)
-		if err = foundation.Deploy(); err != nil {
-			return merry.Prepend(err, "foundation deploy failed")
-		}
+		_cluster = db.CreateFoundationCluster(d.sc, d.k, d.workingDirectory)
+	}
+
+	if err = _cluster.Deploy(); err != nil {
+		return merry.Prepend(err, "failed to deploy of postgres")
+	}
+
+	if err = _cluster.GetStatus(); err != nil {
+		return merry.Prepend(err, "failed to check deploy of postgres")
+	}
+
+	if err = _cluster.OpenPortForwarding(); err != nil {
+		return merry.Prepend(err, "failed to open port-forward channel of postgres")
 	}
 
 	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)

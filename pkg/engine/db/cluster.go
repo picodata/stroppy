@@ -1,4 +1,4 @@
-package engine
+package db
 
 import (
 	"errors"
@@ -6,11 +6,6 @@ import (
 )
 
 type Status string
-
-const (
-	DeploySuccess Status = "success"
-	DeployFail    Status = "fail"
-)
 
 const ExecTimeout = 20
 
@@ -21,10 +16,10 @@ type ClusterStatus struct {
 	Err    error
 }
 
-type Provider interface {
+type Cluster interface {
 	Deploy() error
 	OpenPortForwarding() error
-	GetStatus() (*ClusterStatus, error)
+	GetStatus() error
 }
 
 // ClusterTunnel

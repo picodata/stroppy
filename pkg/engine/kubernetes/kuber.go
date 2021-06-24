@@ -577,7 +577,7 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
 	grafanaDirectoryPath := filepath.Join(k.workingDirectory, "grafana-on-premise")
-	if err = k.LoadFile(grafanaDirectoryPath, "/home/ubuntu/grafana-on-premise"); err != nil {
+	if err = k.LoadFile(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
 		return
 	}
 	llog.Infoln("copying grafana-on-premise: success")
