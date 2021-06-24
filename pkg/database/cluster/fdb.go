@@ -169,8 +169,8 @@ func (cluster *FDBCluster) GetClusterType() DBClusterType {
 }
 
 // FetchSettings - получить значения параметров настройки.
-func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
-	var clusterSettings ClusterSettings
+func (cluster *FDBCluster) FetchSettings() (Settings, error) {
+	var clusterSettings Settings
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		var fetchCount, fetchSeed int
 		countKey := cluster.model.settings.Pack(tuple.Tuple{"count"})
@@ -191,7 +191,7 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to deserialize seed from Settings")
 		}
-		return ClusterSettings{
+		return Settings{
 			Count: fetchCount,
 			Seed:  fetchSeed,
 		}, nil
@@ -200,7 +200,7 @@ func (cluster *FDBCluster) FetchSettings() (ClusterSettings, error) {
 		// не удается вернуть nil, возникает ошибка
 		return clusterSettings, merry.Prepend(err, "failed to fetch from Settings")
 	}
-	clusterSettings, ok := data.(ClusterSettings)
+	clusterSettings, ok := data.(Settings)
 	if !ok {
 		return clusterSettings, merry.Errorf("this data type ClusterSettings is not supported")
 	}
@@ -287,7 +287,6 @@ func (cluster *FDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
-
 	totalBalance := inf.NewDec(0, 10)
 
 	var accountsKeyValuesArray []fdb.KeyValue
@@ -306,7 +305,6 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 		Если кол-во меньше, то получаем весь массив счетов и в цикле складываем балансы сразу по всему массиву
 	*/
 	if settings.Count >= iterRange {
-
 		for i := 0; i < settings.Count; i = i + iterRange {
 			data, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 				keyValueArray, err := tx.GetRange(fdb.KeyRange{

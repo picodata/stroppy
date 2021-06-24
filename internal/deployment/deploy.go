@@ -6,6 +6,9 @@ import (
 	"os"
 	"strings"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/engine/foundationdb"
+
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
@@ -162,8 +165,13 @@ func (d *Deployment) Deploy() (err error) {
 	}
 	defer d.k.Stop()
 
-	if d.settings.DatabaseSettings.DBType == "postgres" {
-		pg := postgres.CreatePostgresCluster(d.sc, d.k, addressMap, d.workingDirectory)
+	switch d.settings.DatabaseSettings.DBType {
+	default:
+		return merry.Errorf("unknown database type '%ss'",
+			d.settings.DatabaseSettings.DBType)
+
+	case cluster.Postgres:
+		pg := postgres.CreateCluster(d.sc, d.k, d.workingDirectory)
 		if err = pg.Deploy(); err != nil {
 			return merry.Prepend(err, "failed to deploy of postgres")
 		}
@@ -178,6 +186,12 @@ func (d *Deployment) Deploy() (err error) {
 
 		if err = pg.OpenPortForwarding(); err != nil {
 			return merry.Prepend(err, "failed to open port-forward channel of postgres")
+		}
+
+	case cluster.Foundation:
+		foundation := foundationdb.CreateCluster(d.sc, d.k, d.workingDirectory)
+		if err = foundation.Deploy(); err != nil {
+			return merry.Prepend(err, "foundation deploy failed")
 		}
 	}
 

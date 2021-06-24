@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
-	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	"gopkg.in/inf.v0"
 )
 
@@ -26,7 +26,7 @@ type ClusterPopulatable interface {
 	// For now data model for PostgreSQL is copied from lighest, but should be adjusted to correspond
 	// to planned workload in the future
 	BootstrapDB(count int, seed int) error
-	FetchSettings() (cluster.ClusterSettings, error)
+	FetchSettings() (cluster.Settings, error)
 
 	InsertAccount(acc model.Account) error
 }
@@ -43,7 +43,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 		return merry.Prepend(err, "cluster bootstrap failed")
 	}
 
-	var clusterSettings cluster.ClusterSettings
+	var clusterSettings cluster.Settings
 	if clusterSettings, err = p.cluster.FetchSettings(); err != nil {
 		return merry.Prepend(err, "cluster settings fetch failed")
 	}

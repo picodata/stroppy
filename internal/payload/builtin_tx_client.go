@@ -41,7 +41,7 @@ type BasicTxTransfer interface {
 	GetClusterType() cluster.DBClusterType
 
 	// provide seed and count of accounts for this cluster.
-	FetchSettings() (cluster.ClusterSettings, error)
+	FetchSettings() (cluster.Settings, error)
 
 	// MakeAtomicTransfer performs transfer operation using db's builtin ACID transactions
 	// This methods should not return ErrNoRows - if one of accounts does not exist we should simply proceed further

@@ -27,13 +27,13 @@ func CreateBasePayload(settings *config.Settings, chaos *chaos.Controller) (p Pa
 	}
 
 	switch bp.config.DBType {
-	case cluster.PostgresType:
+	case cluster.Postgres:
 		bp.cluster, bp.closeConns, err = cluster.NewPostgresCluster(bp.config.DBURL)
 		if err != nil {
 			return
 		}
 
-	case cluster.FDBType:
+	case cluster.Foundation:
 		bp.cluster, err = cluster.NewFDBCluster(bp.config.DBURL)
 		if err != nil {
 			return

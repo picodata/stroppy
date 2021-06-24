@@ -397,7 +397,7 @@ func (t *Terraform) init() (err error) {
 	initCmd.Dir = t.WorkDirectory
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
-		//вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
+		// вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
 		return merry.Errorf("terraform init '%s' command return error: %v", string(initCmdResult), err)
 	}
 

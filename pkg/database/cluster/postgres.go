@@ -124,17 +124,17 @@ const fetchSettings = `SELECT value FROM setting WHERE KEY in ('count', 'seed');
 
 const timeOutSettings = 5
 
-func (self *PostgresCluster) FetchSettings() (ClusterSettings, error) {
+func (self *PostgresCluster) FetchSettings() (Settings, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeOutSettings*time.Second)
 	defer cancel()
 	rows, err := self.pool.Query(ctx, fetchSettings)
 	if err != nil {
-		return ClusterSettings{
+		return Settings{
 			Count: 0,
 			Seed:  0,
 		}, merry.Prepend(err, "failed to fetch settings")
 	}
-	var clusterSettings ClusterSettings
+	var clusterSettings Settings
 	var fetchSettings []string
 	for rows.Next() {
 		var clusterSetting string
@@ -145,7 +145,7 @@ func (self *PostgresCluster) FetchSettings() (ClusterSettings, error) {
 	}
 	clusterSettings.Count, err = strconv.Atoi(fetchSettings[0])
 	if err != nil {
-		return ClusterSettings{
+		return Settings{
 				Count: 0,
 				Seed:  0,
 			},
@@ -153,7 +153,7 @@ func (self *PostgresCluster) FetchSettings() (ClusterSettings, error) {
 	}
 	clusterSettings.Seed, err = strconv.Atoi(fetchSettings[1])
 	if err != nil {
-		return ClusterSettings{
+		return Settings{
 				Count: 0,
 				Seed:  0,
 			},

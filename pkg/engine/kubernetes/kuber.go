@@ -110,7 +110,6 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 
 	pod, err := k.DeployStroppy()
-
 	if err != nil {
 		return nil, 0, merry.Prepend(err, "failed to deploy stroppy pod")
 	}
@@ -168,45 +167,48 @@ func (k *Kubernetes) ExecuteCommand(text string) (err error) {
 	return
 }
 
-// OpenPortForward - открыть port-forward туннель для вызывающей функции(caller)
+// OpenPortForward открывает port-forward туннель для вызывающей функции(caller)
 func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.URL,
-	stopPortForward chan struct{}, readyPortForward chan struct{}, errorPortForward chan error) {
+	stopPortForward chan struct{}, readyPortForward chan struct{}) (err error) {
+
 	llog.Printf("Opening of port-forward of %v...\n", caller)
 
-	config, err := k.getKubeConfig()
-	if err != nil {
-		llog.Errorf("failed to get kubeconfig for open port-forward of %v: %v", caller, err)
-		errorPortForward <- err
+	var kubeConfig *rest.Config
+	if kubeConfig, err = k.getKubeConfig(); err != nil {
+		return merry.Prepend(err, "failed to get kube config")
 	}
 
-	httpTransaction, upgrader, err := spdy.RoundTripperFor(config)
-	if err != nil {
-		llog.Errorf("failed to create http transction for port-forward of %v: %v\n", caller, err)
-		errorPortForward <- err
+	var httpTransaction http.RoundTripper
+	var updater spdy.Upgrader
+	if httpTransaction, updater, err = spdy.RoundTripperFor(kubeConfig); err != nil {
+		return merry.Prepend(err, "failed to create spdy transaction for port-forward")
 	}
 
-	portForwardLog, err := os.OpenFile("portForwardPostgres.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	var portForwardLog *os.File
+	portForwardLog, err = os.OpenFile("portForwardPostgres.log",
+		os.O_APPEND|os.O_CREATE|os.O_WRONLY,
+		0o644)
 	if err != nil {
-		llog.Errorf("failed to create or open log file for port-forward of %v: %v", caller, err)
-		errorPortForward <- err
+		return merry.Prepend(err, "failed to create or open log file for port-forward")
 	}
-	defer portForwardLog.Close()
+	// defer portForwardLog.Close() не делаем, поскольку при выходе из приложения runtime сам все закроет
 
-	//nolint:exhaustivestruct
-	dialer := spdy.NewDialer(upgrader, &http.Client{Transport: httpTransaction}, http.MethodPost, reqURL)
-	portForward, err := portforward.New(dialer, ports,
+	dialer := spdy.NewDialer(updater,
+		&http.Client{Transport: httpTransaction},
+		http.MethodPost, reqURL)
+
+	var portForward *portforward.PortForwarder
+	portForward, err = portforward.New(dialer, ports,
 		stopPortForward, readyPortForward, portForwardLog, portForwardLog)
 	if err != nil {
-		llog.Errorf("failed to get port-forwarder of %v: %v\n", caller, err)
-		errorPortForward <- err
+		return merry.Prepend(err, "failed to get port-forwarder")
 	}
 
-	err = portForward.ForwardPorts()
 	defer close(stopPortForward)
-	if err != nil {
-		llog.Errorf("failed to open port-forward of %v: %v\n", caller, err)
-		errorPortForward <- err
+	if err = portForward.ForwardPorts(); err != nil {
+		err = merry.Prepend(err, "failed to open port-forward")
 	}
+	return
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
@@ -574,35 +576,16 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	}
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
-	postgresManifestFilePath := filepath.Join(k.workingDirectory, "postgres-manifest.yaml")
-	if err = k.LoadFile(postgresManifestFilePath, "/home/ubuntu/postgres-manifest.yaml"); err != nil {
-		return
-	}
-	llog.Infoln("copying postgres-manifest.yaml: success")
-
-	postgresDeployFilePath := filepath.Join(k.workingDirectory, "deploy_operator.sh")
-	if err = k.LoadFile(postgresDeployFilePath, "/home/ubuntu/deploy_operator.sh"); err != nil {
-		return
-	}
-	llog.Infoln("copying deploy_operator.sh: success")
-
-	grafanaFilePath := filepath.Join(k.workingDirectory, "grafana-on-premise")
-	if err = k.LoadFile(grafanaFilePath, "/home/ubuntu/grafana-on-premise"); err != nil {
+	grafanaDirectoryPath := filepath.Join(k.workingDirectory, "grafana-on-premise")
+	if err = k.LoadFile(grafanaDirectoryPath, "/home/ubuntu/grafana-on-premise"); err != nil {
 		return
 	}
 	llog.Infoln("copying grafana-on-premise: success")
-
-	fdbClusterClientFilePath := filepath.Join(k.workingDirectory, "cluster_with_client.yaml")
-	if err = k.LoadFile(fdbClusterClientFilePath, "/home/ubuntu/cluster_with_client.yaml"); err != nil {
-		return
-	}
-	llog.Infoln("copying cluster_with_client.yaml: success")
 
 	return
 }
 
 func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
-
 	clientSet, err := k.GetClientSet()
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to get clientset for deploy stroppy")
@@ -628,7 +611,6 @@ func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
 		Force:        false,
 		FieldManager: "stroppy-deploy",
 	})
-
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to apply pod stroppy")
 	}

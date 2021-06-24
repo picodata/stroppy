@@ -4,9 +4,12 @@ import (
 	"bufio"
 	"context"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"path/filepath"
 	"time"
+
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -14,8 +17,6 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
-	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
-
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -30,51 +31,51 @@ const (
 	successPostgresPodsCount = 3
 )
 
-func CreatePostgresCluster(sc engineSsh.Client,
-	k *kubernetes.Kubernetes,
-	terraformAddressMap terraform.MapAddresses,
-	wd string) (pc *Cluster) {
-
+func CreateCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (pc *Cluster) {
 	pc = &Cluster{
-		k:          k,
-		addressMap: terraformAddressMap,
-		sc:         sc,
-		wd:         wd,
+		k:  k,
+		sc: sc,
+		wd: filepath.Join(wd, cluster.Postgres),
 	}
 	return
 }
 
 type Cluster struct {
-	sc         engineSsh.Client
-	k          *kubernetes.Kubernetes
-	addressMap terraform.MapAddresses
-	wd         string
+	sc engineSsh.Client
+	k  *kubernetes.Kubernetes
+	wd string
 }
 
 // Deploy
-// развернуть postgres в кластере
-func (pc *Cluster) Deploy() error {
+// разворачивает postgres в кластере
+func (pc *Cluster) Deploy() (err error) {
 	llog.Infoln("Prepare deploy of postgres")
 
-	sshSession, err := pc.sc.GetNewSession()
-	if err != nil {
+	postgresDeployConfigDirectory := pc.wd
+	if err = pc.k.LoadFile(postgresDeployConfigDirectory, "/home/ubuntu/postgres"); err != nil {
+		return
+	}
+	llog.Infoln("copying postgres directory: success")
+
+	var sshSession engineSsh.Session
+	if sshSession, err = pc.sc.GetNewSession(); err != nil {
 		return merry.Prepend(err, "failed to open ssh connection for deploy of postgres")
 	}
-	defer sshSession.Close()
+
+	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам
+	// defer sshSession.Close()
 
 	llog.Infoln("Starting deploy of postgres")
-	deployCmd := "chmod +x deploy_operator.sh && ./deploy_operator.sh"
+	deployCmd := "chmod +x postgres/deploy_operator.sh && ./postgres/deploy_operator.sh"
 
-	stdout, err := sshSession.StdoutPipe()
-	if err != nil {
+	var stdout io.Reader
+	if stdout, err = sshSession.StdoutPipe(); err != nil {
 		return merry.Prepend(err, "failed creating command stdoutpipe")
 	}
-
-	stdoutReader := bufio.NewReader(stdout)
-	go engine.HandleReader(stdoutReader)
+	go engine.HandleReader(bufio.NewReader(stdout))
 
 	if _, err = sshSession.CombinedOutput(deployCmd); err != nil {
-		return merry.Wrap(err)
+		return merry.Prepend(err, "command execution failed")
 	}
 
 	llog.Infoln("Finished deploy of postgres")
@@ -84,7 +85,6 @@ func (pc *Cluster) Deploy() error {
 func (pc *Cluster) OpenPortForwarding() error {
 	stopPortForwardPostgres := make(chan struct{})
 	readyPortForwardPostgres := make(chan struct{})
-	errorPortForwardPostgres := make(chan error)
 
 	clientSet, err := pc.k.GetClientSet()
 	if err != nil {
@@ -98,17 +98,17 @@ func (pc *Cluster) OpenPortForwarding() error {
 		Name("acid-postgres-cluster-0").
 		SubResource("portforward").URL()
 
-	go pc.k.OpenPortForward("postgres", []string{"6432:5432"}, reqURL,
-		stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
+	err = pc.k.OpenPortForward(cluster.Postgres, []string{"6432:5432"}, reqURL,
+		stopPortForwardPostgres, readyPortForwardPostgres)
+	if err != nil {
+		return merry.Prepend(err, "failed to started port-forward for postgres")
+	}
 
 	select {
 	case <-readyPortForwardPostgres:
 		llog.Infof("Port-forwarding for postgres is started success\n")
-		return nil
-	case errPortForwardPostgres := <-errorPortForwardPostgres:
-		llog.Errorf("Port-forwarding for postgres is started failed\n")
-		return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
 	}
+	return nil
 }
 
 // GetStatus проверить, что все поды postgres в running
@@ -124,7 +124,7 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 		Err:    nil,
 	}
 
-	clientset, err := pc.k.GetClientSet()
+	clientSet, err := pc.k.GetClientSet()
 	if err != nil {
 		return clusterStatus, merry.Prepend(err, "failed to get clienset for check deploy of postgres")
 	}
@@ -139,8 +139,7 @@ func (pc *Cluster) GetStatus() (*engine.ClusterStatus, error) {
 		time.Sleep(engine.ExecTimeout * time.Second)
 
 		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
-		//nolint:exhaustivestruct
-		acidPostgresZeroPod, err := clientset.CoreV1().Pods("default").Get(context.TODO(),
+		acidPostgresZeroPod, err := clientSet.CoreV1().Pods("default").Get(context.TODO(),
 			podNumber, metav1.GetOptions{
 				TypeMeta:        metav1.TypeMeta{},
 				ResourceVersion: "",
