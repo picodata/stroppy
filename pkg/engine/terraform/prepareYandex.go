@@ -42,12 +42,15 @@ func setTerraformBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
+var serviceAccountName string
+
 // setIamServiceAccountBlock - задать блок настроек управления сервисными аккаунтами (IAM)
 func setIamServiceAccountBlock(providerFileBody *hclwrite.Body) {
+	serviceAccountName = fmt.Sprintf("instances8%s", strings.ToLower(randStringID()))
 	iamServiceAccountBlock := providerFileBody.AppendNewBlock("resource",
-		[]string{"yandex_iam_service_account", "instances"})
+		[]string{"yandex_iam_service_account", serviceAccountName})
 	iamServiceAccountBody := iamServiceAccountBlock.Body()
-	iamServiceAccountBody.SetAttributeValue("name", cty.StringVal("instances"))
+	iamServiceAccountBody.SetAttributeValue("name", cty.StringVal(serviceAccountName))
 	iamServiceAccountBody.SetAttributeValue("description", cty.StringVal("service account to manage VMs"))
 	providerFileBody.AppendNewline()
 }
@@ -68,7 +71,7 @@ func setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 	resourceManagerBody.SetAttributeValue("role", cty.StringVal("editor"))
 	//nolint:exhaustivestruct
 	members := hcl.Traversal{
-		hcl.TraverseRoot{Name: "[\"serviceAccount:${yandex_iam_service_account.instances"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("[\"serviceAccount:${yandex_iam_service_account.%s", serviceAccountName)},
 		hcl.TraverseAttr{Name: "id}\",]"},
 	}
 	resourceManagerBody.SetAttributeTraversal("members", members)
@@ -78,7 +81,7 @@ func setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 			Name: "[\n  yandex_iam_service_account",
 		},
 		hcl.TraverseAttr{
-			Name: "instances,\n   ]",
+			Name: fmt.Sprintf("%s,\n   ]", serviceAccountName),
 		},
 	}
 	resourceManagerBody.SetAttributeTraversal("depends_on", dependsOn)
@@ -147,7 +150,7 @@ func setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversa
 
 	//nolint:exhaustivestruct
 	serviceAccInstanceID := hcl.Traversal{
-		hcl.TraverseRoot{Name: "yandex_iam_service_account.instances"},
+		hcl.TraverseRoot{Name: fmt.Sprintf("yandex_iam_service_account.%s", serviceAccountName)},
 		hcl.TraverseAttr{Name: "id"},
 	}
 	workersBody.SetAttributeTraversal("service_account_id", serviceAccInstanceID)
