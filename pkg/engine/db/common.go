@@ -87,9 +87,7 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 		return merry.Prepend(err, "failed to started port-forward for postgres")
 	}
 
-	select {
-	case <-readyPortForwardPostgres:
-		llog.Infof("Port-forwarding for postgres is started success\n")
-	}
+	<-readyPortForwardPostgres
+	llog.Infof("Port-forwarding for postgres is started success\n")
 	return
 }
