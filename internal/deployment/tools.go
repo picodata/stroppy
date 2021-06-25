@@ -21,13 +21,19 @@ func (d *Deployment) executePay(_ string) (err error) {
 	}
 
 	payTestCmdTemplate := []string{"./stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pay.txt"}
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers)}
 
+<<<<<<< HEAD
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
+=======
+	logFile := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier, settings.ZIPFian)
+
+	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFile)
+>>>>>>> feat(stroppy): add log file for remote executing tests
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote transfer test")
 	}
@@ -44,12 +50,20 @@ func (d *Deployment) executePop(_ string) error {
 	//d.payload.UpdateSettings(settings)
 
 	popTestCmdTemplate := []string{"./stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
+<<<<<<< HEAD
 		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt"}
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
+=======
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers)}
+
+	logFile := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier, settings.ZIPFian)
+
+	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFile)
+>>>>>>> feat(stroppy): add log file for remote executing tests
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote populate test")
 	}

@@ -18,6 +18,7 @@ import (
 )
 
 func (k *Kubernetes) editClusterURL(url string) error {
+	llog.Infoln("changing of cluster url on", url)
 	kubeConfig, err := clientcmd.LoadFromFile(k.clusterConfigFile)
 	if err != nil {
 		return merry.Prepend(err, "failed to load kube config")
