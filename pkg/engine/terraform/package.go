@@ -279,6 +279,7 @@ func (t *Terraform) prepare(templatesConfig TemplatesConfig, settings *config.De
 		default:
 			return merry.Wrap(errChooseConfig)
 		}
+
 	case "oracle":
 		switch settings.Flavor {
 		case "small":
@@ -306,17 +307,20 @@ func (t *Terraform) prepare(templatesConfig TemplatesConfig, settings *config.De
 
 	platform := getPlatform(templatesInit)
 
-	//nolint:goconst
-	if settings.Provider == "yandex" {
+	switch settings.Provider {
+	default:
+		return merry.Errorf("unknown provider '%s'", settings.Provider)
+
+	case "yandex":
 		err := PrepareYandex(cpuCount, ramSize,
-			diskSize, platform, settings.Nodes)
+			diskSize, settings.Nodes, platform, t.WorkDirectory)
 		if err != nil {
 			return merry.Wrap(err)
 		}
-		//nolint:goconst
-	} else if settings.Provider == "oracle" {
+
+	case "oracle":
 		err := PrepareOracle(cpuCount, ramSize,
-			diskSize, settings.Nodes)
+			diskSize, settings.Nodes, t.WorkDirectory)
 		if err != nil {
 			return merry.Wrap(err)
 		}

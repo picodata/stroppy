@@ -3,6 +3,7 @@ package terraform
 import (
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 
 	"github.com/ansel1/merry"
 	hcl "github.com/hashicorp/hcl/v2"
@@ -11,7 +12,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-const instanceFilePath = "benchmark/deploy/main_oracle.tf"
+const instanceFileName = "main_oracle.tf"
 
 func setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	ram int, diskString string, nodesString string) {
@@ -592,17 +593,20 @@ eu-frankfurt-1  = "ocid1.image.oc1.eu-frankfurt-1.aaaaaaaaw4ap4pklk3lo5pls5rppt2
 	ingressSecurityRulesBody17.SetAttributeValue("source", cty.StringVal("0.0.0.0/0"))
 }
 
-func PrepareOracle(cpu int, ram int, disk int, nodes int) error {
+func PrepareOracle(cpu, ram, disk, nodes int, wd string) (err error) {
 	instanceFile := hcl2.NewEmptyFile()
 	instanceFileBody := instanceFile.Body()
 	instanceFileBody.AppendNewline()
+
 	nodesString := fmt.Sprintf("%d", nodes)
 	diskString := fmt.Sprintf("%d", disk)
 	setVariableBlock(instanceFileBody, cpu, ram, diskString, nodesString)
-	err := ioutil.WriteFile(instanceFilePath, instanceFile.Bytes(), 0o600)
-	if err != nil {
+
+	providerConfigFilePath := filepath.Join(wd, instanceFileName)
+	if err = ioutil.WriteFile(providerConfigFilePath, instanceFile.Bytes(), 0o600); err != nil {
 		return merry.Prepend(err, "failed to write provider configuration file")
 	}
+
 	llog.Infoln("Generation provider configuration file: success")
-	return nil
+	return
 }

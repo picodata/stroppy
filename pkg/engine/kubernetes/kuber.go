@@ -93,7 +93,7 @@ type Kubernetes struct {
 
 func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
 	if err = k.copyFilesToMaster(); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to сopy RSA to cluster")
+		return nil, 0, merry.Prepend(err, "failed to сopy files to cluster")
 	}
 
 	if err = k.deploy(); err != nil {
@@ -437,11 +437,15 @@ func (k *Kubernetes) openSSHTunnel(caller string, mainPort int, reservePort int)
 	return &engineSsh.Result{Port: tunnelPort, Tunnel: tunnel, Err: nil}
 }
 
+func (k Kubernetes) DownloadFile(remoteFullSourceFilePath, localPath string) (err error) {
+	return
+}
+
 // copyConfigFromMaster
 // скопировать файл kube config c мастер-инстанса кластера и применить для использования
 func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
-	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFilePath, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
+	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
 	llog.Infoln(copyFromMasterCmd.String())
 
@@ -538,6 +542,24 @@ func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err e
 	return
 }
 
+func (k *Kubernetes) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
+	destinationPath = fmt.Sprintf("ubuntu@%s:%s", k.addressMap.MasterExternalIP, destinationPath)
+
+	copyDirectoryCmd := exec.Command("scp", "-r", "-i", k.sshKeyFilePath, "-o", "StrictHostKeyChecking=no",
+		directorySourcePath, destinationPath)
+
+	llog.Infof("now loading '%s' directory to kubernetes master destination '%s' (keyfile '%s', wd: '%s')",
+		directorySourcePath, destinationPath, k.sshKeyFilePath, copyDirectoryCmd.Dir)
+
+	var output []byte
+	if output, err = copyDirectoryCmd.CombinedOutput(); err != nil {
+		return merry.Prependf(err, "error while copying directory to k8 master: %v, output: '%s'",
+			err, string(output))
+	}
+
+	return
+}
+
 /* copyFilesToMaster
  * скопировать на мастер-ноду private key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
@@ -577,7 +599,7 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
 	grafanaDirectoryPath := filepath.Join(k.workingDirectory, "grafana-on-premise")
-	if err = k.LoadFile(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
+	if err = k.LoadDirectory(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
 		return
 	}
 	llog.Infoln("copying grafana-on-premise: success")
@@ -620,10 +642,8 @@ func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
 
 func (k *Kubernetes) Stop() {
 	defer k.sshTunnel.Tunnel.Close()
-
 	llog.Infoln("status of ssh tunnel close: success")
 
-	defer k.portForward.Tunnel.Close()
-
-	llog.Infoln("status of port-forward's close: success")
+	// defer k.portForward.Tunnel.Close()
+	// llog.Infoln("status of port-forward's close: success")
 }

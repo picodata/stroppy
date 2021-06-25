@@ -35,7 +35,7 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("Prepare deploy of %s\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.LoadFile(deployConfigDirectory, fmt.Sprintf("/home/ubuntu/%s", cc.tg)); err != nil {
+	if err = cc.k.LoadDirectory(deployConfigDirectory, "/home/ubuntu/"); err != nil {
 		return
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)

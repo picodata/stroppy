@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"path/filepath"
 	"strings"
 
 	"github.com/ansel1/merry"
@@ -19,7 +20,7 @@ const defaultMasterRAM = 4
 
 const defaultMasterDisk = 15
 
-const providerFilePath = "benchmark/deploy/yandex_compute_instance_group.tf"
+const providerFileName = "yandex_compute_instance_group.tf"
 
 func randStringID() string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -288,7 +289,7 @@ func setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal
 // PrepareYandex
 // сформировать файл конфигурации для провайдера
 // для Yandex.Cloud поддерживается запуск нескольких конфигураций от разных пользователей
-func PrepareYandex(cpu int, ram int, disk int, platform string, nodes int) error {
+func PrepareYandex(cpu, ram, disk, nodes int, platform, wd string) (err error) {
 	llog.Infoln("Starting generation provider configuration file")
 
 	providerFile := hclwrite.NewEmptyFile()
@@ -312,11 +313,11 @@ func PrepareYandex(cpu int, ram int, disk int, platform string, nodes int) error
 	setWorkersBlock(providerFileBody, stringSSHKeys, cpu, ram, disk, platform, nodes)
 	setMasterBlock(providerFileBody, stringSSHKeys, platform)
 
-	err := ioutil.WriteFile(providerFilePath, providerFile.Bytes(), 0o600)
-	if err != nil {
+	providerConfigPath := filepath.Join(wd, providerFileName)
+	if err = ioutil.WriteFile(providerConfigPath, providerFile.Bytes(), 0o600); err != nil {
 		return merry.Prepend(err, "failed to write provider configuration file")
 	}
 
 	llog.Infoln("Generation provider configuration file: success")
-	return nil
+	return
 }

@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"strings"
@@ -78,47 +79,48 @@ func (d *Deployment) Shutdown() (err error) {
 
 // readCommandFromInput - прочитать стандартный ввод и запустить выбранные команды
 func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err error) {
-	for stillAlive, command, params := d.scanInteractiveCommand(); stillAlive; {
-		statistics.StatsInit()
+	for {
+		fmt.Printf("stroppy> ")
+		for stillAlive, command, params := d.scanInteractiveCommand(); stillAlive; {
+			statistics.StatsInit()
 
-		switch command {
-		case "quit":
-			err = d.gracefulShutdown(portForwarding)
-			return
+			switch command {
+			case "quit":
+				err = d.gracefulShutdown(portForwarding)
+				return
 
-		case "pop":
-			llog.Println("Starting accounts populating for postgres...")
+			case "pop":
+				llog.Println("Starting accounts populating for postgres...")
 
-			if err = d.executePop(params); err != nil {
-				llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
-					command, err, params)
-			} else {
-				llog.Println("Populating of accounts in postgres success")
-				llog.Println("Waiting enter command:")
+				if err = d.executePop(params); err != nil {
+					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
+						command, err, params)
+				} else {
+					llog.Println("Populating of accounts in postgres success")
+					llog.Println("Waiting enter command:")
+				}
+
+			case "pay":
+				llog.Println("Starting transfer tests for postgres...")
+
+				if err = d.executePay(params); err != nil {
+					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
+						command, err, params)
+				} else {
+					llog.Println("Transfers test in postgres success")
+					llog.Println("Waiting enter command:")
+				}
+
+			case "chaos":
+				if err = d.chaosMesh.ExecuteCommand(params); err != nil {
+					llog.Errorf("chaos command failed: %v", err)
+				}
+
+			default:
+				llog.Infof("You entered: %v. Expected quit \n", command)
 			}
-
-		case "pay":
-			llog.Println("Starting transfer tests for postgres...")
-
-			if err = d.executePay(params); err != nil {
-				llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
-					command, err, params)
-			} else {
-				llog.Println("Transfers test in postgres success")
-				llog.Println("Waiting enter command:")
-			}
-
-		case "chaos":
-			if err = d.chaosMesh.ExecuteCommand(params); err != nil {
-				llog.Errorf("chaos command failed: %v", err)
-			}
-
-		default:
-			llog.Infof("You entered: %v. Expected quit \n", command)
 		}
 	}
-
-	return
 }
 
 func (d *Deployment) Deploy() (err error) {

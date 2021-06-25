@@ -13,7 +13,7 @@ const (
 	// задержка для случаев ожидания переповтора или соблюдения порядка запуска
 	execTimeout = 5
 
-	deployConfigStroppyFile = "stroppy_manifest.yaml"
+	deployConfigStroppyFile = "stroppy-manifest.yaml"
 )
 
 const (

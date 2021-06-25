@@ -23,7 +23,7 @@ type Controller struct {
 }
 
 func (chaos *Controller) Deploy() (err error) {
-	llog.Infoln("Starting of deploy chaos-mesh...")
+	llog.Infoln("Starting chaos-mesh deployment...")
 
 	err = chaos.k.ExecuteCommand(deployChaosMesh)
 	if err != nil {

@@ -31,8 +31,13 @@ fdb_pay:
 fdb_payz:
 	bin/stroppy pay --url fdb.cluster --check --count=100000 -d fdb -z true
 
+fmt:
+	gofumpt -w -s .
+
 lint:
 	golangci-lint run --new-from-rev=master
+
+fmt-lint: fmt lint
 
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
