@@ -162,8 +162,13 @@ func (k *Kubernetes) getSessionObject() (stdout io.Reader, session engineSsh.Ses
 	return
 }
 
-func (k *Kubernetes) ExecuteCommand(text string) (err error) {
+func (k *Kubernetes) Execute(text string) (err error) {
 	err = k.executeCommand(text)
+	return
+}
+
+func (k *Kubernetes) ExecuteF(text string, args ...interface{}) (err error) {
+	err = k.executeCommand(fmt.Sprintf(text, args...))
 	return
 }
 
@@ -171,7 +176,7 @@ func (k *Kubernetes) ExecuteCommand(text string) (err error) {
 func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.URL,
 	stopPortForward chan struct{}, readyPortForward chan struct{}) (err error) {
 
-	llog.Printf("Opening of port-forward of %v...\n", caller)
+	llog.Printf("Opening port-forward for %s...\n", caller)
 
 	var kubeConfig *rest.Config
 	if kubeConfig, err = k.getKubeConfig(); err != nil {
@@ -216,7 +221,7 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 	switch kubernetes.provider {
 	case "yandex":
 		// подставляем константы
-		return Deployk8sFirstStepYandexCMD, Deployk8sThirdStepYandexCMD, nil
+		return deployK8sFirstStepYandexCMD, deployK8sThirdStepYandexCMD, nil
 
 	case "oracle":
 
@@ -262,7 +267,7 @@ func (k *Kubernetes) deploy() (err error) {
 
 	mapIP := k.addressMap
 
-	secondStepCommandText := fmt.Sprintf(Deployk8sSecondStepTemplate,
+	secondStepCommandText := fmt.Sprintf(deployK8sSecondStepTemplate,
 		mapIP.MasterInternalIP, mapIP.MasterInternalIP,
 		mapIP.MetricsInternalIP, mapIP.MetricsInternalIP,
 		mapIP.IngressInternalIP, mapIP.IngressInternalIP,
@@ -304,26 +309,41 @@ func (k *Kubernetes) deploy() (err error) {
 
 // getKubeConfig - получить конфигурацию k8s
 func (k *Kubernetes) getKubeConfig() (*rest.Config, error) {
-	config, err := clientcmd.BuildConfigFromFlags("", k.clusterConfigFile)
+	_config, err := clientcmd.BuildConfigFromFlags("", k.clusterConfigFile)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to get config for check deploy of postgres")
 	}
-	return config, nil
+	return _config, nil
 }
 
 func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {
-	config, err := k.getKubeConfig()
+	_config, err := k.getKubeConfig()
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to get kubeconfig for clientSet")
 	}
 
 	// clientSet - клиент для обращения к группам сущностей k8s
 	var clientSet *kubernetes.Clientset
-	if clientSet, err = kubernetes.NewForConfig(config); err != nil {
+	if clientSet, err = kubernetes.NewForConfig(_config); err != nil {
 		return nil, merry.Prepend(err, "failed to create clientSet")
 	}
 
 	return clientSet, nil
+}
+
+func (k *Kubernetes) GetResourceURL(resource, namespace, name, subresource string) (url *url.URL, err error) {
+	var clientSet *kubernetes.Clientset
+	if clientSet, err = k.GetClientSet(); err != nil {
+		return
+	}
+
+	// reqURL - текущий url запроса к сущности k8s в runtime
+	url = clientSet.CoreV1().RESTClient().Post().
+		Resource(resource).
+		Namespace(namespace).
+		Name(name).
+		SubResource(subresource).URL()
+	return
 }
 
 // checkDeployMaster
@@ -619,7 +639,7 @@ func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
 		return nil, merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
 
-	stroppy := applyconfig.Pod("stroppy-client", "default")
+	stroppy := applyconfig.Pod("stroppy-client", ResourceDefaultNamespace)
 
 	err = yaml.Unmarshal([]byte(deployConfig), &stroppy)
 	if err != nil {

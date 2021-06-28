@@ -50,12 +50,21 @@ func (d *Deployment) scanInteractiveCommand() (stillAlive bool, command string, 
 	stillAlive = d.stdinScanner.Scan()
 	text := d.stdinScanner.Text()
 
+	command, tail = d.getCommandAndParams(text)
+	return
+}
+
+func (d *Deployment) getCommandAndParams(text string) (command string, params string) {
 	cmdArr := strings.SplitN(text, " ", 1)
-	if len(cmdArr) < 1 {
+	cmdAttrLen := len(cmdArr)
+	if cmdAttrLen < 1 {
 		return
 	}
 	command = cmdArr[0]
 
+	if cmdAttrLen > 1 {
+		params = cmdArr[1]
+	}
 	return
 }
 
@@ -112,8 +121,15 @@ func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err
 				}
 
 			case "chaos":
-				if err = d.chaosMesh.ExecuteCommand(params); err != nil {
-					llog.Errorf("chaos command failed: %v", err)
+				chaosCommand, chaosCommandParams := d.getCommandAndParams(params)
+				switch chaosCommand {
+				case "start":
+					if err = d.chaosMesh.ExecuteCommand(chaosCommandParams); err != nil {
+						llog.Errorf("chaos command failed: %v", err)
+					}
+
+				case "stop":
+					d.chaosMesh.Stop()
 				}
 
 			default:
@@ -166,11 +182,12 @@ func (d *Deployment) Deploy() (err error) {
 		}
 	}
 
+	dbtype := d.settings.DatabaseSettings.DBType
+
 	var _cluster db.Cluster
-	switch d.settings.DatabaseSettings.DBType {
+	switch dbtype {
 	default:
-		return merry.Errorf("unknown database type '%s'",
-			d.settings.DatabaseSettings.DBType)
+		return merry.Errorf("unknown database type '%s'", dbtype)
 
 	case cluster.Postgres:
 		_cluster = db.CreatePostgresCluster(d.sc, d.k, d.workingDirectory)
@@ -178,17 +195,17 @@ func (d *Deployment) Deploy() (err error) {
 	case cluster.Foundation:
 		_cluster = db.CreateFoundationCluster(d.sc, d.k, d.workingDirectory)
 	}
-
 	if err = _cluster.Deploy(); err != nil {
-		return merry.Prepend(err, "failed to deploy of postgres")
+		return merry.Prependf(err, "'%s' database deploy failed", dbtype)
 	}
+	llog.Infof("'%s' database deployed successfully\n", dbtype)
 
 	if err = _cluster.GetStatus(); err != nil {
 		return merry.Prepend(err, "failed to check deploy of postgres")
 	}
 
 	if err = _cluster.OpenPortForwarding(); err != nil {
-		return merry.Prepend(err, "failed to open port-forward channel of postgres")
+		return merry.Prependf(err, "'%s' failed to open port-forward channel", dbtype)
 	}
 
 	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)

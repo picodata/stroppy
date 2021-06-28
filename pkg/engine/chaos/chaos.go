@@ -1,8 +1,9 @@
 package chaos
 
 import (
-	"fmt"
+	"net/url"
 	"path/filepath"
+	"sync"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -13,6 +14,11 @@ func CreateController(k *kubernetes.Kubernetes, wd string) (c *Controller) {
 	c = &Controller{
 		wd: filepath.Join(wd, "chaos"),
 		k:  k,
+
+		runningScenarios:     map[string]scenario{},
+		runningScenariosLock: sync.Mutex{},
+
+		portForwardStopChan: make(chan struct{}),
 	}
 	return
 }
@@ -20,30 +26,104 @@ func CreateController(k *kubernetes.Kubernetes, wd string) (c *Controller) {
 type Controller struct {
 	k  *kubernetes.Kubernetes
 	wd string
+
+	runningScenarios     map[string]scenario
+	runningScenariosLock sync.Mutex
+
+	portForwardStopChan chan struct{}
 }
 
 func (chaos *Controller) Deploy() (err error) {
 	llog.Infoln("Starting chaos-mesh deployment...")
 
-	err = chaos.k.ExecuteCommand(deployChaosMesh)
+	if err = chaos.k.Execute(deployChaosMesh); err != nil {
+		return merry.Prepend(err, "chaos-mesh deployment failed")
+	}
+	llog.Debugln("chaos-mesh prepared successfully")
+
+	// прокидываем порты, что бы можно было открыть веб-интерфейс
+	var reqURL *url.URL
+	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourcePodName,
+		chaosNamespace,
+		chaosDashboardResourceName,
+		kubernetes.ResourcePortForwarding)
 	if err != nil {
-		return merry.Prepend(err, "failed to deploy of chaos-mesh")
+		return merry.Prepend(err, "failed to get url")
+	}
+	llog.Debugf("received next url for chaos port-forward: '%s'", reqURL.String())
+
+	portForwardingReady := make(chan struct{})
+	_err := chaos.k.OpenPortForward("chaos",
+		[]string{"2333:2333"},
+		reqURL,
+		chaos.portForwardStopChan,
+		portForwardingReady)
+	if _err != nil {
+		llog.Errorf("chaos-mesh port forward is not established: %v\n\n\n\n\n", err)
+		// return merry.Prepend(err, "port-forward is not established")
 	}
 
-	llog.Infoln("Finished of deploy chaos-mesh")
+	// <-portForwardingReady
+	llog.Infoln("chaos-mesh deployed successfully")
 	return
 }
 
 func (chaos *Controller) ExecuteCommand(scenarioName string) (err error) {
-	scenarioNameFileName := scenarioName + ".yaml"
+	llog.Infof("now starting chaos '%s' scenario\n", scenarioName)
 
-	destinationFilePath := filepath.Join("/home/ubuntu", scenarioNameFileName)
-	sourceFile := filepath.Join(chaos.wd, scenarioNameFileName)
+	scenario := createScenario(scenarioName, chaos.wd)
+	if err = chaos.k.LoadFile(scenario.sourcePath, scenario.destinationPath); err != nil {
+		return merry.Prepend(err, "load file failed")
+	}
+	llog.Debugf("full chaos command object is '%v'\n", scenario)
 
-	if err = chaos.k.LoadFile(sourceFile, destinationFilePath); err != nil {
-		return
+	if err = chaos.k.ExecuteF("kubectl apply -f %s", scenario.destinationPath); err != nil {
+		return merry.Prepend(err, "scenario run failed")
 	}
 
-	err = chaos.k.ExecuteCommand(fmt.Sprintf("kubectl apply -f %s", destinationFilePath))
+	chaos.runningScenariosLock.Lock()
+	defer chaos.runningScenariosLock.Unlock()
+	chaos.runningScenarios[scenario.scenarioName] = scenario
+
 	return
+}
+
+func (chaos *Controller) Stop() {
+	chaos.runningScenariosLock.Lock()
+	defer chaos.runningScenariosLock.Unlock()
+
+	var err error
+	for _, s := range chaos.runningScenarios {
+		if s.isRunning {
+			llog.Infof("stopping chaos scenario '%s'\n", s.scenarioName)
+			if err = chaos.k.ExecuteF("kubectl delete -f %s", s.destinationPath); err != nil {
+				llog.Warnf("'%s' scenario not stopped: %v", s.destinationPath, err)
+			}
+		}
+	}
+}
+
+func createScenario(name, wd string) (s scenario) {
+	scenarioFileName := name + ".yaml"
+
+	s = scenario{
+		scenarioName:     name,
+		scenarioFileName: scenarioFileName,
+
+		destinationPath: filepath.Join("/home/ubuntu", scenarioFileName),
+		sourcePath:      filepath.Join(wd, scenarioFileName),
+
+		isRunning: false,
+	}
+	return
+}
+
+type scenario struct {
+	destinationPath string
+	sourcePath      string
+
+	scenarioName     string
+	scenarioFileName string
+
+	isRunning bool
 }

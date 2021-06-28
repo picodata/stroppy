@@ -16,8 +16,15 @@ const (
 	deployConfigStroppyFile = "stroppy-manifest.yaml"
 )
 
+// Externally avail constants
 const (
-	Deployk8sFirstStepYandexCMD = `echo \
+	ResourcePodName          = "pods"
+	ResourcePortForwarding   = "portforward"
+	ResourceDefaultNamespace = "default"
+)
+
+const (
+	deployK8sFirstStepYandexCMD = `echo \
 "export DEBIAN_FRONTEND='noninteractive'
 sudo apt-get update -y
 sudo apt-get install -y sshpass python3-pip git htop sysstat
@@ -34,7 +41,7 @@ rm inventory/local/hosts.ini
 `
 
 	//nolint:lll
-	Deployk8sThirdStepYandexCMD = `echo \
+	deployK8sThirdStepYandexCMD = `echo \
 "sudo sed -i 's/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g' inventory/local/group_vars/k8s_cluster/addons.yml
 echo 'docker_dns_servers_strict: no' >> inventory/local/group_vars/k8s_cluster/k8s-cluster.yml
 # nano inventory/local/group_vars/k8s_cluster/addons.yml (!!!)
@@ -62,7 +69,7 @@ ansible-playbook grafana-on-premise.yml
 | tee -a deploy_kubernetes.sh
 `
 
-	Deployk8sSecondStepTemplate = `echo \
+	deployK8sSecondStepTemplate = `echo \
 "tee inventory/local/hosts.ini<<EOF
 [all]
 master ansible_host=%v ip=%v etcd_member_name=etcd1

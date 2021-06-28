@@ -121,6 +121,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 	llog.Infof("Done %v accounts, %v errors, %v duplicates",
 		p.config.Count, stats.errors, stats.duplicates)
 
+	p.chaos.Stop()
 	statistics.StatsReportSummary()
 	return
 }

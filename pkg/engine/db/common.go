@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net/url"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -11,7 +12,6 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
-	k8s "k8s.io/client-go/kubernetes"
 )
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag string) (fc *commonCluster) {
@@ -69,25 +69,22 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 	stopPortForwardPostgres := make(chan struct{})
 	readyPortForwardPostgres := make(chan struct{})
 
-	var clientSet *k8s.Clientset
-	if clientSet, err = cc.k.GetClientSet(); err != nil {
-		return merry.Prepend(err, "failed to get clientSet for open port-forward of postgres")
+	var reqURL *url.URL
+	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
+		kubernetes.ResourceDefaultNamespace,
+		name,
+		kubernetes.ResourcePortForwarding)
+	if err != nil {
+		return
 	}
-
-	// reqURL - текущий url запроса к сущности k8s в runtime
-	reqURL := clientSet.CoreV1().RESTClient().Post().
-		Resource("pods").
-		Namespace("default").
-		Name(name).
-		SubResource("portforward").URL()
 
 	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
 		stopPortForwardPostgres, readyPortForwardPostgres)
 	if err != nil {
-		return merry.Prepend(err, "failed to started port-forward for postgres")
+		return merry.Prepend(err, "failed to started port-forward for foundationdb")
 	}
 
 	<-readyPortForwardPostgres
-	llog.Infof("Port-forwarding for postgres is started success\n")
+	llog.Infoln("Port-forwarding for postgres is started success")
 	return
 }

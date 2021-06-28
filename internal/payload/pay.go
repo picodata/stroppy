@@ -43,6 +43,7 @@ func (p *BasePayload) Pay(_ string) (err error) {
 	if payStats, err = p.payFunc(p.config, p.cluster, p.oracle); err != nil {
 		return merry.Prepend(err, "pay function failed")
 	}
+	p.chaos.Stop()
 
 	llog.Infof("Errors: %v, Retries: %v, Recoveries: %v, Not found: %v, Overdraft: %v\n",
 		payStats.errors,
