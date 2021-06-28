@@ -103,9 +103,11 @@ func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err
 				if err = d.executePop(params); err != nil {
 					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
 						command, err, params)
+					break
 				} else {
 					llog.Println("Populating of accounts in postgres success")
-					llog.Println("Waiting enter command:")
+					llog.Println("Enter next command:")
+					break
 				}
 
 			case "pay":
@@ -114,9 +116,11 @@ func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err
 				if err = d.executePay(params); err != nil {
 					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
 						command, err, params)
+					break
 				} else {
 					llog.Println("Transfers test in postgres success")
-					llog.Println("Waiting enter command:")
+					llog.Println("Enter next command:")
+					break
 				}
 
 			case "chaos":
@@ -134,6 +138,7 @@ func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err
 			default:
 				llog.Infof("You entered: %v. Expected quit \n", command)
 			}
+			break
 		}
 	}
 }

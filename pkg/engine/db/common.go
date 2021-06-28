@@ -8,6 +8,7 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
@@ -72,7 +73,6 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 =======
 	stopPortForwardPostgres := make(chan struct{})
 	readyPortForwardPostgres := make(chan struct{})
-	errorPortForwardPostgres := make(chan error)
 
 >>>>>>> fix(deploy): return executing OpenPortForward() for pg by goroutine and add pg url for CreateBasePayload()
 	var reqURL *url.URL
@@ -84,6 +84,7 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 		return
 	}
 
+<<<<<<< HEAD
 <<<<<<< HEAD
 	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
 		cc.portForwardControlChan)
@@ -106,4 +107,16 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 	}
 
 >>>>>>> fix(deploy): return executing OpenPortForward() for pg by goroutine and add pg url for CreateBasePayload()
+=======
+	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
+		stopPortForwardPostgres, readyPortForwardPostgres)
+	if err != nil {
+		return merry.Prepend(err, "failed to started port-forward for foundationdb")
+	}
+
+	<-readyPortForwardPostgres
+	llog.Infoln("Port-forwarding for postgres is started success")
+	return
+
+>>>>>>> fix(stroppy): change format of log file name for tests
 }
