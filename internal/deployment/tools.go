@@ -3,6 +3,8 @@ package deployment
 import (
 	"io/ioutil"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -73,10 +75,10 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 	settings.DBType = d.settings.DatabaseSettings.DBType
 
 	switch d.settings.DatabaseSettings.DBType {
-	case "postgres":
+	case cluster.Postgres:
 		settings.DBURL = "postgres://stroppy:stroppy@localhost/stroppy?sslmode=disable"
 
-	case "fdb":
+	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"
 
 	default:

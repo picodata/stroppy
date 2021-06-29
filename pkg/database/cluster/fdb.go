@@ -91,8 +91,8 @@ type accountValue struct {
 	Balance *inf.Dec `json:"Balance"`
 }
 
-// NewFDBCluster - Создать подключение к FDB и создать новые DirectorySubspace, если ещё не созданы.
-func NewFDBCluster(dbURL string) (*FDBCluster, error) {
+// NewFoundationCluster - Создать подключение к FDB и создать новые DirectorySubspace, если ещё не созданы.
+func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 	llog.Infof("Establishing connection to FDB on %v", dbURL)
 	poolConfig := dbURL
 

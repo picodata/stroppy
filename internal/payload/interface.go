@@ -34,7 +34,7 @@ func CreateBasePayload(settings *config.Settings, chaos *chaos.Controller) (p Pa
 		}
 
 	case cluster.Foundation:
-		bp.cluster, err = cluster.NewFDBCluster(bp.config.DBURL)
+		bp.cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
 		if err != nil {
 			return
 		}

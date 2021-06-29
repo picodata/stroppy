@@ -52,18 +52,15 @@ func (chaos *Controller) Deploy() (err error) {
 	}
 	llog.Debugf("received next url for chaos port-forward: '%s'", reqURL.String())
 
-	portForwardingReady := make(chan struct{})
-	_err := chaos.k.OpenPortForward("chaos",
+	_err := chaos.k.OpenPortForward(chaosSshEntity,
 		[]string{"2333:2333"},
 		reqURL,
-		chaos.portForwardStopChan,
-		portForwardingReady)
+		chaos.portForwardStopChan)
 	if _err != nil {
 		llog.Errorf("chaos-mesh port forward is not established: %v\n\n\n\n\n", err)
 		// return merry.Prepend(err, "port-forward is not established")
 	}
 
-	// <-portForwardingReady
 	llog.Infoln("chaos-mesh deployed successfully")
 	return
 }

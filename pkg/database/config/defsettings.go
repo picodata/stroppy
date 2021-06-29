@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+
 	llog "github.com/sirupsen/logrus"
 )
 
@@ -73,7 +75,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		DBURL:              "",
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
-		DBType:             "postgres",
+		DBType:             cluster.Postgres,
 	}
 }
 

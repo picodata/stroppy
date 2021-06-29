@@ -16,10 +16,11 @@ import (
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag string) (fc *commonCluster) {
 	fc = &commonCluster{
-		k:  k,
-		sc: sc,
-		wd: wd,
-		tg: databaseTag,
+		k:                      k,
+		sc:                     sc,
+		wd:                     wd,
+		tg:                     databaseTag,
+		portForwardControlChan: make(chan struct{}),
 	}
 	return
 }
@@ -29,6 +30,8 @@ type commonCluster struct {
 	k  *kubernetes.Kubernetes
 	wd string
 	tg string
+
+	portForwardControlChan chan struct{}
 }
 
 func (cc *commonCluster) deploy() (err error) {
@@ -66,9 +69,6 @@ func (cc *commonCluster) deploy() (err error) {
 }
 
 func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err error) {
-	stopPortForwardPostgres := make(chan struct{})
-	readyPortForwardPostgres := make(chan struct{})
-
 	var reqURL *url.URL
 	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
 		kubernetes.ResourceDefaultNamespace,
@@ -79,12 +79,11 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 	}
 
 	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
-		stopPortForwardPostgres, readyPortForwardPostgres)
+		cc.portForwardControlChan)
 	if err != nil {
 		return merry.Prepend(err, "failed to started port-forward for foundationdb")
 	}
 
-	<-readyPortForwardPostgres
 	llog.Infoln("Port-forwarding for postgres is started success")
 	return
 }

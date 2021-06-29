@@ -4,6 +4,8 @@ const (
 	chaosNamespace             = "chaos-testing"
 	chaosDashboardResourceName = "svc/chaos-dashboard"
 
+	chaosSshEntity = "chaos"
+
 	deployChaosMesh = `
 helm repo add chaos-mesh https://charts.chaos-mesh.org
 helm search repo chaos-mesh
