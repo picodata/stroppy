@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -16,7 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"gopkg.in/yaml.v2"
 
-	"k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
 )
@@ -38,21 +39,28 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
 	}
+	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
 
 	var pod *v1.Pod
-	if pod, err = k.DeployStroppy(); err != nil {
+
+	pod, err = k.DeployStroppy()
+	if err != nil {
 		return nil, 0, merry.Prepend(err, "failed to deploy stroppy pod")
 	}
 
-	if pod.Status.Phase != "Running" {
-		return nil, 0, merry.Prepend(err, "stroppy pod status is not running")
+	if pod.Status.Phase != v1.PodRunning {
+		err = merry.Errorf("stroppy pod is not running")
+		return
 	}
 
+	llog.Infoln("status of stroppy pod deploy: success")
+
 	pPortForward = k.openSSHTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
-	llog.Println(pPortForward)
+
 	if pPortForward.Err != nil {
 		return nil, 0, merry.Prepend(pPortForward.Err, "failed to port forward")
 	}
+	llog.Infoln("status of creating ssh tunnell for the access to monitoring: success")
 
 	port = k.sshTunnel.Port
 	k.portForward = pPortForward
@@ -81,7 +89,10 @@ func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
 
 	llog.Infoln("Applying the stroppy pod...")
 	pod, err := clientSet.CoreV1().Pods("default").Apply(context.TODO(), stroppy, metav1.ApplyOptions{
-		TypeMeta:     metav1.TypeMeta{},
+		TypeMeta: metav1.TypeMeta{
+			Kind:       "",
+			APIVersion: "",
+		},
 		DryRun:       []string{},
 		Force:        false,
 		FieldManager: "stroppy-deploy",
@@ -89,6 +100,10 @@ func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to apply pod stroppy")
 	}
+	// на случай чуть большего времени на переход в running, обычно под переходит в running сразу
+	time.Sleep(20 * time.Second)
+
+	llog.Infoln("Applying the stroppy pod: success")
 
 	return pod, nil
 }

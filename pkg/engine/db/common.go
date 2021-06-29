@@ -69,12 +69,7 @@ func (cc *commonCluster) deploy() (err error) {
 }
 
 func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err error) {
-<<<<<<< HEAD
-=======
-	stopPortForwardPostgres := make(chan struct{})
-	readyPortForwardPostgres := make(chan struct{})
 
->>>>>>> fix(deploy): return executing OpenPortForward() for pg by goroutine and add pg url for CreateBasePayload()
 	var reqURL *url.URL
 	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
 		kubernetes.ResourceDefaultNamespace,
@@ -84,8 +79,6 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 		return
 	}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
 		cc.portForwardControlChan)
 	if err != nil {
@@ -94,29 +87,5 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 
 	llog.Infoln("Port-forwarding for postgres is started success")
 	return
-=======
-	go cc.k.OpenPortForward("postgres", []string{"6432:5432"}, reqURL,
-		stopPortForwardPostgres, readyPortForwardPostgres, errorPortForwardPostgres)
 
-	select {
-	case <-readyPortForwardPostgres:
-		return nil
-	case errPortForwardPostgres := <-errorPortForwardPostgres:
-		llog.Errorf("Port-forwarding for postgres is started failed\n")
-		return merry.Prepend(errPortForwardPostgres, "failed to started port-forward for postgres")
-	}
-
->>>>>>> fix(deploy): return executing OpenPortForward() for pg by goroutine and add pg url for CreateBasePayload()
-=======
-	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
-		stopPortForwardPostgres, readyPortForwardPostgres)
-	if err != nil {
-		return merry.Prepend(err, "failed to started port-forward for foundationdb")
-	}
-
-	<-readyPortForwardPostgres
-	llog.Infoln("Port-forwarding for postgres is started success")
-	return
-
->>>>>>> fix(stroppy): change format of log file name for tests
 }

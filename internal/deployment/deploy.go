@@ -174,9 +174,11 @@ func (d *Deployment) Deploy() (err error) {
 		port        int
 		portForward *engineSsh.Result
 	)
-	if portForward, port, err = d.k.Deploy(); err != nil {
+	portForward, port, err = d.k.Deploy()
+	if err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
+
 	defer d.k.Stop()
 
 	if d.settings.UseChaos {

@@ -5,14 +5,10 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"time"
-<<<<<<< HEAD
-
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-=======
->>>>>>> fix(stroppy): change format of log file name for tests
 
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
@@ -23,28 +19,15 @@ func (d *Deployment) executePay(_ string) (err error) {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	payTestCmdTemplate := []string{"./stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
+	payTestCmdTemplate := []string{"./bin/stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
 		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers)}
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
-=======
-	logFile := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier, settings.ZIPFian)
 
-	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFile)
->>>>>>> feat(stroppy): add log file for remote executing tests
-=======
-	dateFormat := "01-02-2006_15:04:05"
-	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
-
-	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
->>>>>>> fix(stroppy): change format of log file name for tests
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote transfer test")
 	}
@@ -58,29 +41,17 @@ func (d *Deployment) executePop(_ string) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	d.payload.UpdateSettings(settings)
+	//d.payload.UpdateSettings(settings)
 
-	popTestCmdTemplate := []string{"./stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
-<<<<<<< HEAD
+	popTestCmdTemplate := []string{"./bin/stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
+
 		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt"}
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
-=======
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers)}
 
-	dateFormat := "01-02-2006_15:04:05"
-	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
-
-<<<<<<< HEAD
-	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFile)
->>>>>>> feat(stroppy): add log file for remote executing tests
-=======
-	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
->>>>>>> fix(stroppy): change format of log file name for tests
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote populate test")
 	}

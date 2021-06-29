@@ -72,7 +72,7 @@ func (pc *postgresCluster) GetStatus() error {
 	var successPodsCount int64
 	var notFoundCount int64
 	for successPodsCount < postgresPodsCount && notFoundCount < maxNotFoundCount {
-		llog.Infof("waiting for checking %v minutes...\n", ExecTimeout)
+		llog.Infof("waiting for checking %v seconds...\n", ExecTimeout)
 		time.Sleep(ExecTimeout * time.Second)
 
 		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
