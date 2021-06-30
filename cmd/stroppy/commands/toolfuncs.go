@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
@@ -30,5 +31,15 @@ func createChaos(settings *config.Settings) (_chaos *chaos.Controller) {
 	}
 
 	_chaos = chaos.CreateController(k, settings.WorkingDirectory)
+	return
+}
+
+func initLogLevel(settings *config.Settings) (err error) {
+	var l llog.Level
+	if l, err = llog.ParseLevel(settings.LogLevel); err != nil {
+		return merry.Prependf(err, "'%s' log level parse", settings.LogLevel)
+	}
+	llog.SetLevel(l)
+
 	return
 }

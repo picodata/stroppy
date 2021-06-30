@@ -32,7 +32,9 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		Version:                "",
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		},
-		PersistentPreRunE: nil,
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return initLogLevel(settings)
+		},
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		PreRunE: nil,

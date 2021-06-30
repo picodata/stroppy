@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"github.com/ansel1/merry"
-	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
@@ -20,18 +18,18 @@ workloads, for populating the database with accounts, making transfers, and
 checking correctness. It collects client-side metrics for latency and
 bandwidth along the way.`,
 		Version: "0.9",
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			dbSettings := settings.DatabaseSettings
-			if l, err := llog.ParseLevel(dbSettings.LogLevel); err != nil {
-				return merry.Wrap(err)
-			} else {
-				llog.SetLevel(l)
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) (err error) {
+			if err = initLogLevel(settings); err != nil {
+				return
 			}
+
+			dbSettings := settings.DatabaseSettings
 			if dbSettings.Workers > dbSettings.Count && dbSettings.Count > 0 {
 				dbSettings.Workers = dbSettings.Count
 			}
+
 			statistics.StatsSetTotal(dbSettings.Count)
-			return nil
+			return
 		},
 	}
 
@@ -47,9 +45,9 @@ bandwidth along the way.`,
 		"chaos-parameter", "c",
 		settings.ChaosParameter, "specify chaos parameter of in free form")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.LogLevel,
+	rootCmd.PersistentFlags().StringVarP(&settings.LogLevel,
 		"log-level", "v",
-		settings.DatabaseSettings.LogLevel,
+		settings.LogLevel,
 		"Log level (trace, debug, info, warn, error, fatal, panic")
 
 	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.User,

@@ -15,6 +15,7 @@ const workingDirectory = "benchmark/deploy"
 
 type Settings struct {
 	WorkingDirectory string
+	LogLevel         string
 
 	Local bool
 
@@ -35,12 +36,12 @@ func DefaultSettings() *Settings {
 
 		DeploySettings:   deployDefaults(),
 		DatabaseSettings: DatabaseDefaults(),
+		LogLevel:         llog.InfoLevel.String(),
 	}
 }
 
 type DatabaseSettings struct {
 	DBType   string
-	LogLevel string
 	Workers  int
 	Count    int
 	User     string
@@ -63,7 +64,6 @@ type DatabaseSettings struct {
 // линтер требует указания всех полей структуры при присвоении переменной
 func DatabaseDefaults() *DatabaseSettings {
 	return &DatabaseSettings{
-		LogLevel:           llog.InfoLevel.String(),
 		Workers:            defaultCountCPU * runtime.NumCPU(),
 		Count:              10000,
 		User:               "",

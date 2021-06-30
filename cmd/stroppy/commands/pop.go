@@ -15,6 +15,10 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		Short:   "Create and populate the accounts database",
 		Example: "./lightest populate -n 100000000",
 
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return initLogLevel(settings)
+		},
+
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := payload.CreateBasePayload(settings, createChaos(settings))
 			if err != nil {

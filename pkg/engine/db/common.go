@@ -51,7 +51,7 @@ func (cc *commonCluster) deploy() (err error) {
 	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам
 	// defer sshSession.Close()
 
-	llog.Infof("Starting deploy of %s\n", cc.tg)
+	llog.Infof("%s deploy started\n", cc.tg)
 	deployCmd := fmt.Sprintf("chmod +x %s/deploy_operator.sh && ./%s/deploy_operator.sh", cc.tg, cc.tg)
 
 	var stdout io.Reader
@@ -60,11 +60,12 @@ func (cc *commonCluster) deploy() (err error) {
 	}
 	go engine.HandleReader(bufio.NewReader(stdout))
 
-	if _, err = sshSession.CombinedOutput(deployCmd); err != nil {
-		return merry.Prepend(err, "command execution failed")
+	var textb []byte
+	if textb, err = sshSession.CombinedOutput(deployCmd); err != nil {
+		return merry.Prependf(err, "command execution failed, return text `%s`", string(textb))
 	}
 
-	llog.Infof("Finished deploy of %s\n", cc.tg)
+	llog.Infof("%s deploy finished", cc.tg)
 	return
 }
 

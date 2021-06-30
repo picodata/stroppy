@@ -70,7 +70,6 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 	}
 
 	settings = config.DatabaseDefaults()
-	settings.LogLevel = gjson.Parse(string(data)).Get("log_level").Str
 	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
 	settings.DBType = d.settings.DatabaseSettings.DBType
 

@@ -13,6 +13,9 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		Use:     "pay",
 		Aliases: []string{"transfer"},
 		Short:   "Run the payments workload",
+		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+			return initLogLevel(settings)
+		},
 		Run: func(cmd *cobra.Command, args []string) {
 			p, err := payload.CreateBasePayload(settings, createChaos(settings))
 			if err != nil {
