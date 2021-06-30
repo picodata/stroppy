@@ -16,14 +16,18 @@ const (
 	deployConfigStroppyFile = "stroppy-manifest.yaml"
 
 	kubernetesSshEntity = "kubernetes"
-	monitoringSshEntity = "kubernetes"
+	monitoringSshEntity = "monitoring"
+
+	stroppyPodName      = "stroppy-client"
+	stroppyFieldManager = "stroppy-deploy"
 )
 
 // Externally avail constants
 const (
-	ResourcePodName          = "pods"
-	ResourcePortForwarding   = "portforward"
-	ResourceDefaultNamespace = "default"
+	ResourcePodName           = "pods"
+	ResourceDefaultNamespace  = "default"
+	SubresourcePortForwarding = "portforward"
+	SubresourceExec           = "exec"
 )
 
 const (

@@ -46,7 +46,7 @@ func (chaos *Controller) Deploy() (err error) {
 	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourcePodName,
 		chaosNamespace,
 		chaosDashboardResourceName,
-		kubernetes.ResourcePortForwarding)
+		kubernetes.SubresourcePortForwarding)
 	if err != nil {
 		return merry.Prepend(err, "failed to get url")
 	}

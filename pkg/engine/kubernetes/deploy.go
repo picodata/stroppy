@@ -23,7 +23,7 @@ import (
 )
 
 func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
-	if err = k.copyFilesToMaster(); err != nil {
+	if err = k.loadFilesToMaster(); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to сopy files to cluster")
 	}
 
@@ -41,18 +41,10 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
 
-	var pod *v1.Pod
-
-	pod, err = k.DeployStroppy()
-	if err != nil {
-		return nil, 0, merry.Prepend(err, "failed to deploy stroppy pod")
-	}
-
-	if pod.Status.Phase != v1.PodRunning {
-		err = merry.Errorf("stroppy pod is not running")
+	if err = k.DeployStroppy(); err != nil {
+		err = merry.Prepend(err, "failed to deploy stroppy pod")
 		return
 	}
-
 	llog.Infoln("status of stroppy pod deploy: success")
 
 	pPortForward = k.openSSHTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
@@ -60,7 +52,7 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	if pPortForward.Err != nil {
 		return nil, 0, merry.Prepend(pPortForward.Err, "failed to port forward")
 	}
-	llog.Infoln("status of creating ssh tunnell for the access to monitoring: success")
+	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
 
 	port = k.sshTunnel.Port
 	k.portForward = pPortForward
@@ -68,44 +60,51 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	return
 }
 
-func (k *Kubernetes) DeployStroppy() (*v1.Pod, error) {
+func (k *Kubernetes) DeployStroppy() error {
 	clientSet, err := k.GetClientSet()
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to get clientset for deploy stroppy")
+		return merry.Prepend(err, "failed to get client set for deploy stroppy")
 	}
 
 	deployConfigStroppyPath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
 	deployConfig, err := ioutil.ReadFile(deployConfigStroppyPath)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to read config file for deploy stroppy")
+		return merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
 
-	stroppy := applyconfig.Pod("stroppy-client", ResourceDefaultNamespace)
+	stroppy := applyconfig.Pod(stroppyPodName, ResourceDefaultNamespace)
 
-	err = yaml.Unmarshal([]byte(deployConfig), &stroppy)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
+	if err = yaml.Unmarshal(deployConfig, &stroppy); err != nil {
+		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
 	}
 
-	llog.Infoln("Applying the stroppy pod...")
-	pod, err := clientSet.CoreV1().Pods("default").Apply(context.TODO(), stroppy, metav1.ApplyOptions{
-		TypeMeta: metav1.TypeMeta{
-			Kind:       "",
-			APIVersion: "",
-		},
-		DryRun:       []string{},
-		Force:        false,
-		FieldManager: "stroppy-deploy",
-	})
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to apply pod stroppy")
-	}
-	// на случай чуть большего времени на переход в running, обычно под переходит в running сразу
 	time.Sleep(20 * time.Second)
 
-	llog.Infoln("Applying the stroppy pod: success")
+	llog.Infoln("Applying the stroppy pod...")
+	k.stroppyPod, err = clientSet.CoreV1().
+		Pods(ResourceDefaultNamespace).
+		Apply(context.TODO(), stroppy, metav1.ApplyOptions{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "",
+				APIVersion: "",
+			},
+			DryRun:       []string{},
+			Force:        false,
+			FieldManager: stroppyFieldManager,
+		})
+	if err != nil {
+		return merry.Prepend(err, "failed to apply pod stroppy")
+	}
 
-	return pod, nil
+	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
+	if k.stroppyPod.Status.Phase != v1.PodRunning {
+		if err = k.waitStroppyPod(clientSet); err != nil {
+			return err
+		}
+	}
+
+	llog.Infoln("Applying the stroppy pod: success")
+	return nil
 }
 
 // deploy - развернуть k8s внутри кластера в cloud

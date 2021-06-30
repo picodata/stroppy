@@ -75,7 +75,7 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
 		kubernetes.ResourceDefaultNamespace,
 		name,
-		kubernetes.ResourcePortForwarding)
+		kubernetes.SubresourcePortForwarding)
 	if err != nil {
 		return
 	}

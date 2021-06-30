@@ -1,7 +1,9 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
+	"k8s.io/client-go/kubernetes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -118,8 +120,11 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	}
 
 	// формируем запрос для API k8s
-	executeRequest := clientSet.CoreV1().RESTClient().Post().Resource("pods").Name("stroppy-client").
-		Namespace("default").SubResource("exec").Timeout(60)
+	executeRequest := clientSet.CoreV1().RESTClient().Post().
+		Resource(ResourcePodName).
+		Name(stroppyPodName).
+		Namespace(ResourceDefaultNamespace).
+		SubResource(SubresourceExec).Timeout(60)
 
 	option := &v1.PodExecOptions{
 		TypeMeta:  metav1.TypeMeta{},
@@ -137,8 +142,8 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	)
 
 	// подключаемся к API-серверу
-	exec, err := remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL())
-	if err != nil {
+	var _exec remotecommand.Executor
+	if _exec, err = remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL()); err != nil {
 		return merry.Prepend(err, "failed to execute remote test")
 	}
 
@@ -160,11 +165,41 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	}
 
 	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
-	err = exec.Stream(streamOptions)
+	err = _exec.Stream(streamOptions)
 	if err != nil {
 		return merry.Prepend(err, "failed to get stream of exec command")
 	}
 
 	return nil
 
+}
+
+func (k Kubernetes) waitStroppyPod(clientSet *kubernetes.Clientset) (err error) {
+	waitingTime := 5 * time.Minute
+	pods := clientSet.CoreV1().Pods(ResourceDefaultNamespace)
+
+	const waitTimeQuantum = 10 * time.Second
+	for k.stroppyPod.Status.Phase != v1.PodRunning && waitingTime > 0 {
+
+		waitingTime -= waitTimeQuantum
+		time.Sleep(waitTimeQuantum)
+
+		k.stroppyPod, err = pods.UpdateStatus(context.Background(), k.stroppyPod, metav1.UpdateOptions{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "",
+				APIVersion: "",
+			},
+			DryRun:       []string{},
+			FieldManager: stroppyFieldManager,
+		})
+		if err != nil {
+			return merry.Prepend(err, "stroppy pod update status")
+		}
+	}
+
+	if k.stroppyPod.Status.Phase != v1.PodRunning {
+		err = merry.Errorf("stroppy pod still not running, 5 minutes left, current status: '%v",
+			k.stroppyPod.Status.Phase)
+	}
+	return
 }

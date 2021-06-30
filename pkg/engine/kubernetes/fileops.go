@@ -75,10 +75,10 @@ func (k Kubernetes) DownloadFile(remoteFullSourceFilePath, localPath string) (er
 	return
 }
 
-/* copyFilesToMaster
+/* loadFilesToMaster
  * скопировать на мастер-ноду private key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
-func (k *Kubernetes) copyFilesToMaster() (err error) {
+func (k *Kubernetes) loadFilesToMaster() (err error) {
 	masterExternalIP := k.addressMap.MasterExternalIP
 	llog.Infoln(masterExternalIP)
 
@@ -119,5 +119,9 @@ func (k *Kubernetes) copyFilesToMaster() (err error) {
 	}
 	llog.Infoln("copying grafana-on-premise: success")
 
+	return
+}
+
+func (k *Kubernetes) LoadFileToPod(podName, sourcePath, destinationPath string) (err error) {
 	return
 }

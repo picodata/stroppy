@@ -41,8 +41,6 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		"count", "n",
 		settings.DatabaseSettings.Count,
 		"Number of accounts to create")
-	// заполняем все поля, для неиспользуемых указвыаем nil, согласно требованиям линтера
-	//nolint:gofumpt
 
 	return popCmd
 }

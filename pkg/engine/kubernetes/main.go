@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"errors"
+	v1 "k8s.io/api/core/v1"
 	"net/url"
 	"path/filepath"
 
@@ -64,6 +65,8 @@ type Kubernetes struct {
 	portForward *engineSsh.Result
 
 	provider string
+
+	stroppyPod *v1.Pod
 }
 
 func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {
