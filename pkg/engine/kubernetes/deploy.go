@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -82,8 +81,6 @@ func (k *Kubernetes) DeployStroppy() error {
 	if err = yaml.Unmarshal(deployConfig, &stroppy); err != nil {
 		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
 	}
-
-	time.Sleep(5 * time.Minute)
 
 	llog.Infoln("Applying stroppy pod...")
 	k.stroppyPod, err = clientSet.CoreV1().
@@ -271,7 +268,7 @@ func (k *Kubernetes) prepareDeployStroppy() error {
 	}
 
 	dockerConfigData := map[string][]byte{
-		".dockerconfigjson": []byte(" eyJhdXRocyI6eyJyZWdpc3RyeS5naXRsYWIuY29tIjp7InVzZXJuYW1lIjoiZ2l0bGFiK2RlcGxveS10b2tlbi00ODkxMTEiLCJwYXNzd29yZCI6ImJ6Ykd6M2p3ZjFKc1RyeHZ6Tjd4IiwiYXV0aCI6IloybDBiR0ZpSzJSbGNHeHZlUzEwYjJ0bGJpMDBPRGt4TVRFNllucGlSM296YW5kbU1VcHpWSEo0ZG5wT04zZz0ifX19"),
+		".dockerconfigjson": []byte(dockerConfigData),
 	}
 
 	secret = secret.WithData(dockerConfigData)

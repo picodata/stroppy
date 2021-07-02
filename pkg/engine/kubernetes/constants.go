@@ -175,5 +175,7 @@ echo 'change owner for /var/run/docker.sock'
 )
 
 const (
-	dockerRepLoginCmd = "docker login -u gitlab+deploy-token-489111 -p bzbGz3jwf1JsTrxvzN7x registry.gitlab.com"
+	dockerRepLoginCmd = "docker login -u stroppy_deploy -p k3xG2_xe_SDjyYDREML3 registry.gitlab.com"
+
+	dockerConfigData = " eyJhdXRocyI6eyJyZWdpc3RyeS5naXRsYWIuY29tIjp7InVzZXJuYW1lIjoic3Ryb3BweV9kZXBsb3kiLCJwYXNzd29yZCI6ImszeEcyX3hlX1NEanlZRFJFTUwzIiwiYXV0aCI6ImMzUnliM0J3ZVY5a1pYQnNiM2s2YXpONFJ6SmZlR1ZmVTBScWVWbEVVa1ZOVERNPSJ9fX0="
 )

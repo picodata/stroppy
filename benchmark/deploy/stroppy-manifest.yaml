@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
   - name: stroppy-client
-    image: registry.gitlab.com/picodata/dockers/stroppy_builder:v1
+    image: registry.gitlab.com/picodata/openway/stroppy:latest
   imagePullSecrets:
   - name: stroppy-secret
 
