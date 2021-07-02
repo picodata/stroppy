@@ -57,7 +57,7 @@ func (chaos *Controller) Deploy() (err error) {
 		reqURL,
 		chaos.portForwardStopChan)
 	if _err != nil {
-		llog.Errorf("chaos-mesh port forward is not established: %v\n\n\n\n\n", err)
+		llog.Errorf("chaos-mesh port forward is not established: %v\n", _err)
 		// return merry.Prepend(err, "port-forward is not established")
 	}
 

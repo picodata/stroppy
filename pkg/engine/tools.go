@@ -41,7 +41,7 @@ func IsRemotePortOpen(hostname string, port int) bool {
 // HandleReader
 // вывести буфер стандартного вывода в отдельном потоке
 func HandleReader(reader *bufio.Reader) {
-	printOutput := llog.GetLevel() == llog.InfoLevel
+	printOutput := llog.GetLevel() == llog.DebugLevel
 	for {
 		str, err := reader.ReadString('\n')
 		if err != nil {

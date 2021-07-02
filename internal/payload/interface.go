@@ -28,7 +28,7 @@ func CreateBasePayload(settings *config.Settings, chaos *chaos.Controller) (p Pa
 
 	switch bp.config.DBType {
 	case cluster.Postgres:
-		//для возможности подключиться к БД в кластере с локальной машины
+		// для возможности подключиться к БД в кластере с локальной машины
 		if bp.config.DBURL == "" {
 			bp.config.DBURL = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 			llog.Infoln("changed DBURL on", bp.config.DBURL)

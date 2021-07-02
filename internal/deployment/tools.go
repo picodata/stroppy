@@ -19,8 +19,10 @@ func (d *Deployment) executePay(_ string) (err error) {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	payTestCmdTemplate := []string{"./bin/stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers)}
+	payTestCmdTemplate := []string{
+		"./bin/stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers),
+	}
 
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -41,11 +43,13 @@ func (d *Deployment) executePop(_ string) error {
 	if err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	//d.payload.UpdateSettings(settings)
+	// d.payload.UpdateSettings(settings)
 
-	popTestCmdTemplate := []string{"./bin/stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
+	popTestCmdTemplate := []string{
+		"./bin/stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
 
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt"}
+		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt",
+	}
 	dateFormat := "01-02-2006_15:04:05"
 	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))

@@ -1,13 +1,13 @@
 package kubernetes
 
 import (
-	"context"
 	"fmt"
-	"k8s.io/client-go/kubernetes"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	"k8s.io/client-go/kubernetes"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -171,12 +171,10 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	}
 
 	return nil
-
 }
 
 func (k Kubernetes) waitStroppyPod(clientSet *kubernetes.Clientset) (err error) {
 	waitingTime := 5 * time.Minute
-	pods := clientSet.CoreV1().Pods(ResourceDefaultNamespace)
 
 	const waitTimeQuantum = 10 * time.Second
 	for k.stroppyPod.Status.Phase != v1.PodRunning && waitingTime > 0 {
@@ -184,17 +182,9 @@ func (k Kubernetes) waitStroppyPod(clientSet *kubernetes.Clientset) (err error) 
 		waitingTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
-		k.stroppyPod, err = pods.UpdateStatus(context.Background(), k.stroppyPod, metav1.UpdateOptions{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "",
-				APIVersion: "",
-			},
-			DryRun:       []string{},
-			FieldManager: stroppyFieldManager,
-		})
-		if err != nil {
-			return merry.Prepend(err, "stroppy pod update status")
-		}
+		llog.Debugf("waitStroppyPod: pod status: %v\n",
+			k.stroppyPod.Status.Phase)
+
 	}
 
 	if k.stroppyPod.Status.Phase != v1.PodRunning {

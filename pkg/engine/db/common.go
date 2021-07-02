@@ -70,7 +70,6 @@ func (cc *commonCluster) deploy() (err error) {
 }
 
 func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err error) {
-
 	var reqURL *url.URL
 	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
 		kubernetes.ResourceDefaultNamespace,
@@ -88,5 +87,4 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 
 	llog.Infoln("Port-forwarding for postgres is started success")
 	return
-
 }

@@ -80,7 +80,7 @@ func (k *Kubernetes) DeployStroppy() error {
 
 	time.Sleep(20 * time.Second)
 
-	llog.Infoln("Applying the stroppy pod...")
+	llog.Infoln("Applying stroppy pod...")
 	k.stroppyPod, err = clientSet.CoreV1().
 		Pods(ResourceDefaultNamespace).
 		Apply(context.TODO(), stroppy, metav1.ApplyOptions{
