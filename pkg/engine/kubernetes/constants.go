@@ -54,7 +54,7 @@ echo 'docker_dns_servers_strict: no' >> inventory/local/group_vars/k8s_cluster/k
 # nano inventory/local/group_vars/k8s_cluster/addons.yml (!!!)
 ansible-playbook -b -e ignore_assert_errors=yes -i inventory/local/hosts.ini cluster.yml
 mkdir -p $HOME/.kube
-sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo cp  /etc/kubernetes/admin.conf $HOME/.kube/config
 sudo chown $(id -u):$(id -g) $HOME/.kube/config
 chmod 600 $HOME/.kube/config
 # local-storage
@@ -72,6 +72,17 @@ cd grafana-on-premise
 prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
 sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
 ansible-playbook grafana-on-premise.yml
+#деплой секрета для успешного получения stroppy из приватной репы
+sudo usermod -aG docker \"\${USER}\"
+echo 'Added user in docker group'
+newgrp docker
+echo 'registered user in docker group'
+sudo service docker restart
+echo 'Restarted docker service'
+docker login -u gitlab+deploy-token-489111 -p bzbGz3jwf1JsTrxvzN7x registry.gitlab.com
+echo 'Logged in repository'
+sudo chown root:docker /var/run/docker.sock
+echo "change owner for /var/run/docker.sock"
 " \
 | tee -a deploy_kubernetes.sh
 `
@@ -150,6 +161,19 @@ cd grafana-on-premise
 prometheus_cluster_ip=\$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
 sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml
 ansible-playbook grafana-on-premise.yml
+#деплой секрета для успешного получения stroppy из приватной репы
+/bin/bash -c \"sudo usermod -aG docker "${USER}"\"
+echo 'Added user in docker group'
+/bin/bash -c \"newgrp docker\"
+echo 'registered user in docker group'
+/bin/bash -c \"sudo service docker restart\"
+echo 'Restarted docker service'
+sudo chown root:docker /var/run/docker.sock
+echo 'change owner for /var/run/docker.sock'
 " | tee -a deploy_kubernetes.sh
 `
+)
+
+const (
+	dockerRepLoginCmd = "docker login -u gitlab+deploy-token-489111 -p bzbGz3jwf1JsTrxvzN7x registry.gitlab.com"
 )

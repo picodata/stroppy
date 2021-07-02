@@ -41,6 +41,11 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
 
+	if err = k.prepareDeployStroppy(); err != nil {
+		err = merry.Prepend(err, "failed to prepare stroppy pod deploy")
+		return
+	}
+
 	if err = k.DeployStroppy(); err != nil {
 		err = merry.Prepend(err, "failed to deploy stroppy pod")
 		return
@@ -237,4 +242,52 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 
 	_ = checkSession.Close()
 	return true, nil
+}
+
+func (k *Kubernetes) prepareDeployStroppy() error {
+	llog.Infoln("Preparing of stroppy pod deploy")
+
+	if err := k.executeCommand(dockerRepLoginCmd); err != nil {
+		return merry.Prepend(err, "failed to login in prvivate repository")
+	}
+	llog.Infoln("login in prvivate repository: success")
+
+	clientSet, err := k.GetClientSet()
+	if err != nil {
+		return merry.Prepend(err, "failed to get clientset for stroppy secret")
+	}
+
+	secretFilePath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
+	secretFile, err := ioutil.ReadFile(secretFilePath)
+	if err != nil {
+		return merry.Prepend(err, "failed to read config file for stroppy secret")
+	}
+
+	secret := applyconfig.Secret("stroppy-secret", "default")
+
+	err = yaml.Unmarshal([]byte(secretFile), &secret)
+	if err != nil {
+		return merry.Prepend(err, "failed to unmarshall stroppy secret configuration")
+	}
+
+	dockerConfigData := map[string][]byte{
+		".dockerconfigjson": []byte(" eyJhdXRocyI6eyJyZWdpc3RyeS5naXRsYWIuY29tIjp7InVzZXJuYW1lIjoiZ2l0bGFiK2RlcGxveS10b2tlbi00ODkxMTEiLCJwYXNzd29yZCI6ImJ6Ykd6M2p3ZjFKc1RyeHZ6Tjd4IiwiYXV0aCI6IloybDBiR0ZpSzJSbGNHeHZlUzEwYjJ0bGJpMDBPRGt4TVRFNllucGlSM296YW5kbU1VcHpWSEo0ZG5wT04zZz0ifX19"),
+	}
+
+	secret = secret.WithData(dockerConfigData)
+
+	llog.Infoln("Applying the stroppy secret...")
+	_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
+		TypeMeta:     metav1.TypeMeta{},
+		DryRun:       []string{},
+		Force:        false,
+		FieldManager: "stroppy-deploy",
+	})
+	if err != nil {
+		return merry.Prepend(err, "failed to apply stroppy secret")
+	}
+
+	llog.Infoln("applying of k8s secret: success")
+
+	return nil
 }
