@@ -78,7 +78,7 @@ func (k *Kubernetes) DeployStroppy() error {
 		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
 	}
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(3 * time.Minute)
 
 	llog.Infoln("Applying stroppy pod...")
 	k.stroppyPod, err = clientSet.CoreV1().

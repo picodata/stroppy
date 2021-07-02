@@ -173,7 +173,7 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	return nil
 }
 
-func (k Kubernetes) waitStroppyPod(clientSet *kubernetes.Clientset) (err error) {
+func (k Kubernetes) waitStroppyPod(_ *kubernetes.Clientset) (err error) {
 	waitingTime := 5 * time.Minute
 
 	const waitTimeQuantum = 10 * time.Second
