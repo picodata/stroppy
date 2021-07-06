@@ -14,6 +14,7 @@ const (
 	execTimeout = 5
 
 	deployConfigStroppyFile = "stroppy-manifest.yaml"
+	secretStroppyFile       = "stroppy-secret.yaml"
 
 	kubernetesSshEntity = "kubernetes"
 	monitoringSshEntity = "monitoring"
@@ -81,7 +82,7 @@ sudo service docker restart
 echo 'Restarted docker service'
 docker login -u gitlab+deploy-token-489111 -p bzbGz3jwf1JsTrxvzN7x registry.gitlab.com
 echo 'Logged in repository'
-sudo chown root:docker /var/run/docker.sock
+sudo chown ubuntu:docker /var/run/docker.sock
 echo "change owner for /var/run/docker.sock"
 " \
 | tee -a deploy_kubernetes.sh
@@ -168,7 +169,7 @@ echo 'Added user in docker group'
 echo 'registered user in docker group'
 /bin/bash -c \"sudo service docker restart\"
 echo 'Restarted docker service'
-sudo chown root:docker /var/run/docker.sock
+sudo chown ubuntu:docker /var/run/docker.sock
 echo 'change owner for /var/run/docker.sock'
 " | tee -a deploy_kubernetes.sh
 `
@@ -176,6 +177,4 @@ echo 'change owner for /var/run/docker.sock'
 
 const (
 	dockerRepLoginCmd = "docker login -u stroppy_deploy -p k3xG2_xe_SDjyYDREML3 registry.gitlab.com"
-
-	dockerConfigData = " eyJhdXRocyI6eyJyZWdpc3RyeS5naXRsYWIuY29tIjp7InVzZXJuYW1lIjoic3Ryb3BweV9kZXBsb3kiLCJwYXNzd29yZCI6ImszeEcyX3hlX1NEanlZRFJFTUwzIiwiYXV0aCI6ImMzUnliM0J3ZVY5a1pYQnNiM2s2YXpONFJ6SmZlR1ZmVTBScWVWbEVVa1ZOVERNPSJ9fX0="
 )

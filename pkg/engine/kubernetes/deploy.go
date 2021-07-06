@@ -10,11 +10,11 @@ import (
 	"strings"
 
 	"github.com/ansel1/merry"
+	"github.com/ghodss/yaml"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"golang.org/x/crypto/ssh"
-	"gopkg.in/yaml.v2"
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -254,24 +254,19 @@ func (k *Kubernetes) prepareDeployStroppy() error {
 		return merry.Prepend(err, "failed to get clientset for stroppy secret")
 	}
 
-	secretFilePath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
+	secretFilePath := filepath.Join(k.workingDirectory, secretStroppyFile)
 	secretFile, err := ioutil.ReadFile(secretFilePath)
 	if err != nil {
 		return merry.Prepend(err, "failed to read config file for stroppy secret")
 	}
-
+	llog.Println(string(secretFile))
 	secret := applyconfig.Secret("stroppy-secret", "default")
 
+	// используем github.com/ghodss/yaml, т.к она поддерживает работа с зашифрованными строками
 	err = yaml.Unmarshal([]byte(secretFile), &secret)
 	if err != nil {
 		return merry.Prepend(err, "failed to unmarshall stroppy secret configuration")
 	}
-
-	dockerConfigData := map[string][]byte{
-		".dockerconfigjson": []byte(dockerConfigData),
-	}
-
-	secret = secret.WithData(dockerConfigData)
 
 	llog.Infoln("Applying the stroppy secret...")
 	_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
