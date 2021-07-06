@@ -28,10 +28,17 @@ func (d *Deployment) executePay(_ string) (err error) {
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	err = d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
+	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
 
+	beginTime, endTime, err := d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote transfer test")
+	}
+
+	err = d.k.ExecuteGetingMonImages(beginTime, endTime, monImagesArchName)
+	if err != nil {
+		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
 	return
@@ -54,10 +61,17 @@ func (d *Deployment) executePop(_ string) error {
 	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	err = d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
+	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
 
+	beginTime, endTime, err := d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote populate test")
+	}
+
+	err = d.k.ExecuteGetingMonImages(beginTime, endTime, monImagesArchName)
+	if err != nil {
+		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
 	return nil

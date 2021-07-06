@@ -108,15 +108,15 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) error {
+func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
 	config, err := k.getKubeConfig()
 	if err != nil {
-		return merry.Prepend(err, "failed to get config for execute remote test")
+		return 0, 0, merry.Prepend(err, "failed to get config for execute remote test")
 	}
 
 	clientSet, err := k.GetClientSet()
 	if err != nil {
-		return merry.Prepend(err, "failed to get clientset for execute remote test")
+		return 0, 0, merry.Prepend(err, "failed to get clientset for execute remote test")
 	}
 
 	// формируем запрос для API k8s
@@ -144,14 +144,14 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 	// подключаемся к API-серверу
 	var _exec remotecommand.Executor
 	if _exec, err = remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL()); err != nil {
-		return merry.Prepend(err, "failed to execute remote test")
+		return 0, 0, merry.Prepend(err, "failed to execute remote test")
 	}
 
 	logFilePath := filepath.Join(k.workingDirectory, logFileName)
 
 	logFile, err := os.Create(logFilePath)
 	if err != nil {
-		return merry.Prepend(err, "failed to create test log file")
+		return 0, 0, merry.Prepend(err, "failed to create test log file")
 	}
 
 	defer logFile.Close()
@@ -164,13 +164,17 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) err
 		TerminalSizeQueue: nil,
 	}
 
+	beginTime = time.Now().Unix() - 100
+
 	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
 	err = _exec.Stream(streamOptions)
 	if err != nil {
-		return merry.Prepend(err, "failed to get stream of exec command")
+		return 0, 0, merry.Prepend(err, "failed to get stream of exec command")
 	}
 
-	return nil
+	endTime = time.Now().Unix() + 100
+
+	return beginTime, endTime, nil
 }
 
 func (k Kubernetes) waitStroppyPod(_ *kubernetes.Clientset) (err error) {
@@ -192,4 +196,20 @@ func (k Kubernetes) waitStroppyPod(_ *kubernetes.Clientset) (err error) {
 			k.stroppyPod.Status.Phase)
 	}
 	return
+}
+
+// executeGetingMonImages - получить данные мониторинга.
+// Осуществляется запуском скрипта get_png.sh, результат работы которого - архив с набором png-файлов
+func (k Kubernetes) ExecuteGetingMonImages(startTime int64, endTime int64, monImagesArchName string) error {
+	llog.Infoln("Starting to get monitoring images...")
+
+	workersIps := fmt.Sprintf("%v;%v;%v", k.addressMap.IngressInternalIP, k.addressMap.MetricsInternalIP, k.addressMap.PostgresInternalIP)
+	getMonImagesCmd := fmt.Sprintf("cd grafana-on-premise && ./get_png.sh %v %v %v %v", startTime, endTime, monImagesArchName, workersIps)
+	err := k.executeCommand(getMonImagesCmd)
+	if err != nil {
+		return merry.Prepend(err, "failed to get monitoring images")
+	}
+
+	llog.Infoln("getting of monitoring images: success")
+	return nil
 }
