@@ -164,7 +164,9 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (be
 		TerminalSizeQueue: nil,
 	}
 
-	beginTime = time.Now().Unix() - 100
+	// для графаны преобразуем в миллисекунды. Примитивно, но точность не принципиальна.
+	// сдвиг +/- 20 сек для того, чтобы тест на графиках был явно заметен относительно "фона"
+	beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 
 	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
 	err = _exec.Stream(streamOptions)
@@ -172,7 +174,7 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (be
 		return 0, 0, merry.Prepend(err, "failed to get stream of exec command")
 	}
 
-	endTime = time.Now().Unix() + 100
+	endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) + 20000
 
 	return beginTime, endTime, nil
 }
@@ -200,11 +202,16 @@ func (k Kubernetes) waitStroppyPod(_ *kubernetes.Clientset) (err error) {
 
 // executeGetingMonImages - получить данные мониторинга.
 // Осуществляется запуском скрипта get_png.sh, результат работы которого - архив с набором png-файлов
-func (k Kubernetes) ExecuteGetingMonImages(startTime int64, endTime int64, monImagesArchName string) error {
+func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, monImagesArchName string) error {
 	llog.Infoln("Starting to get monitoring images...")
 
+	llog.Debugln("start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())
+	llog.Debugln("finish time of monitoring data range", time.Unix(finishTime/1000, 0).UTC())
+
 	workersIps := fmt.Sprintf("%v;%v;%v", k.addressMap.IngressInternalIP, k.addressMap.MetricsInternalIP, k.addressMap.PostgresInternalIP)
-	getMonImagesCmd := fmt.Sprintf("cd grafana-on-premise && ./get_png.sh %v %v %v %v", startTime, endTime, monImagesArchName, workersIps)
+	getMonImagesCmd := fmt.Sprintf("cd grafana-on-premise && ./get_png.sh %v %v %v \"%v\"", startTime, finishTime, monImagesArchName, workersIps)
+
+	llog.Debugln(getMonImagesCmd)
 	err := k.executeCommand(getMonImagesCmd)
 	if err != nil {
 		return merry.Prepend(err, "failed to get monitoring images")

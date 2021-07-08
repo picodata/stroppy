@@ -259,7 +259,7 @@ func (k *Kubernetes) prepareDeployStroppy() error {
 	if err != nil {
 		return merry.Prepend(err, "failed to read config file for stroppy secret")
 	}
-	llog.Println(string(secretFile))
+
 	secret := applyconfig.Secret("stroppy-secret", "default")
 
 	// используем github.com/ghodss/yaml, т.к она поддерживает работа с зашифрованными строками
