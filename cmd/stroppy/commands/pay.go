@@ -60,5 +60,10 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		"tx", "t", settings.DatabaseSettings.UseCustomTx,
 		"Use custom implementation of atomic transactions (workaround for dbs without built-in ACID transactions).")
 
+	payCmd.PersistentFlags().StringVarP(&settings.TestSettings.KubernetesMasterAddress,
+		"kube-master-addr", "k",
+		settings.TestSettings.KubernetesMasterAddress,
+		"kubernetes master address")
+
 	return payCmd
 }

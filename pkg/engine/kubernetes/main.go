@@ -2,6 +2,7 @@ package kubernetes
 
 import (
 	"errors"
+	"fmt"
 	"net/url"
 	"path/filepath"
 
@@ -26,11 +27,32 @@ var errPortCheck = errors.New("port Check failed")
 
 var errProviderChoice = errors.New("selected provider not found")
 
-func CreateKubernetes(settings *config.Settings,
-	terraformAddressMap terraform.MapAddresses,
-	sshClient engineSsh.Client) (k *Kubernetes, err error) {
+func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
+	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
+	if kubernetesMasterAddress == "" {
+		err = fmt.Errorf("kubernetes master address is empty")
+		return
+	}
 
-	k = &Kubernetes{
+	var sc engineSsh.Client
+	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
+		kubernetesMasterAddress,
+		settings.DeploySettings.Provider,
+		settings.Local)
+	if err != nil {
+		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
+		return
+	}
+
+	k = createKubernetesObject(settings, terraform.MapAddresses{}, sc)
+	return
+}
+
+func createKubernetesObject(settings *config.Settings,
+	terraformAddressMap terraform.MapAddresses,
+	sshClient engineSsh.Client) (pObj *Kubernetes) {
+
+	pObj = &Kubernetes{
 		workingDirectory:  settings.WorkingDirectory,
 		clusterConfigFile: filepath.Join(settings.WorkingDirectory, "config"),
 
@@ -42,6 +64,14 @@ func CreateKubernetes(settings *config.Settings,
 
 		isSshKeyFileOnMaster: false,
 	}
+	return
+}
+
+func CreateKubernetes(settings *config.Settings,
+	terraformAddressMap terraform.MapAddresses,
+	sshClient engineSsh.Client) (k *Kubernetes, err error) {
+
+	k = createKubernetesObject(settings, terraformAddressMap, sshClient)
 	k.sshKeyFileName, k.sshKeyFilePath = k.sc.GetPrivateKeyInfo()
 
 	llog.Infof("kubernetes init success on directory '%s', with provider '%s', and ssh key file '%s'",
@@ -67,7 +97,7 @@ type Kubernetes struct {
 
 	provider string
 
-	stroppyPod *v1.Pod
+	StroppyPod *v1.Pod
 }
 
 func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {

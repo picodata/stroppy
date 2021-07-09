@@ -48,7 +48,7 @@ func HandleReader(reader *bufio.Reader) {
 			break
 		}
 		if printOutput {
-			llog.Printf(str)
+			llog.Debugln(str)
 		}
 	}
 }

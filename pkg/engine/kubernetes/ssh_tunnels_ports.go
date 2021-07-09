@@ -91,9 +91,9 @@ func (k *Kubernetes) getSessionObject() (stdout io.Reader, session engineSsh.Ses
 	return
 }
 
-// openSSHTunnel
+// OpenSecureShellTunnel
 // открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func (k *Kubernetes) openSSHTunnel(caller string, mainPort int, reservePort int) (result *engineSsh.Result) {
+func (k *Kubernetes) OpenSecureShellTunnel(caller string, mainPort int, reservePort int) (result *engineSsh.Result) {
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v", k.addressMap.MasterExternalIP)
 
 	tunnelPort := mainPort

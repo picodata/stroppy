@@ -96,7 +96,7 @@ func getAddressMap(stateFilePath, provider string) (mapIP *MapAddresses, err err
 				Get("instances.0").
 				Get("attributes")
 
-			mapIP.PostgresExternalIP = postgresExternalIPArray.
+			mapIP.DatabaseExternalIP = postgresExternalIPArray.
 				Get("instances.2").
 				Get("network_interface.0").
 				Get("nat_ip_address").Str
@@ -149,7 +149,7 @@ func getAddressMap(stateFilePath, provider string) (mapIP *MapAddresses, err err
 				Get("instance_public_ips").
 				Get("value.0.2").Str
 
-			mapIP.PostgresExternalIP = gjson.Parse(string(data)).
+			mapIP.DatabaseExternalIP = gjson.Parse(string(data)).
 				Get("outputs").
 				Get("instance_public_ips").
 				Get("value.0.3").Str

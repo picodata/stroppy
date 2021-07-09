@@ -53,7 +53,7 @@ type MapAddresses struct {
 	MetricsInternalIP  string
 	IngressExternalIP  string
 	IngressInternalIP  string
-	PostgresExternalIP string
+	DatabaseExternalIP string
 	PostgresInternalIP string
 }
 

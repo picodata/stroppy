@@ -1,7 +1,16 @@
 package db
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"path/filepath"
+	"strings"
+
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
+	kubernetes2 "k8s.io/client-go/kubernetes"
 
 	llog "github.com/sirupsen/logrus"
 
@@ -13,7 +22,9 @@ import (
 
 const (
 	foundationDbDirectory = "foundationdb"
-	foundationClusterName = "sample-cluster"
+
+	foundationClusterName       = "sample-cluster"
+	foundationClusterClientName = "sample-cluster-client"
 )
 
 func CreateFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (fc Cluster) {
@@ -37,6 +48,62 @@ func (fc *foundationCluster) Deploy() (err error) {
 		return merry.Prepend(err, "deploy failed")
 	}
 
+	var clientSet *kubernetes2.Clientset
+	if clientSet, err = fc.k.GetClientSet(); err != nil {
+		return merry.Prepend(err, "get client set")
+	}
+
+	var podList *v1.PodList
+	podList, err = clientSet.CoreV1().
+		Pods(kubernetes.ResourceDefaultNamespace).
+		List(context.TODO(),
+			metav1.ListOptions{
+				TypeMeta: metav1.TypeMeta{},
+			})
+	if err != nil {
+		return merry.Prepend(err, "get target pod list")
+	}
+
+	for _, pod := range podList.Items {
+		llog.Debugf("examining pod: '%s'/'%s'", pod.Name, pod.GenerateName)
+
+		if strings.HasPrefix(pod.Name, foundationClusterClientName) {
+			llog.Infof("foundationdb main pod is '%s'", pod.Name)
+			fc.clusterSpec.MainPod = &pod
+		} else if strings.HasPrefix(pod.Name, foundationClusterName) {
+			fc.clusterSpec.Pods = append(fc.clusterSpec.Pods, &pod)
+		}
+	}
+
+	if fc.clusterSpec.MainPod == nil {
+		return errors.New("foundation main pod does not exists")
+	}
+
+	if fc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
+		foundationMainPodSpec := applyconfig.Pod(fc.clusterSpec.MainPod.Name, kubernetes.ResourceDefaultNamespace)
+		_, err := clientSet.CoreV1().
+			Pods(kubernetes.ResourceDefaultNamespace).
+			Apply(context.TODO(),
+				foundationMainPodSpec,
+				metav1.ApplyOptions{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "",
+						APIVersion: "",
+					},
+					DryRun: []string{},
+					Force:  false,
+				})
+		if err != nil {
+			return merry.Prepend(err, "pod apply")
+		}
+
+		if err = fc.k.WaitPod(clientSet, fc.clusterSpec.MainPod.Name, kubernetes.ResourceDefaultNamespace); err != nil {
+			return merry.Prepend(err, "foundation pod wait")
+		}
+	}
+
+	llog.Infof("Now perform additional foundation deployment steps")
+
 	var session engineSsh.Session
 	if session, err = fc.sc.GetNewSession(); err != nil {
 		return merry.Prepend(err, "fix_client_version session")
@@ -44,9 +111,22 @@ func (fc *foundationCluster) Deploy() (err error) {
 
 	const fdbFixCommand = "chmod +x foundationdb/fix_client_version.sh && ./foundationdb/fix_client_version.sh"
 
-	var textb []byte
-	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
-		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
+	// var textb []byte
+	if textb, _err := session.CombinedOutput(fdbFixCommand); _err != nil {
+		llog.Errorln(merry.Prependf(_err, "fix_client_version.sh failed with output `%s`", string(textb)))
+		// return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
+	}
+	llog.Debugf("fix_client_version.sh applyed successfully")
+
+	// \todo: Прокидываем порт foundationdb на локальную машину
+
+	if fc.k.StroppyPod != nil {
+		sourceConfigPath := fmt.Sprintf("%s/%s:///var/dynamic-conf/fdb.cluster",
+			foundationClusterClientName, fc.clusterSpec.MainPod.Name)
+		destinationConfigPath := fmt.Sprintf("stroppy-client/%s://bin", fc.k.StroppyPod.Spec.Containers[0].Name)
+		if _err := fc.k.CopyFileFromPodToPod(sourceConfigPath, destinationConfigPath); _err != nil {
+			llog.Errorln(merry.Prepend(_err, "fdb.cluster file copying"))
+		}
 	}
 
 	return
@@ -62,5 +142,10 @@ func (fc *foundationCluster) OpenPortForwarding() (_ error) {
 
 func (fc *foundationCluster) GetStatus() (err error) {
 	// already returns success
+	return
+}
+
+func (fc *foundationCluster) GetSpecification() (spec ClusterSpec) {
+	spec = fc.clusterSpec
 	return
 }

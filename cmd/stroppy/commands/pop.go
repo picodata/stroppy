@@ -42,5 +42,10 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		settings.DatabaseSettings.Count,
 		"Number of accounts to create")
 
+	popCmd.PersistentFlags().StringVarP(&settings.TestSettings.KubernetesMasterAddress,
+		"kube-master-addr", "k",
+		settings.TestSettings.KubernetesMasterAddress,
+		"kubernetes master address")
+
 	return popCmd
 }

@@ -6,9 +6,10 @@ import (
 	"io"
 	"net/url"
 
+	v1 "k8s.io/api/core/v1"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
@@ -21,6 +22,9 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		wd:                     wd,
 		tg:                     databaseTag,
 		portForwardControlChan: make(chan struct{}),
+		clusterSpec: ClusterSpec{
+			Pods: make([]*v1.Pod, 0, 10),
+		},
 	}
 	return
 }
@@ -30,6 +34,8 @@ type commonCluster struct {
 	k  *kubernetes.Kubernetes
 	wd string
 	tg string
+
+	clusterSpec ClusterSpec
 
 	portForwardControlChan chan struct{}
 }
@@ -79,10 +85,10 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 		return
 	}
 
-	err = cc.k.OpenPortForward(cluster.Postgres, portMap, reqURL,
+	err = cc.k.OpenPortForward(cc.tg, portMap, reqURL,
 		cc.portForwardControlChan)
 	if err != nil {
-		return merry.Prepend(err, "failed to started port-forward for foundationdb")
+		return merry.Prependf(err, "failed to started port-forward for '%s'", cc.tg)
 	}
 
 	llog.Infoln("Port-forwarding for postgres is started success")

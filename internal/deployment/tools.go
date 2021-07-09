@@ -19,22 +19,28 @@ func (d *Deployment) executePay(_ string) (err error) {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	payTestCmdTemplate := []string{
-		"./root/stroppy", "pay", "--url", fmt.Sprintf("%v", settings.DBURL), "--check", "--count", fmt.Sprintf("%v", settings.Count), "-r",
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers),
+	payTestCommand := []string{
+		"./root/stroppy", "pay",
+		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--check",
+		"--count", fmt.Sprintf("%v", settings.Count),
+		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
+		"-w", fmt.Sprintf("%v", settings.Workers),
+		"--kube-master-addr", d.settings.TestSettings.KubernetesMasterAddress,
 	}
 
 	dateFormat := "01-02-2006_15:04:05"
-	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
+		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
-
-	beginTime, endTime, err := d.k.ExecuteRemoteTest(payTestCmdTemplate, logFileName)
+	beginTime, endTime, err = d.k.ExecuteRemoteTest(payTestCommand, logFileName)
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote transfer test")
 	}
+
+	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	//таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -53,22 +59,26 @@ func (d *Deployment) executePop(_ string) error {
 	}
 	// d.payload.UpdateSettings(settings)
 
-	popTestCmdTemplate := []string{
-		"./root/stroppy", "pop", "--url", fmt.Sprintf("%v", settings.DBURL), "--count", fmt.Sprintf("%v", settings.Count), "-r",
-
-		fmt.Sprintf("%v", settings.BanRangeMultiplier), "-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt",
+	popTestCommand := []string{
+		"./root/stroppy", "pop",
+		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--count", fmt.Sprintf("%v", settings.Count),
+		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
+		"--kube-master-addr", d.settings.TestSettings.KubernetesMasterAddress,
+		"-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt",
 	}
 	dateFormat := "01-02-2006_15_04_05"
-	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
+		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
-
-	beginTime, endTime, err := d.k.ExecuteRemoteTest(popTestCmdTemplate, logFileName)
+	beginTime, endTime, err = d.k.ExecuteRemoteTest(popTestCommand, logFileName)
 	if err != nil {
 		return merry.Prepend(err, "failed to execute remote populate test")
 	}
+
+	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.ZIPFian, time.Now().Format(dateFormat))
 
 	err = d.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName)
 	if err != nil {

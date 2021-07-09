@@ -31,10 +31,10 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 
 	if err = k.copyConfigFromMaster(); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to copy kube config from Master")
+		return nil, 0, merry.Prepend(err, "failed to copy kube config from master")
 	}
 
-	if k.sshTunnel = k.openSSHTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {
+	if k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
 	}
@@ -51,7 +51,7 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 	llog.Infoln("status of stroppy pod deploy: success")
 
-	pPortForward = k.openSSHTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
+	pPortForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
 
 	if pPortForward.Err != nil {
 		return nil, 0, merry.Prepend(pPortForward.Err, "failed to port forward")
@@ -71,37 +71,40 @@ func (k *Kubernetes) DeployStroppy() error {
 	}
 
 	deployConfigStroppyPath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
-	deployConfig, err := ioutil.ReadFile(deployConfigStroppyPath)
-	if err != nil {
+
+	var deployConfigBytes []byte
+	if deployConfigBytes, err = ioutil.ReadFile(deployConfigStroppyPath); err != nil {
 		return merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
 
 	stroppy := applyconfig.Pod(stroppyPodName, ResourceDefaultNamespace)
 
-	if err = yaml.Unmarshal(deployConfig, &stroppy); err != nil {
+	if err = yaml.Unmarshal(deployConfigBytes, &stroppy); err != nil {
 		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
 	}
 
 	llog.Infoln("Applying stroppy pod...")
-	k.stroppyPod, err = clientSet.CoreV1().
+	k.StroppyPod, err = clientSet.CoreV1().
 		Pods(ResourceDefaultNamespace).
-		Apply(context.TODO(), stroppy, metav1.ApplyOptions{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       "",
-				APIVersion: "",
-			},
-			DryRun:       []string{},
-			Force:        false,
-			FieldManager: stroppyFieldManager,
-		})
+		Apply(context.TODO(),
+			stroppy,
+			metav1.ApplyOptions{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "",
+					APIVersion: "",
+				},
+				DryRun:       []string{},
+				Force:        false,
+				FieldManager: stroppyFieldManager,
+			})
 	if err != nil {
 		llog.Error(merry.Prepend(err, "failed to apply pod stroppy"))
 	}
 
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
-	if k.stroppyPod.Status.Phase != v1.PodRunning {
-		if err = k.waitStroppyPod(clientSet); err != nil {
-			llog.Error(err)
+	if k.StroppyPod.Status.Phase != v1.PodRunning {
+		if err = k.WaitPod(clientSet, stroppyPodName, ResourceDefaultNamespace); err != nil {
+			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}
 
@@ -188,7 +191,6 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 		return deployK8sFirstStepYandexCMD, deployK8sThirdStepYandexCMD, nil
 
 	case "oracle":
-
 		deployK8sFirstStepOracleCMD := fmt.Sprintf(deployK8sFirstStepOracleTemplate,
 			kubernetes.addressMap.MetricsInternalIP, kubernetes.addressMap.IngressInternalIP, kubernetes.addressMap.PostgresInternalIP)
 		deployK8sThirdStepOracleCMD := deployK8sThirdStepOracleCMD

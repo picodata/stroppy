@@ -10,8 +10,8 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 )
 
-func CreateController(k *kubernetes.Kubernetes, wd string) (c *Controller) {
-	c = &Controller{
+func createWorkableController(k *kubernetes.Kubernetes, wd string) (c Controller) {
+	c = &workableController{
 		wd: filepath.Join(wd, "chaos"),
 		k:  k,
 
@@ -23,7 +23,7 @@ func CreateController(k *kubernetes.Kubernetes, wd string) (c *Controller) {
 	return
 }
 
-type Controller struct {
+type workableController struct {
 	k  *kubernetes.Kubernetes
 	wd string
 
@@ -33,7 +33,7 @@ type Controller struct {
 	portForwardStopChan chan struct{}
 }
 
-func (chaos *Controller) Deploy() (err error) {
+func (chaos *workableController) Deploy() (err error) {
 	llog.Infoln("Starting chaos-mesh deployment...")
 
 	if err = chaos.k.Execute(deployChaosMesh); err != nil {
@@ -52,20 +52,24 @@ func (chaos *Controller) Deploy() (err error) {
 	}
 	llog.Debugf("received next url for chaos port-forward: '%s'", reqURL.String())
 
-	_err := chaos.k.OpenPortForward(chaosSshEntity,
+	_err := chaos.k.OpenPortForward(chaosDashboardResourceName,
 		[]string{"2333:2333"},
 		reqURL,
 		chaos.portForwardStopChan)
 	if _err != nil {
-		llog.Errorf("chaos-mesh port forward is not established: %v\n", _err)
-		// return merry.Prepend(err, "port-forward is not established")
+		return merry.Prepend(err, "port-forward is not established")
 	}
+
+	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам
+	// defer sshSession.Close()
+
+	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333, 2334)
 
 	llog.Infoln("chaos-mesh deployed successfully")
 	return
 }
 
-func (chaos *Controller) ExecuteCommand(scenarioName string) (err error) {
+func (chaos *workableController) ExecuteCommand(scenarioName string) (err error) {
 	llog.Infof("now starting chaos '%s' scenario\n", scenarioName)
 
 	scenario := createScenario(scenarioName, chaos.wd)
@@ -85,7 +89,7 @@ func (chaos *Controller) ExecuteCommand(scenarioName string) (err error) {
 	return
 }
 
-func (chaos *Controller) Stop() {
+func (chaos *workableController) Stop() {
 	chaos.runningScenariosLock.Lock()
 	defer chaos.runningScenariosLock.Unlock()
 
@@ -98,29 +102,4 @@ func (chaos *Controller) Stop() {
 			}
 		}
 	}
-}
-
-func createScenario(name, wd string) (s scenario) {
-	scenarioFileName := name + ".yaml"
-
-	s = scenario{
-		scenarioName:     name,
-		scenarioFileName: scenarioFileName,
-
-		destinationPath: filepath.Join("/home/ubuntu", scenarioFileName),
-		sourcePath:      filepath.Join(wd, scenarioFileName),
-
-		isRunning: false,
-	}
-	return
-}
-
-type scenario struct {
-	destinationPath string
-	sourcePath      string
-
-	scenarioName     string
-	scenarioFileName string
-
-	isRunning bool
 }

@@ -37,7 +37,7 @@ type Deployment struct {
 	k  *kubernetes.Kubernetes
 
 	settings  *config.Settings
-	chaosMesh *chaos.Controller
+	chaosMesh chaos.Controller
 	payload   payload.Payload
 
 	stdinScanner *bufio.Scanner
@@ -181,11 +181,9 @@ func (d *Deployment) Deploy() (err error) {
 
 	defer d.k.Stop()
 
-	if d.settings.UseChaos {
-		d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory)
-		if err = d.chaosMesh.Deploy(); err != nil {
-			return merry.Prepend(err, "failed to deploy and start chaos")
-		}
+	d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory, d.settings.UseChaos)
+	if err = d.chaosMesh.Deploy(); err != nil {
+		return merry.Prepend(err, "failed to deploy and start chaos")
 	}
 
 	dbtype := d.settings.DatabaseSettings.DBType
@@ -217,7 +215,10 @@ func (d *Deployment) Deploy() (err error) {
 	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)
 
 	if d.payload, err = payload.CreateBasePayload(d.settings, d.chaosMesh); err != nil {
-		return merry.Prepend(err, "failed to init payload")
+		if dbtype != cluster.Foundation {
+			return merry.Prepend(err, "failed to init payload")
+		}
+		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 	}
 
 	if err = d.readCommandFromInput(portForward); err != nil {

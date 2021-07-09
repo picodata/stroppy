@@ -1,11 +1,20 @@
 package kubernetes
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"time"
+
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/client-go/kubernetes/scheme"
+	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/ansel1/merry"
 	"github.com/bramvdbogaerde/go-scp"
@@ -122,6 +131,64 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) LoadFileToPod(podName, sourcePath, destinationPath string) (err error) {
+func (k *Kubernetes) LoadFileToPod(podName, containerName, sourcePath, destinationPath string) (err error) {
+	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
+		clientcmd.NewDefaultClientConfigLoadingRules(),
+		&clientcmd.ConfigOverrides{},
+	)
+
+	var restConfig *rest.Config
+	if restConfig, err = kubeConfig.ClientConfig(); err != nil {
+		return merry.Prepend(err, "failed to configure kube connection")
+	}
+
+	var coreClient *corev1client.CoreV1Client
+	if coreClient, err = corev1client.NewForConfig(restConfig); err != nil {
+		return merry.Prepend(err, "failed to get client")
+	}
+
+	var reader io.Reader
+	if reader, err = os.Open(sourcePath); err != nil {
+		return merry.Prependf(err, "source file '%s'", sourcePath)
+	}
+
+	req := coreClient.RESTClient().
+		Post().
+		Namespace(ResourceDefaultNamespace).
+		Resource(ResourcePodName).
+		Name(podName).
+		SubResource(SubresourceExec).
+		VersionedParams(&v1.PodExecOptions{
+			Container: containerName,
+			Command:   []string{"cp", "/dev/stdin", destinationPath},
+			Stdin:     true,
+			Stdout:    false,
+			Stderr:    true,
+			TTY:       false,
+		}, scheme.ParameterCodec)
+
+	var _exec remotecommand.Executor
+	if _exec, err = remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL()); err != nil {
+		return merry.Prepend(err, "exec get")
+	}
+
+	var stderr bytes.Buffer
+	err = _exec.Stream(remotecommand.StreamOptions{
+		Stdin:  reader,
+		Stderr: &stderr,
+		Tty:    false,
+	})
+	if err != nil {
+		return merry.Prependf(err, "command exec failed, stderr: `%s`", stderr.String())
+	}
+
+	return
+}
+
+func (k *Kubernetes) CopyFileFromPodToPod(sourcePath string, destinationPath string) (err error) {
+	return
+}
+
+func (k *Kubernetes) LoadFileFromPod(podName, sourcePath, kubeMasterFsPath string) (err error) {
 	return
 }

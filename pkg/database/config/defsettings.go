@@ -22,6 +22,8 @@ type Settings struct {
 	UseChaos       bool
 	ChaosParameter string
 
+	TestSettings *TestSettings
+
 	DatabaseSettings *DatabaseSettings
 	DeploySettings   *DeploySettings
 }
@@ -36,8 +38,19 @@ func DefaultSettings() *Settings {
 
 		DeploySettings:   deployDefaults(),
 		DatabaseSettings: DatabaseDefaults(),
-		LogLevel:         llog.InfoLevel.String(),
+
+		TestSettings: TestDefaults(),
+
+		LogLevel: llog.InfoLevel.String(),
 	}
+}
+
+type TestSettings struct {
+	KubernetesMasterAddress string
+}
+
+func TestDefaults() *TestSettings {
+	return &TestSettings{}
 }
 
 type DatabaseSettings struct {

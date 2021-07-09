@@ -1,22 +1,22 @@
 package kubernetes
 
 import (
+	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/tools/remotecommand"
 )
 
 func (k *Kubernetes) editClusterURL(url string) error {
@@ -51,7 +51,9 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
 	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
+
 	llog.Infoln(copyFromMasterCmd.String())
+	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
 
 	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
@@ -108,95 +110,62 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
-	config, err := k.getKubeConfig()
-	if err != nil {
-		return 0, 0, merry.Prepend(err, "failed to get config for execute remote test")
-	}
-
-	clientSet, err := k.GetClientSet()
-	if err != nil {
-		return 0, 0, merry.Prepend(err, "failed to get clientset for execute remote test")
-	}
-
-	// формируем запрос для API k8s
-	executeRequest := clientSet.CoreV1().RESTClient().Post().
-		Resource(ResourcePodName).
-		Name(stroppyPodName).
-		Namespace(ResourceDefaultNamespace).
-		SubResource(SubresourceExec).Timeout(60)
-
-	option := &v1.PodExecOptions{
-		TypeMeta:  metav1.TypeMeta{},
-		Stdin:     true,
-		Stdout:    true,
-		Stderr:    true,
-		TTY:       true,
-		Container: "",
-		Command:   testCmd,
-	}
-
-	executeRequest.VersionedParams(
-		option,
-		scheme.ParameterCodec,
-	)
-
-	// подключаемся к API-серверу
-	var _exec remotecommand.Executor
-	if _exec, err = remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL()); err != nil {
-		return 0, 0, merry.Prepend(err, "failed to execute remote test")
-	}
-
-	logFilePath := filepath.Join(k.workingDirectory, logFileName)
-
-	logFile, err := os.Create(logFilePath)
-	if err != nil {
-		return 0, 0, merry.Prepend(err, "failed to create test log file")
-	}
-
-	defer logFile.Close()
-
-	streamOptions := remotecommand.StreamOptions{
-		Stdin:             os.Stdin,
-		Stdout:            logFile,
-		Stderr:            os.Stderr,
-		Tty:               true,
-		TerminalSizeQueue: nil,
-	}
-
-	// для графаны преобразуем в миллисекунды. Примитивно, но точность не принципиальна.
-	// сдвиг +/- 20 сек для того, чтобы тест на графиках был явно заметен относительно "фона"
-	beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-
-	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
-	err = _exec.Stream(streamOptions)
-	if err != nil {
-		return 0, 0, merry.Prepend(err, "failed to get stream of exec command")
-	}
-
-	endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) + 20000
-
-	return beginTime, endTime, nil
-}
-
-func (k Kubernetes) waitStroppyPod(_ *kubernetes.Clientset) (err error) {
+func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace string) (err error) {
 	waitingTime := 5 * time.Minute
 
 	const waitTimeQuantum = 10 * time.Second
-	for k.stroppyPod.Status.Phase != v1.PodRunning && waitingTime > 0 {
+	for k.StroppyPod.Status.Phase != v1.PodRunning && waitingTime > 0 {
+		k.StroppyPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
+			podName,
+			metav1.GetOptions{
+				TypeMeta:        metav1.TypeMeta{},
+				ResourceVersion: "",
+			})
+		if err != nil {
+			llog.Warnf("WaitPod: failed to update information: %v", err)
+			continue
+		}
 
 		waitingTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
-		llog.Debugf("waitStroppyPod: pod status: %v\n",
-			k.stroppyPod.Status.Phase)
-
+		llog.Debugf("WaitPod: pod status: %v\n",
+			k.StroppyPod.Status.Phase)
 	}
 
-	if k.stroppyPod.Status.Phase != v1.PodRunning {
+	if k.StroppyPod.Status.Phase != v1.PodRunning {
 		err = merry.Errorf("stroppy pod still not running, 5 minutes left, current status: '%v",
-			k.stroppyPod.Status.Phase)
+			k.StroppyPod.Status.Phase)
+		return
 	}
+
+	return
+}
+
+// nolint
+func (k *Kubernetes) parseKubernetesFilePath(path string) (podName, containerName, internalPath string) {
+	parts := strings.Split(path, "://")
+	if len(parts) < 2 {
+		return
+	}
+
+	kubePart := parts[0]
+	podContainerSpec := strings.Split(kubePart, "/")
+	podContainerSpecSize := len(podContainerSpec)
+	if podContainerSpecSize < 1 {
+		podName = kubePart
+	} else if podContainerSpecSize == 1 {
+		podName = kubePart
+	} else {
+		podName = podContainerSpec[0]
+		containerName = podContainerSpec[1]
+	}
+
+	internalPath = parts[1]
+	if filepath.Base(internalPath) == internalPath {
+		return
+	}
+
 	return
 }
 

@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"k8s.io/apimachinery/pkg/runtime"
+
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 
 	"github.com/ansel1/merry"
@@ -123,16 +125,23 @@ func (pc *postgresCluster) getPostgresPodsCount() (int64, error) {
 		return 0, merry.Prepend(err, "failed to read postgres-manifest.yaml")
 	}
 
-	obj, _, err := scheme.Codecs.UniversalDeserializer().Decode(manifestFile, nil, &v1.Postgresql{})
+	var obj runtime.Object
+	obj, _, err = scheme.Codecs.UniversalDeserializer().
+		Decode(manifestFile, nil, &v1.Postgresql{})
 	if err != nil {
 		return 0, merry.Prepend(err, "failed to decode postgres-manifest.yaml")
 	}
 
-	postgresSQLconfig, ok := obj.(*v1.Postgresql)
+	postgresSQLConfig, ok := obj.(*v1.Postgresql)
 	if !ok {
 		return 0, merry.Prepend(err, "failed to check format postgres-manifest.yaml")
 	}
 
-	podsCount := int64(postgresSQLconfig.Spec.NumberOfInstances)
+	podsCount := int64(postgresSQLConfig.Spec.NumberOfInstances)
 	return podsCount, nil
+}
+
+func (pc *postgresCluster) GetSpecification() (spec ClusterSpec) {
+	spec = pc.clusterSpec
+	return
 }

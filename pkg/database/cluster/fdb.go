@@ -103,7 +103,7 @@ func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 
 	var FDBPool fdb.Database
 	if FDBPool, err = fdb.OpenDatabase(poolConfig); err != nil {
-		return nil, merry.Prepend(err, "failed to open connect to FDB")
+		return nil, merry.Prepend(err, "fdb.cluster file open")
 	}
 	llog.Infof("Creating or opening the subspaces... \n")
 	// создаем или открываем Directory - часть Directory cо своими метаданынми

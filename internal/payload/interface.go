@@ -19,7 +19,7 @@ type Payload interface {
 	UpdateSettings(*config.DatabaseSettings)
 }
 
-func CreateBasePayload(settings *config.Settings, chaos *chaos.Controller) (p Payload, err error) {
+func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
 	bp := &BasePayload{
 		config:         settings.DatabaseSettings,
 		chaos:          chaos,
@@ -39,6 +39,9 @@ func CreateBasePayload(settings *config.Settings, chaos *chaos.Controller) (p Pa
 		}
 
 	case cluster.Foundation:
+		if bp.config.DBURL == "" {
+			bp.config.DBURL = "fdb.cluster"
+		}
 		bp.cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
 		if err != nil {
 			return
@@ -79,7 +82,7 @@ type BasePayload struct {
 	config     *config.DatabaseSettings
 	configLock sync.Mutex
 
-	chaos          *chaos.Controller
+	chaos          chaos.Controller
 	chaosParameter string
 
 	oracle  *database.Oracle
