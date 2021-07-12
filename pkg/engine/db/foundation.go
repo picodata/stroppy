@@ -9,7 +9,6 @@ import (
 
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
 	kubernetes2 "k8s.io/client-go/kubernetes"
 
 	llog "github.com/sirupsen/logrus"
@@ -64,7 +63,8 @@ func (fc *foundationCluster) Deploy() (err error) {
 		return merry.Prepend(err, "get target pod list")
 	}
 
-	for _, pod := range podList.Items {
+	for i := 0; i < len(podList.Items); i++ {
+		pod := podList.Items[i]
 		llog.Debugf("examining pod: '%s'/'%s'", pod.Name, pod.GenerateName)
 
 		if strings.HasPrefix(pod.Name, foundationClusterClientName) {
@@ -80,27 +80,15 @@ func (fc *foundationCluster) Deploy() (err error) {
 	}
 
 	if fc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
-		foundationMainPodSpec := applyconfig.Pod(fc.clusterSpec.MainPod.Name, kubernetes.ResourceDefaultNamespace)
-		_, err := clientSet.CoreV1().
-			Pods(kubernetes.ResourceDefaultNamespace).
-			Apply(context.TODO(),
-				foundationMainPodSpec,
-				metav1.ApplyOptions{
-					TypeMeta: metav1.TypeMeta{
-						Kind:       "",
-						APIVersion: "",
-					},
-					DryRun: []string{},
-					Force:  false,
-				})
-		if err != nil {
-			return merry.Prepend(err, "pod apply")
-		}
 
-		if err = fc.k.WaitPod(clientSet, fc.clusterSpec.MainPod.Name, kubernetes.ResourceDefaultNamespace); err != nil {
+		fc.clusterSpec.MainPod, err = fc.k.WaitPod(clientSet, fc.clusterSpec.MainPod.Name,
+			kubernetes.ResourceDefaultNamespace)
+		if err != nil {
 			return merry.Prepend(err, "foundation pod wait")
 		}
 	}
+	llog.Debugf("foundation main pod '%s' in status '%s', okay",
+		fc.clusterSpec.MainPod.Name, fc.clusterSpec.MainPod.Status.Phase)
 
 	llog.Infof("Now perform additional foundation deployment steps")
 

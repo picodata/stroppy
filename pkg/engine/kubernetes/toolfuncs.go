@@ -84,7 +84,7 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	llog.Infof(copyPrivateKeyCmd.String())
 
 	keyFileCopyed := false
-	// делаем переповтор на случай проблем с кластером
+	// делаем повтор на случай проблем с кластером
 	// \todo: https://gitlab.com/picodata/stroppy/-/issues/4
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
@@ -110,12 +110,22 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace string) (err error) {
-	waitingTime := 5 * time.Minute
+func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace string) (targetPod *v1.Pod, err error) {
+	targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
+		podName,
+		metav1.GetOptions{
+			TypeMeta:        metav1.TypeMeta{},
+			ResourceVersion: "",
+		})
+	if err != nil {
+		err = merry.Prepend(err, "get pod")
+		return
+	}
 
+	waitTime := 10 * time.Minute
 	const waitTimeQuantum = 10 * time.Second
-	for k.StroppyPod.Status.Phase != v1.PodRunning && waitingTime > 0 {
-		k.StroppyPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
+	for targetPod.Status.Phase != v1.PodRunning && waitTime > 0 {
+		targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
 			podName,
 			metav1.GetOptions{
 				TypeMeta:        metav1.TypeMeta{},
@@ -126,15 +136,15 @@ func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace
 			continue
 		}
 
-		waitingTime -= waitTimeQuantum
+		waitTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
 		llog.Debugf("WaitPod: pod status: %v\n",
 			k.StroppyPod.Status.Phase)
 	}
 
-	if k.StroppyPod.Status.Phase != v1.PodRunning {
-		err = merry.Errorf("stroppy pod still not running, 5 minutes left, current status: '%v",
+	if targetPod.Status.Phase != v1.PodRunning {
+		err = merry.Errorf("pod still not running, 5 minutes left, current status: '%v",
 			k.StroppyPod.Status.Phase)
 		return
 	}

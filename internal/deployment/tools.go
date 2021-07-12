@@ -34,21 +34,21 @@ func (d *Deployment) executePay(_ string) (err error) {
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = d.k.ExecuteRemoteTest(payTestCommand, logFileName)
-	if err != nil {
+	var beginTime, endTime int64
+	if beginTime, endTime, err = d.k.ExecuteRemoteTest(payTestCommand, logFileName); err != nil {
 		return merry.Prepend(err, "failed to execute remote transfer test")
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz", settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	//таймаут, чтобы не получать пустое место на графиках
+	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
 	if err = d.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
-	return nil
+	return
 }
 
 // executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
@@ -72,8 +72,8 @@ func (d *Deployment) executePop(_ string) error {
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.ZIPFian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = d.k.ExecuteRemoteTest(popTestCommand, logFileName)
-	if err != nil {
+	var beginTime, endTime int64
+	if beginTime, endTime, err = d.k.ExecuteRemoteTest(popTestCommand, logFileName); err != nil {
 		return merry.Prepend(err, "failed to execute remote populate test")
 	}
 

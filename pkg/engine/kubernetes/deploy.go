@@ -103,7 +103,7 @@ func (k *Kubernetes) DeployStroppy() error {
 
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
 	if k.StroppyPod.Status.Phase != v1.PodRunning {
-		if err = k.WaitPod(clientSet, stroppyPodName, ResourceDefaultNamespace); err != nil {
+		if k.StroppyPod, err = k.WaitPod(clientSet, stroppyPodName, ResourceDefaultNamespace); err != nil {
 			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}

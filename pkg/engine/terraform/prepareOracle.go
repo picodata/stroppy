@@ -12,7 +12,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 )
 
-const instanceFileName = "main_oracle.tf"
+const instanceFileName = "main_oracle-derived.tf"
 
 func setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	ram int, diskString string, nodesString string) {
