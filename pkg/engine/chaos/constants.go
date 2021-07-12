@@ -2,7 +2,7 @@ package chaos
 
 const (
 	chaosNamespace             = "chaos-testing"
-	chaosDashboardResourceName = "svc/chaos-dashboard"
+	chaosDashboardResourceName = "chaos-dashboard"
 
 	chaosSshEntity = "chaos"
 

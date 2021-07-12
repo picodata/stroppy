@@ -43,7 +43,7 @@ func (chaos *workableController) Deploy() (err error) {
 
 	// прокидываем порты, что бы можно было открыть веб-интерфейс
 	var reqURL *url.URL
-	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourcePodName,
+	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourceService,
 		chaosNamespace,
 		chaosDashboardResourceName,
 		kubernetes.SubresourcePortForwarding)
@@ -57,7 +57,8 @@ func (chaos *workableController) Deploy() (err error) {
 		reqURL,
 		chaos.portForwardStopChan)
 	if _err != nil {
-		return merry.Prepend(err, "port-forward is not established")
+		llog.Warn(merry.Prepend(_err, "chaos dashboard port-forwarding"))
+		// return merry.Prepend(err, "port-forward is not established")
 	}
 
 	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам

@@ -26,6 +26,7 @@ const (
 // Externally avail constants
 const (
 	ResourcePodName           = "pods"
+	ResourceService           = "svc"
 	ResourceDefaultNamespace  = "default"
 	SubresourcePortForwarding = "portforward"
 	SubresourceExec           = "exec"

@@ -63,9 +63,17 @@ func (fc *foundationCluster) Deploy() (err error) {
 		return merry.Prepend(err, "get target pod list")
 	}
 
+	printPodContainers := func(pod *v1.Pod) {
+		for _, c := range pod.Spec.Containers {
+			llog.Debugf("\tfound (%s, `%s`, '%s') container in pod '%s'",
+				c.Name, strings.Join(c.Args, " "), strings.Join(c.Command, " "), pod.Name)
+		}
+		llog.Debug("\t---------------------\n\n")
+	}
 	for i := 0; i < len(podList.Items); i++ {
 		pod := podList.Items[i]
 		llog.Debugf("examining pod: '%s'/'%s'", pod.Name, pod.GenerateName)
+		printPodContainers(&pod)
 
 		if strings.HasPrefix(pod.Name, foundationClusterClientName) {
 			llog.Infof("foundationdb main pod is '%s'", pod.Name)
