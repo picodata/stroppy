@@ -15,7 +15,7 @@ func createDummyClient(wd string) (cc Client, err error) {
 		wd: wd,
 	}
 
-	llog.Infof("local shell client created")
+	llog.Infof("dummy (local) shell client created")
 	cc = c
 	return
 }
@@ -33,7 +33,7 @@ func (dc *dummyClient) GetPrivateKeyInfo() (string, string) {
 	return "no-object", "/no/object"
 }
 
-// Обьект - сессия
+// createDummySession создает фиктивную (локальную) сессию
 func createDummySession(wd string) (session *dummySession) {
 	session = &dummySession{
 		wd:      wd,
@@ -51,12 +51,10 @@ type dummySession struct {
 }
 
 func (ds *dummySession) CombinedOutput(text string) (output []byte, err error) {
-	if ds.cmd != nil {
-		_ = ds.Close()
-	}
-
 	ds.cmdLock.Lock()
 	defer ds.cmdLock.Unlock()
+
+	_ = ds.close()
 
 	ds.cmd = exec.Command(text)
 	ds.cmd.Dir = ds.wd
@@ -71,25 +69,30 @@ func (ds *dummySession) CombinedOutput(text string) (output []byte, err error) {
 }
 
 func (ds *dummySession) StdoutPipe() (stdout io.Reader, err error) {
+	ds.cmdLock.Lock()
+	defer ds.cmdLock.Unlock()
+
 	if ds.cmd == nil {
 		err = errors.New("no process")
 		return
 	}
-
-	ds.cmdLock.Lock()
-	defer ds.cmdLock.Unlock()
 
 	stdout, err = ds.cmd.StdoutPipe()
 	return
 }
 
 func (ds *dummySession) Close() (_ error) {
+	ds.cmdLock.Lock()
+	defer ds.cmdLock.Unlock()
+
+	_ = ds.close()
+	return
+}
+
+func (ds *dummySession) close() (_ error) {
 	if ds.cmd == nil {
 		return
 	}
-
-	ds.cmdLock.Lock()
-	defer ds.cmdLock.Unlock()
 
 	if err := ds.cmd.Process.Kill(); err != nil {
 		llog.Warnf("failed to kill process '%s', pid %d on directory '%s': %v",
