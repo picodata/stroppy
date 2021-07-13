@@ -38,7 +38,7 @@ func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
 		kubernetesMasterAddress,
 		settings.DeploySettings.Provider,
-		settings.Local)
+		settings.UseChaos)
 	if err != nil {
 		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
 		return

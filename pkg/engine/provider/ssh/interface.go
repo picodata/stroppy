@@ -13,11 +13,11 @@ type Client interface {
 	GetPrivateKeyInfo() (string, string)
 }
 
-func CreateClient(wd, address, provider string, isLocal bool) (c Client, err error) {
-	if isLocal {
-		c, err = createDummyClient(wd)
-	} else {
+func CreateClient(wd, address, provider string, isRemote bool) (c Client, err error) {
+	if isRemote {
 		c, err = createClient(wd, address, provider)
+	} else {
+		c, err = createDummyClient(wd)
 	}
 
 	return
