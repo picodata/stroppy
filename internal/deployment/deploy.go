@@ -181,6 +181,10 @@ func (d *Deployment) Deploy() (err error) {
 
 	defer d.k.Stop()
 
+	if err = d.k.AddNetworkStorages(d.settings.DeploySettings.Nodes, d.settings.DeploySettings.Provider); err != nil {
+		return merry.Prepend(err, "failed to add network storages")
+	}
+
 	d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory, d.settings.UseChaos)
 	if err = d.chaosMesh.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to deploy and start chaos")

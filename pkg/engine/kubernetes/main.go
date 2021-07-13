@@ -133,7 +133,4 @@ func (k *Kubernetes) GetResourceURL(resource, namespace, name, subresource strin
 func (k *Kubernetes) Stop() {
 	defer k.sshTunnel.Tunnel.Close()
 	llog.Infoln("status of ssh tunnel close: success")
-
-	// defer k.portForward.Tunnel.Close()
-	// llog.Infoln("status of port-forward's close: success")
 }

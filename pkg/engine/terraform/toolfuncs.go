@@ -1,15 +1,11 @@
 package terraform
 
 import (
-	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"reflect"
 
 	"github.com/ansel1/merry"
-	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
 
 func GetAddressMap(wd, provider string) (mapIP *MapAddresses, err error) {
@@ -161,69 +157,4 @@ func getAddressMap(stateFilePath, provider string) (mapIP *MapAddresses, err err
 	}
 
 	return
-}
-
-func GetIQNStorage(wd string, workersCount int) (iqnMap map[string]string, err error) {
-
-	stateFilePath := filepath.Join(wd, stateFileName)
-	var data []byte
-
-	if data, err = ioutil.ReadFile(stateFilePath); err != nil {
-		err = merry.Prepend(err, "failed to read file terraform.tfstate")
-		return
-	}
-
-	iqnMap = make(map[string]string)
-	masterInstance := "instances.0"
-	iqnMap["master"] = gjson.Parse(string(data)).Get("resources.9").Get(masterInstance).Get("attributes").Get("iqn").Str
-
-	for i := 1; i <= workersCount; i++ {
-		workerInstance := fmt.Sprintf("instances.%v", i)
-		worker := fmt.Sprintf("worker-%v", i)
-		iqnMap[worker] = gjson.Parse(string(data)).Get("resources.9").Get(workerInstance).Get("attributes").Get("iqn").Str
-	}
-
-	return iqnMap, nil
-
-}
-
-func AddNetworkStorage(wd string, nodes int, addressMap MapAddresses, provider string) error {
-
-	iqnMap, err := GetIQNStorage(wd, nodes)
-	if err != nil {
-		return merry.Prepend(err, "failed to get IQNs map")
-	}
-
-	//временное решение до перехода на поддержку динамического кол-ва нод
-	var addressArray []string
-	addressMapData := reflect.ValueOf(addressMap)
-	for i := 0; i < addressMapData.NumField(); i++ {
-		addressArray = append(addressArray, addressMapData.Field(i).Interface().(string))
-	}
-
-	// добавить добавление storage на мастер
-	for i := range addressArray {
-		client, err := engineSsh.CreateClient(wd, addressArray[i], provider, false)
-		if err != nil {
-			return merry.Prepend(err, "failed to create ssh client")
-		}
-
-		session, err := client.GetNewSession()
-		if err != nil {
-			return merry.Prepend(err, "failed to get ssh session")
-		}
-
-		worker := fmt.Sprintf("worker-%v", i+1)
-
-		addStorageCmd := fmt.Sprintf(addStorageCmdTemplate, iqnMap[worker], iqnMap[worker], iqnMap[worker])
-
-		cmdResult, err := session.CombinedOutput(addStorageCmd)
-		if err != nil {
-			llog.Errorf(string(cmdResult))
-			return merry.Prepend(err, "failed to get ssh session")
-		}
-
-	}
-
-	return nil
 }
