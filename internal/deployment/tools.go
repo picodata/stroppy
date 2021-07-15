@@ -20,7 +20,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 	}
 
 	payTestCommand := []string{
-		"./root/stroppy", "pay",
+		"/root/stroppy", "pay",
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--check",
 		"--count", fmt.Sprintf("%v", settings.Count),
@@ -60,7 +60,7 @@ func (d *Deployment) executePop(_ string) error {
 	// d.payload.UpdateSettings(settings)
 
 	popTestCommand := []string{
-		"./root/stroppy", "pop",
+		"/root/stroppy", "pop",
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
