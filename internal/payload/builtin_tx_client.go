@@ -71,8 +71,11 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
-			if errors.Is(err, cluster.ErrTxRollback) || errors.Is(err, fdb.Error{
+			// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
+			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 				Code: 1037,
+			}) || errors.Is(err, fdb.Error{
+				Code: 1009,
 			}) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 

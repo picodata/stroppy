@@ -77,8 +77,11 @@ func (p *BasePayload) Pop(_ string) (err error) {
 					}
 					atomic.AddUint64(&stats.errors, 1)
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
+					// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
 					if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 						Code: 1037,
+					}) || errors.Is(err, fdb.Error{
+						Code: 1009,
 					}) {
 						llog.Errorf("Retrying after request error: %v", err)
 						time.Sleep(time.Millisecond)
