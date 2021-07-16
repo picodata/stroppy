@@ -16,7 +16,7 @@ ip_array=($(echo $ip_string | tr ";" "\n"))
 
 for theme in "light" "dark"
 do
-    for size in  "width=1000&height=500" 
+    for size in "width=3000&height=1800" "width=1000&height=500"
     do
         mkdir -p "png/$size/$theme/node-exporter"
         mkdir -p "png/$size/$theme/k8s"
@@ -65,5 +65,6 @@ do
 done
 
 mv 'png/width=1000&height=500'  png/1000x500
+mv 'png/width=3000&height=1800' png/3000x1800
 
 tar cfvz $arch_name png
