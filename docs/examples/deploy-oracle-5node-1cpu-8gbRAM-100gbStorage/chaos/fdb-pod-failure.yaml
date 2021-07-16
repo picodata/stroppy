@@ -1,0 +1,25 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: foundation-pay-pod-failure
+  namespace: default
+  labels: null
+  annotations:
+    experiment.chaos-mesh.org/pause: 'true'
+spec:
+  selector:
+    namespaces:
+      - default
+    pods:
+      default:
+        - sample-cluster-storage-1
+        - sample-cluster-storage-2
+        - sample-cluster-storage-3
+  scheduler:
+    cron: '*/2 * * * *'
+  action: pod-failure
+  mode: one
+  value: ''
+  duration: 10s
+  containerName: ''
+  gracePeriod: 0

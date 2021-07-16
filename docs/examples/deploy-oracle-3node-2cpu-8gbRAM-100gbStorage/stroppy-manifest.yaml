@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: stroppy-client
+  namespace: default
+spec:
+  containers:
+  - name: stroppy-client
+    image: registry.gitlab.com/picodata/openway/stroppy:latest
+    command: ["/bin/sleep"]
+    args: [ "infinity" ]
+  imagePullSecrets:
+  - name: stroppy-secret
+  
