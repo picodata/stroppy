@@ -169,11 +169,15 @@ func (t *Terraform) deleteTfstateFiles() {
 // Destroy - уничтожить кластер
 func (t *Terraform) Destroy() error {
 	var destroyCmd *exec.Cmd
-
-	if t.version.major >= 0 && t.version.minor >= 15 && t.version.bugfix > 2 {
-		destroyCmd = exec.Command("terraform", "apply", "-destroy")
+	// https://github.com/hashicorp/terraform/releases/tag/v0.15.2
+	if t.version.major == 0 {
+		if t.version.minor <= 15 {
+			if t.version.bugfix < 2 {
+				destroyCmd = exec.Command("terraform", "destroy", "-force")
+			}
+		}
 	} else {
-		destroyCmd = exec.Command("terraform", "destroy", "-force")
+		destroyCmd = exec.Command("terraform", "apply", "-destroy")
 	}
 	destroyCmd.Dir = t.WorkDirectory
 
