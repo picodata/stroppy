@@ -9,7 +9,6 @@ import (
 	"strings"
 	"time"
 
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -17,6 +16,7 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -227,26 +227,16 @@ func (k Kubernetes) getIQNStorage(workersCount int) (iqnMap map[string]string, e
 
 }
 
-func (k Kubernetes) IsExistEntity(address string, checkCommand string, checkString string) (bool, error) {
-	client, err := engineSsh.CreateClient(k.workingDirectory, address, k.provider, false)
-	if err != nil {
-		return false, merry.Prepend(err, "failed to create ssh client for check exist file system")
+func (k Kubernetes) IsExistEntity(address string, checkCommand string, checkString string) (checkResult bool, err error) {
+	var CmdResult []byte
+	if CmdResult, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, address, checkCommand, k.provider); err != nil {
+		if err != nil {
+			errorMessage := fmt.Sprintf("failed to execute command on worker %v", address)
+			return false, merry.Prepend(err, errorMessage)
+		}
 	}
 
-	var commandSessionObject engineSsh.Session
-
-	if commandSessionObject, err = client.GetNewSession(); err != nil {
-		return false, merry.Prepend(err, "failed to get ssh session for check exist file system")
-	}
-
-	defer commandSessionObject.Close()
-
-	var result []byte
-	if result, err = commandSessionObject.CombinedOutput(checkCommand); err != nil {
-		return false, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
-	}
-
-	if strings.Contains(string(result), checkString) {
+	if strings.Contains(string(CmdResult), checkString) {
 		llog.Infoln("entity already exist or parted")
 		return true, nil
 	}
@@ -297,7 +287,7 @@ func (k Kubernetes) AddNetworkStorages(nodes int, provider string) error {
 
 		if !ok {
 
-			if err = k.ExecuteCommandWorker(addressArray[i], targetLoginCmd); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, addressArray[i], targetLoginCmd, k.provider); err != nil {
 				errorMessage := fmt.Sprintf("additional storage is not mounted to %v", worker)
 				return merry.Prepend(err, errorMessage)
 			}
@@ -312,7 +302,7 @@ func (k Kubernetes) AddNetworkStorages(nodes int, provider string) error {
 
 		if !ok {
 
-			if err = k.ExecuteCommandWorker(addressArray[i], partedVolumeCmd); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, addressArray[i], partedVolumeCmd, k.provider); err != nil {
 				errorMessage := fmt.Sprintf("failed to execute commands for additional storage partitioning %v", worker)
 				return merry.Prepend(err, errorMessage)
 			}
@@ -326,7 +316,7 @@ func (k Kubernetes) AddNetworkStorages(nodes int, provider string) error {
 		}
 
 		if !ok {
-			if err = k.ExecuteCommandWorker(addressArray[i], createfileSystemCmd); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, addressArray[i], createfileSystemCmd, k.provider); err != nil {
 				errorMessage := fmt.Sprintf("failed to execute commands for create additional storage file system %v", worker)
 				return merry.Prepend(err, errorMessage)
 			}
@@ -341,13 +331,13 @@ func (k Kubernetes) AddNetworkStorages(nodes int, provider string) error {
 
 		if !ok {
 
-			if err = k.ExecuteCommandWorker(addressArray[i], addDirectoryCmdTemplate); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, addressArray[i], addDirectoryCmdTemplate, k.provider); err != nil {
 				errorMessage := fmt.Sprintf("failed to execute commands for add directory to %v", worker)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Added directory /opt/local-path-provisioner/: success")
 
-			if err = k.ExecuteCommandWorker(addressArray[i], mountLocalPathTemplate); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(k.workingDirectory, addressArray[i], mountLocalPathTemplate, k.provider); err != nil {
 				errorMessage := fmt.Sprintf("failed to mount disk to /opt/local-path-provisioner/ %v", worker)
 				return merry.Prepend(err, errorMessage)
 			}

@@ -39,27 +39,6 @@ func (k *Kubernetes) ExecuteF(text string, args ...interface{}) (err error) {
 	return
 }
 
-func (k *Kubernetes) ExecuteCommandWorker(address string, text string) (err error) {
-	client, err := engineSsh.CreateClient(k.workingDirectory, address, k.provider, false)
-	if err != nil {
-		return merry.Prepend(err, "failed to create ssh client")
-	}
-
-	var commandSessionObject engineSsh.Session
-
-	if commandSessionObject, err = client.GetNewSession(); err != nil {
-		return merry.Prepend(err, "failed to get ssh session")
-	}
-
-	defer commandSessionObject.Close()
-
-	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
-		return merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
-	}
-	return
-
-}
-
 func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
 	var config *rest.Config
 	if config, err = k.getKubeConfig(); err != nil {

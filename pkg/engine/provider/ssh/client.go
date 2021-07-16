@@ -106,3 +106,24 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 func (sc *client) GetPrivateKeyInfo() (string, string) {
 	return sc.keyFileName, sc.keyFilePath
 }
+
+func ExecuteCommandWorker(workingDirectory string, address string, text string, provider string) (result []byte, err error) {
+	client, err := CreateClient(workingDirectory, address, provider, false)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to create ssh client")
+	}
+
+	var commandSessionObject Session
+
+	if commandSessionObject, err = client.GetNewSession(); err != nil {
+		return nil, merry.Prepend(err, "failed to get ssh session")
+	}
+
+	defer commandSessionObject.Close()
+
+	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
+		return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
+	}
+	return
+
+}

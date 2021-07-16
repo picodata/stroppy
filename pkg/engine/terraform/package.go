@@ -83,6 +83,11 @@ type version struct {
 	bugfix int
 }
 
+type Provider interface {
+	Prepare()
+	PerformAdditionalOps()
+}
+
 // GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 	var _map *MapAddresses
