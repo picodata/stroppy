@@ -179,33 +179,3 @@ echo 'change owner for /var/run/docker.sock'
 const (
 	dockerRepLoginCmd = "docker login -u stroppy_deploy -p k3xG2_xe_SDjyYDREML3 registry.gitlab.com"
 )
-
-const (
-	targetLoginCmdTemplate = `
-sudo iscsiadm -m node -o new -T %v -p 169.254.2.2:3260
-sudo iscsiadm -m node -o update -T %v -n node.startup -v automatic
-sudo iscsiadm -m node -T %v -p 169.254.2.2:3260 -l
-sleep 5
-`
-
-	partedVolumeCmd = `
-sudo parted /dev/sdb mklabel gpt
-sudo parted -a optimal /dev/sdb mkpart primary ext4 0% 100%
-`
-
-	checkExistFileSystemCmd = "sudo file -sL /dev/sdb1 | grep -Eo 'ext4'"
-
-	checkAdddedDiskCmd = "file /dev/sdb"
-
-	checkPartedCmd = "sudo parted -l | grep 'ext4' | grep 'primary'"
-
-	checkMountCmd = "df -h| grep  '/opt/local-path-provisioner'"
-
-	createfileSystemCmd = "sudo mkfs.ext4 /dev/sdb1"
-
-	addDirectoryCmdTemplate = "sudo mkdir -p /opt/local-path-provisioner/"
-
-	mountLocalPathTemplate = "sudo mount /dev/sdb1 /opt/local-path-provisioner/"
-
-	terraformStateFileName = "terraform.tfstate"
-)

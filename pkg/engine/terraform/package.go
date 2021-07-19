@@ -3,7 +3,6 @@ package terraform
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gopkg.in/yaml.v2"
 )
 
 // размер ответа terraform show при незапущенном кластере
@@ -72,20 +70,10 @@ type Terraform struct {
 	version version
 }
 
-type TemplatesConfig struct {
-	Yandex Configurations
-	Oracle Configurations
-}
-
 type version struct {
 	major  int
 	minor  int
 	bugfix int
-}
-
-type Provider interface {
-	Prepare()
-	PerformAdditionalOps()
 }
 
 // GetAddressMap - получить структуру с адресами кластера
@@ -102,18 +90,19 @@ func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 }
 
 func (t *Terraform) Run() error {
-	templatesConfig, err := t.readTemplates()
-	if err != nil {
-		return merry.Prepend(err, "failed to read templates.yml")
-	}
 
-	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform (пока yandex)
-	err = t.prepare(*templatesConfig, t.settings)
-	if err != nil {
-		return merry.Prepend(err, "failed to prepare terraform")
-	}
+	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform
 
-	err = t.init()
+	/*	switch t.settings.Provider{
+		case yandexProvider:
+
+			err := provider.Provider.Prepare(t.WorkDirectory)
+			if err != nil {
+				return merry.Prepend(err, "failed to prepare terraform")
+			}
+		}*/
+
+	err := t.init()
 	if err != nil {
 		return merry.Prepend(err, "failed to init terraform")
 	}
@@ -203,21 +192,6 @@ func (t *Terraform) Destroy() error {
 	return nil
 }
 
-func (t *Terraform) readTemplates() (*TemplatesConfig, error) {
-	var templatesConfig TemplatesConfig
-	data, err := ioutil.ReadFile(t.templatesFilePath)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to read templates.yaml")
-	}
-
-	err = yaml.Unmarshal(data, &templatesConfig)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to unmarshall templates.yaml")
-	}
-
-	return &templatesConfig, nil
-}
-
 func (t *Terraform) getTerraformVersion() (version, error) {
 	var installedVersion version
 	getVersionCMD, err := exec.Command("terraform", "version").Output()
@@ -245,97 +219,6 @@ func (t *Terraform) getTerraformVersion() (version, error) {
 	}
 
 	return installedVersion, nil
-}
-
-func getCPUCount(templateConfig []ConfigurationUnitParams) int {
-	cpuCount := templateConfig[2].CPU
-	return cpuCount
-}
-
-func getRAMSize(templateConfig []ConfigurationUnitParams) int {
-	ramSize := templateConfig[3].RAM
-	return ramSize
-}
-
-func getDiskSize(templateConfig []ConfigurationUnitParams) int {
-	diskSize := templateConfig[4].Disk
-	return diskSize
-}
-
-func getPlatform(templateConfig []ConfigurationUnitParams) string {
-	platform := templateConfig[1].Platform
-	return platform
-}
-
-// prepare
-// создать конфигурационный файл провайдера
-func (t *Terraform) prepare(templatesConfig TemplatesConfig, settings *config.DeploySettings) error {
-	var templatesInit []ConfigurationUnitParams
-
-	switch settings.Provider {
-	case "yandex":
-		switch settings.Flavor {
-		case "small":
-			templatesInit = templatesConfig.Yandex.Small
-		case "standard":
-			templatesInit = templatesConfig.Yandex.Standard
-		case "large":
-			templatesInit = templatesConfig.Yandex.Large
-		case "xlarge":
-			templatesInit = templatesConfig.Yandex.Xlarge
-		case "xxlarge":
-			templatesInit = templatesConfig.Yandex.Xxlarge
-		default:
-			return merry.Wrap(errChooseConfig)
-		}
-
-	case "oracle":
-		switch settings.Flavor {
-		case "small":
-			templatesInit = templatesConfig.Oracle.Small
-		case "standard":
-			templatesInit = templatesConfig.Oracle.Standard
-		case "large":
-			templatesInit = templatesConfig.Oracle.Large
-		case "xlarge":
-			templatesInit = templatesConfig.Oracle.Xlarge
-		case "xxlarge":
-			templatesInit = templatesConfig.Oracle.Xxlarge
-		default:
-			return merry.Wrap(errChooseConfig)
-		}
-	default:
-		return merry.Wrap(errChooseProvider)
-	}
-
-	cpuCount := getCPUCount(templatesInit)
-
-	ramSize := getRAMSize(templatesInit)
-
-	diskSize := getDiskSize(templatesInit)
-
-	platform := getPlatform(templatesInit)
-
-	switch settings.Provider {
-	default:
-		return merry.Errorf("unknown provider '%s'", settings.Provider)
-
-	case "yandex":
-		err := PrepareYandex(cpuCount, ramSize,
-			diskSize, settings.Nodes, platform, t.WorkDirectory)
-		if err != nil {
-			return merry.Wrap(err)
-		}
-
-	case "oracle":
-		err := PrepareOracle(cpuCount, ramSize,
-			diskSize, settings.Nodes, t.WorkDirectory)
-		if err != nil {
-			return merry.Wrap(err)
-		}
-	}
-
-	return nil
 }
 
 func (t *Terraform) collectInternalExternalAddressMap() (mapIP *MapAddresses, err error) {

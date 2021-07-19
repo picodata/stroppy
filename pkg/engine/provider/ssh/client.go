@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 
 	llog "github.com/sirupsen/logrus"
 
@@ -126,4 +127,22 @@ func ExecuteCommandWorker(workingDirectory string, address string, text string, 
 	}
 	return
 
+}
+
+func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {
+	var CmdResult []byte
+	if CmdResult, err = ExecuteCommandWorker(workingDirectory, address, checkCommand, provider); err != nil {
+		if err != nil {
+			errorMessage := fmt.Sprintf("failed to execute command on worker %v", address)
+			return false, merry.Prepend(err, errorMessage)
+		}
+	}
+
+	if strings.Contains(string(CmdResult), checkString) {
+		llog.Infoln("entity already exist or parted")
+		return true, nil
+	}
+
+	llog.Infoln("entity has not been exist yet")
+	return false, nil
 }
