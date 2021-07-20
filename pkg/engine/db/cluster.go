@@ -1,7 +1,6 @@
 package db
 
 import (
-	"errors"
 	"os/exec"
 
 	v1 "k8s.io/api/core/v1"
@@ -11,8 +10,6 @@ type Status string
 
 const ExecTimeout = 20
 
-var ErrorPodsNotFound = errors.New("one of pods is not found")
-
 type ClusterSpec struct {
 	MainPod *v1.Pod
 	Pods    []*v1.Pod
@@ -20,8 +17,6 @@ type ClusterSpec struct {
 
 type Cluster interface {
 	Deploy() error
-	OpenPortForwarding() error
-	GetStatus() error
 	GetSpecification() ClusterSpec
 }
 

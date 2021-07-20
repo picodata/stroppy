@@ -23,7 +23,7 @@ import (
 func (k *Kubernetes) OpenPortForward(caller string, ports []string, reqURL *url.URL,
 	stopPortForward chan struct{}) (err error) {
 
-	llog.Printf("Opening port-forward for %s...\n", caller)
+	llog.Debugf("opening port-forward for %s, with url `%s`", caller, reqURL.String())
 
 	var kubeConfig *rest.Config
 	if kubeConfig, err = k.getKubeConfig(); err != nil {

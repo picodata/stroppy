@@ -135,8 +135,10 @@ func (d *Deployment) readCommandFromInput(portForwarding *engineSsh.Result) (err
 					d.chaosMesh.Stop()
 				}
 
+			case "\n":
+
 			default:
-				llog.Infof("You entered: %v. Expected quit \n", command)
+				llog.Warnf("You entered unknown command '%s'. To exit enter quit", command)
 			}
 			break
 		}
@@ -159,10 +161,14 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
+	commandClientType := engineSsh.RemoteClient
+	if d.settings.Local {
+		commandClientType = engineSsh.LocalClient
+	}
 	d.sc, err = engineSsh.CreateClient(d.workingDirectory,
 		addressMap.MasterExternalIP,
 		deploySettings.Provider,
-		d.settings.Local)
+		commandClientType)
 	if err != nil {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
@@ -209,14 +215,6 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prependf(err, "'%s' database deploy failed", dbtype)
 	}
 	llog.Infof("'%s' database deployed successfully\n", dbtype)
-
-	if err = _cluster.GetStatus(); err != nil {
-		return merry.Prepend(err, "failed to check deploy of postgres")
-	}
-
-	if err = _cluster.OpenPortForwarding(); err != nil {
-		return merry.Prependf(err, "'%s' failed to open port-forward channel", dbtype)
-	}
 
 	log.Printf(interactiveUsageHelpTemplate, portForward.Port, port)
 

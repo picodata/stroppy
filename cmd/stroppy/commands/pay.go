@@ -47,15 +47,19 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 	payCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Count,
 		"count", "n", settings.DatabaseSettings.Count,
 		"Number of transfers to make")
+
 	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.ZIPFian,
 		"zipfian", "z", settings.DatabaseSettings.ZIPFian,
 		"Use zipfian distribution for payments")
+
 	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Oracle,
 		"oracle", "o", settings.DatabaseSettings.Oracle,
 		"Check all payments against the built-in oracle.")
+
 	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Check,
 		"check", "", settings.DatabaseSettings.Check,
 		"Check the final balance to match the original one (set to false if benchmarking).")
+
 	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.UseCustomTx,
 		"tx", "t", settings.DatabaseSettings.UseCustomTx,
 		"Use custom implementation of atomic transactions (workaround for dbs without built-in ACID transactions).")

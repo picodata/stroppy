@@ -1,12 +1,11 @@
 package db
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"time"
 
+	kuberv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -16,20 +15,7 @@ import (
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/scheme"
-)
-
-const runningPodStatus = "Running"
-
-const postgresClusterName = "acid-postgres-cluster-0"
-
-const (
-	maxNotFoundCount = 5
-
-	// nolint
-	successPostgresPodsCount = 3
 )
 
 func CreatePostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (pc Cluster) {
@@ -49,72 +35,42 @@ type postgresCluster struct {
 // Deploy
 // разворачивает postgres в кластере
 func (pc *postgresCluster) Deploy() (err error) {
-	err = pc.commonCluster.deploy()
-	return
-}
-
-func (pc *postgresCluster) OpenPortForwarding() error {
-	return pc.openPortForwarding(postgresClusterName, []string{"6432:5432"})
-}
-
-// GetStatus проверить, что все поды postgres в running
-func (pc *postgresCluster) GetStatus() error {
-	llog.Infoln("Checking of deploy postgres...")
-
-	clientSet, err := pc.k.GetClientSet()
-	if err != nil {
-		return merry.Prepend(err, "failed to get clienset for check deploy of postgres")
+	if err = pc.commonCluster.deploy(); err != nil {
+		return merry.Prepend(err, "deploy")
 	}
+
+	llog.Debugln("Checking of deploy postgres...")
 
 	var postgresPodsCount int64
 	if postgresPodsCount, err = pc.getPostgresPodsCount(); err != nil {
 		return merry.Prepend(err, "failed to get postgres pods count")
 	}
 
-	var successPodsCount int64
-	var notFoundCount int64
-	for successPodsCount < postgresPodsCount && notFoundCount < maxNotFoundCount {
-		llog.Infof("waiting for checking %v seconds...\n", ExecTimeout)
-		time.Sleep(ExecTimeout * time.Second)
+	const postgresPodNameTemplate = "acid-postgres-cluster-%d"
+	for i := int64(0); i < postgresPodsCount; i++ {
+		podName := fmt.Sprintf(postgresPodNameTemplate, i)
 
-		podNumber := fmt.Sprintf("acid-postgres-cluster-%d", successPodsCount)
-		acidPostgresZeroPod, err := clientSet.CoreV1().Pods("default").Get(context.TODO(),
-			podNumber, metav1.GetOptions{
-				TypeMeta:        metav1.TypeMeta{},
-				ResourceVersion: "",
-			})
-		switch {
-		case k8s_errors.IsNotFound(err):
-			llog.Infof("Pod %v not found in default namespace\n", podNumber)
-			notFoundCount++
-
-		case k8s_errors.IsInternalError(err):
-			internalErrorString := fmt.Sprintf("internal error in pod %v\n", podNumber)
-			return merry.Prepend(err, internalErrorString)
-
-		case err != nil:
-			unknownErrorString := fmt.Sprintf("unknown error getting pod %v", podNumber)
-			return merry.Prepend(err, unknownErrorString)
-
-		default:
-			llog.Infof("Found pod %v in default namespace\n", podNumber)
+		var targetPod *kuberv1.Pod
+		targetPod, err = pc.k.WaitPod(podName, kubernetes.ResourceDefaultNamespace,
+			kubernetes.PodWaitingWaitCreation, kubernetes.PodWaitingTime10Minutes)
+		if err != nil {
+			err = merry.Prepend(err, "waiting")
+			return
 		}
 
-		llog.Infof("status of pod %v: %v\n", podNumber, acidPostgresZeroPod.Status.Phase)
-		// Status.Phase - текущий статус пода
-		if acidPostgresZeroPod.Status.Phase == runningPodStatus {
-			// переходим к следующему поду и сбрасываем счетчик not found
-			successPodsCount++
-			notFoundCount = 0
+		pc.clusterSpec.Pods = append(pc.clusterSpec.Pods, targetPod)
+		if i == 0 {
+			pc.clusterSpec.MainPod = targetPod
 		}
-
 	}
 
-	if notFoundCount >= maxNotFoundCount {
-		return ErrorPodsNotFound
-	}
+	err = pc.openPortForwarding(pc.clusterSpec.MainPod.Name, []string{"6432:5432"})
+	return
+}
 
-	return nil
+func (pc *postgresCluster) GetSpecification() (spec ClusterSpec) {
+	spec = pc.clusterSpec
+	return
 }
 
 // getPostgresPodsCount возвращает кол-во подов postgres, которые должны быть созданы
@@ -139,9 +95,4 @@ func (pc *postgresCluster) getPostgresPodsCount() (int64, error) {
 
 	podsCount := int64(postgresSQLConfig.Spec.NumberOfInstances)
 	return podsCount, nil
-}
-
-func (pc *postgresCluster) GetSpecification() (spec ClusterSpec) {
-	spec = pc.clusterSpec
-	return
 }

@@ -40,7 +40,7 @@ func getPrivateKeyFileName(provider string, workingDirectory string) (privateKey
 	return
 }
 
-func createClient(wd, address, provider string) (cc Client, err error) {
+func createSshClient(wd, address, provider string) (cc Client, err error) {
 	c := &client{
 		workingDirectory: wd,
 		provider:         provider,

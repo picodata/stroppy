@@ -23,9 +23,10 @@ const (
 	connectionRetryCount = 3
 )
 
-var errPortCheck = errors.New("port Check failed")
-
-var errProviderChoice = errors.New("selected provider not found")
+var (
+	errPortCheck      = errors.New("port Check failed")
+	errProviderChoice = errors.New("selected provider not found")
+)
 
 func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
@@ -34,11 +35,12 @@ func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 		return
 	}
 
+	commandClientType := engineSsh.RemoteClient
 	var sc engineSsh.Client
 	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
 		kubernetesMasterAddress,
 		settings.DeploySettings.Provider,
-		settings.UseChaos)
+		commandClientType)
 	if err != nil {
 		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
 		return

@@ -3,8 +3,7 @@ package chaos
 const (
 	chaosNamespace             = "chaos-testing"
 	chaosDashboardResourceName = "chaos-dashboard"
-
-	chaosSshEntity = "chaos"
+	chaosControlManagerName    = "chaos-controller-manager"
 
 	deployChaosMesh = `
 helm repo add chaos-mesh https://charts.chaos-mesh.org

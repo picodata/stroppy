@@ -1,9 +1,13 @@
 package chaos
 
 import (
+	"errors"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
+
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -31,6 +35,8 @@ type workableController struct {
 	runningScenariosLock sync.Mutex
 
 	portForwardStopChan chan struct{}
+
+	controllerPod, dashboardPod *v1.Pod
 }
 
 func (chaos *workableController) Deploy() (err error) {
@@ -41,24 +47,60 @@ func (chaos *workableController) Deploy() (err error) {
 	}
 	llog.Debugln("chaos-mesh prepared successfully")
 
+	var pods []v1.Pod
+	if pods, err = chaos.k.ListPods(chaosNamespace); err != nil {
+		return
+	}
+
+	for i := 0; i < len(pods); i++ {
+		pod := pods[i]
+		llog.Debugf("examining pod: '%s'/'%s'", pod.Name, pod.GenerateName)
+
+		if strings.HasPrefix(pod.Name, chaosDashboardResourceName) {
+			chaos.dashboardPod = pod.DeepCopy()
+			llog.Infof("chaos dashboard pod is '%s'", pod.Name)
+		} else if strings.HasPrefix(pod.Name, chaosControlManagerName) {
+			chaos.controllerPod = pod.DeepCopy()
+			llog.Infof("chaos control management pod is '%s'", pod.Name)
+		}
+	}
+
+	if chaos.dashboardPod == nil {
+		return errors.New("chaos dashboard pod not found")
+	}
+	if chaos.controllerPod == nil {
+		return errors.New("chaos control manager pod not found")
+	}
+
 	// прокидываем порты, что бы можно было открыть веб-интерфейс
 	var reqURL *url.URL
 	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourceService,
 		chaosNamespace,
-		chaosDashboardResourceName,
+		chaos.dashboardPod.Name,
 		kubernetes.SubresourcePortForwarding)
 	if err != nil {
 		return merry.Prepend(err, "failed to get url")
 	}
-	llog.Debugf("received next url for chaos port-forward: '%s'", reqURL.String())
 
-	_err := chaos.k.OpenPortForward(chaosDashboardResourceName,
+	err = chaos.k.OpenPortForward(chaos.dashboardPod.Name,
 		[]string{"2333:2333"},
 		reqURL,
 		chaos.portForwardStopChan)
-	if _err != nil {
-		llog.Warn(merry.Prepend(_err, "chaos dashboard port-forwarding"))
+	if err != nil {
 		// return merry.Prepend(err, "port-forward is not established")
+		err = nil
+	}
+
+	const rbacFileName = "rbac.yaml"
+	rbacFileSourcePath := filepath.Join(chaos.wd, ".config", rbacFileName)
+	rbacFileKubemasterPath := filepath.Join("/home/ubuntu", rbacFileName)
+	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath); err != nil {
+		return merry.Prepend(err, "rbac.yaml copying")
+	}
+
+	const rbacApplyCommand = "kubectl apply -f %s"
+	if err = chaos.k.ExecuteF(rbacApplyCommand, rbacFileKubemasterPath); err != nil {
+		return merry.Prepend(err, "apply rbac.yaml")
 	}
 
 	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам

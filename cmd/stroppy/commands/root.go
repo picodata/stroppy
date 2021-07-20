@@ -43,7 +43,7 @@ bandwidth along the way.`,
 
 	rootCmd.PersistentFlags().StringVarP(&settings.ChaosParameter,
 		"chaos-parameter", "c",
-		settings.ChaosParameter, "specify chaos parameter of in free form")
+		settings.ChaosParameter, "specify chaos parameter of an free form")
 
 	rootCmd.PersistentFlags().StringVarP(&settings.LogLevel,
 		"log-level", "v",
@@ -95,7 +95,8 @@ The default value of banRangeMultipluer is 1.1.`)
 
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),
-		newDeployCommand(settings))
+		newDeployCommand(settings),
+		newShellCommand(settings))
 
 	_ = rootCmd.Execute()
 }

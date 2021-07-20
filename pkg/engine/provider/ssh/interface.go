@@ -1,6 +1,9 @@
 package ssh
 
-import "io"
+import (
+	"fmt"
+	"io"
+)
 
 type Session interface {
 	CombinedOutput(string) ([]byte, error)
@@ -13,12 +16,27 @@ type Client interface {
 	GetPrivateKeyInfo() (string, string)
 }
 
-func CreateClient(wd, address, provider string, isRemote bool) (c Client, err error) {
-	if isRemote {
-		c, err = createClient(wd, address, provider)
-	} else {
-		c, err = createDummyClient(wd)
-	}
+type ClientType string
 
+const (
+	DummyClient  ClientType = "dummy"
+	LocalClient  ClientType = "local"
+	RemoteClient ClientType = "remote"
+)
+
+func CreateClient(wd, address, provider string, clientType ClientType) (c Client, err error) {
+	switch clientType {
+	case RemoteClient:
+		c, err = createSshClient(wd, address, provider)
+
+	case LocalClient:
+		c, err = createLocalClient(wd)
+
+	case DummyClient:
+		c, err = createDummyClient()
+
+	default:
+		err = fmt.Errorf("unknown client type '%v'", clientType)
+	}
 	return
 }

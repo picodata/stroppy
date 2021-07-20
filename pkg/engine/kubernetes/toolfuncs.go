@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -89,7 +91,9 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("failed to copy private key key onto master: %v %v \n", string(copyMasterCmdResult), err)
+			llog.Errorf("failed to copy private key file '%s' onto master: '%s', %v",
+				k.sshKeyFileName, string(copyMasterCmdResult), err)
+
 			copyPrivateKeyCmd = exec.Command("scp",
 				"-i", k.sshKeyFileName,
 				"-o", "StrictHostKeyChecking=no",
@@ -110,7 +114,19 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace string) (targetPod *v1.Pod, err error) {
+func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitTime time.Duration) (targetPod *v1.Pod, err error) {
+	const waitTimeQuantum = 10 * time.Second
+	if waitTime < waitTimeQuantum {
+		err = fmt.Errorf("input wait time %v (s) is less than quantum 10 seconds", waitTime.Seconds())
+		return
+	}
+
+	var clientSet *kubernetes.Clientset
+	if clientSet, err = k.GetClientSet(); err != nil {
+		err = merry.Prepend(err, "get client set")
+		return
+	}
+
 	targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
 		podName,
 		metav1.GetOptions{
@@ -118,12 +134,27 @@ func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace
 			ResourceVersion: "",
 		})
 	if err != nil {
+		if k8s_errors.IsNotFound(err) && creationWait {
+
+			creationWaitTime := waitTime
+			for k8s_errors.IsNotFound(err) && creationWaitTime > 0 {
+
+				creationWaitTime -= waitTimeQuantum
+				time.Sleep(waitTimeQuantum)
+
+				targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
+					podName,
+					metav1.GetOptions{
+						TypeMeta:        metav1.TypeMeta{},
+						ResourceVersion: "",
+					})
+			}
+
+		}
 		err = merry.Prepend(err, "get pod")
 		return
 	}
 
-	waitTime := 10 * time.Minute
-	const waitTimeQuantum = 10 * time.Second
 	for targetPod.Status.Phase != v1.PodRunning && waitTime > 0 {
 		targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
 			podName,
@@ -139,13 +170,12 @@ func (k *Kubernetes) WaitPod(clientSet *kubernetes.Clientset, podName, namespace
 		waitTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
-		llog.Debugf("WaitPod: pod status: %v\n",
-			k.StroppyPod.Status.Phase)
+		llog.Debugf("WaitPod: '%s' pod status: %v", targetPod.Name, targetPod.Status.Phase)
 	}
 
 	if targetPod.Status.Phase != v1.PodRunning {
 		err = merry.Errorf("pod still not running, 5 minutes left, current status: '%v",
-			k.StroppyPod.Status.Phase)
+			targetPod.Status.Phase)
 		return
 	}
 

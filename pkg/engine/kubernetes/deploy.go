@@ -103,7 +103,9 @@ func (k *Kubernetes) DeployStroppy() error {
 
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
 	if k.StroppyPod.Status.Phase != v1.PodRunning {
-		if k.StroppyPod, err = k.WaitPod(clientSet, stroppyPodName, ResourceDefaultNamespace); err != nil {
+		k.StroppyPod, err = k.WaitPod(stroppyPodName, ResourceDefaultNamespace,
+			PodWaitingNotWaitCreation, PodWaitingTime10Minutes)
+		if err != nil {
 			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}
@@ -207,23 +209,28 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 	masterExternalIP := k.addressMap.MasterExternalIP
 
+	commandClientType := engineSsh.RemoteClient
+	if k.sessionIsLocal {
+		commandClientType = engineSsh.LocalClient
+	}
 	sshClient, err := engineSsh.CreateClient(k.workingDirectory,
 		masterExternalIP,
 		k.provider,
-		k.sessionIsLocal)
+		commandClientType)
 	if err != nil {
 		return false, merry.Prependf(err, "failed to establish ssh client to '%s' address", masterExternalIP)
 	}
 
-	checkSession, err := sshClient.GetNewSession()
-	if err != nil {
+	var checkSession engineSsh.Session
+	if checkSession, err = sshClient.GetNewSession(); err != nil {
 		return false, merry.Prepend(err, "failed to open ssh connection for Check deploy")
 	}
+	defer checkSession.Close()
 
 	const checkCmd = "kubectl get pods --all-namespaces"
-	resultCheckCmd, err := checkSession.CombinedOutput(checkCmd)
-	if err != nil {
-		//nolint:errorlint
+
+	var resultCheckCmd []byte
+	if resultCheckCmd, err = checkSession.CombinedOutput(checkCmd); err != nil {
 		e, ok := err.(*ssh.ExitError)
 		if !ok {
 			return false, merry.Prepend(err, "failed сheck deploy k8s")
@@ -234,12 +241,11 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 		}
 	}
 
-	countPods := strings.Count(string(resultCheckCmd), "Running")
+	countPods := strings.Count(string(resultCheckCmd), string(v1.PodRunning))
 	if countPods < runningPodsCount {
 		return false, nil
 	}
 
-	_ = checkSession.Close()
 	return true, nil
 }
 

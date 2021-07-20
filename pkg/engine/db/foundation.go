@@ -1,17 +1,13 @@
 package db
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
 
-	v1 "k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	kubernetes2 "k8s.io/client-go/kubernetes"
-
 	llog "github.com/sirupsen/logrus"
+	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
 
@@ -47,20 +43,10 @@ func (fc *foundationCluster) Deploy() (err error) {
 		return merry.Prepend(err, "deploy failed")
 	}
 
-	var clientSet *kubernetes2.Clientset
-	if clientSet, err = fc.k.GetClientSet(); err != nil {
-		return merry.Prepend(err, "get client set")
-	}
-
-	var podList *v1.PodList
-	podList, err = clientSet.CoreV1().
-		Pods(kubernetes.ResourceDefaultNamespace).
-		List(context.TODO(),
-			metav1.ListOptions{
-				TypeMeta: metav1.TypeMeta{},
-			})
-	if err != nil {
-		return merry.Prepend(err, "get target pod list")
+	var pods []v1.Pod
+	if pods, err = fc.k.ListPods(kubernetes.ResourceDefaultNamespace); err != nil {
+		err = merry.Prepend(err, "list foundation pods")
+		return
 	}
 
 	printPodContainers := func(pod *v1.Pod) {
@@ -70,16 +56,17 @@ func (fc *foundationCluster) Deploy() (err error) {
 		}
 		llog.Debug("\t---------------------\n\n")
 	}
-	for i := 0; i < len(podList.Items); i++ {
-		pod := podList.Items[i]
-		llog.Debugf("examining pod: '%s'/'%s'", pod.Name, pod.GenerateName)
-		printPodContainers(&pod)
+	for i := 0; i < len(pods); i++ {
+		pPod := &pods[i]
 
-		if strings.HasPrefix(pod.Name, foundationClusterClientName) {
-			llog.Infof("foundationdb main pod is '%s'", pod.Name)
-			fc.clusterSpec.MainPod = &pod
-		} else if strings.HasPrefix(pod.Name, foundationClusterName) {
-			fc.clusterSpec.Pods = append(fc.clusterSpec.Pods, &pod)
+		llog.Debugf("examining pod: '%s'/'%s'", pPod.Name, pPod.GenerateName)
+		if strings.HasPrefix(pPod.Name, foundationClusterClientName) {
+			llog.Infof("foundationdb main pod is '%s'", pPod.Name)
+			printPodContainers(pPod)
+			fc.clusterSpec.MainPod = pPod
+		} else if strings.HasPrefix(pPod.Name, foundationClusterName) {
+			fc.clusterSpec.Pods = append(fc.clusterSpec.Pods, pPod)
+			printPodContainers(pPod)
 		}
 	}
 
@@ -88,9 +75,10 @@ func (fc *foundationCluster) Deploy() (err error) {
 	}
 
 	if fc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
-
-		fc.clusterSpec.MainPod, err = fc.k.WaitPod(clientSet, fc.clusterSpec.MainPod.Name,
-			kubernetes.ResourceDefaultNamespace)
+		fc.clusterSpec.MainPod, err = fc.k.WaitPod(fc.clusterSpec.MainPod.Name,
+			kubernetes.ResourceDefaultNamespace,
+			kubernetes.PodWaitingWaitCreation,
+			kubernetes.PodWaitingTime10Minutes)
 		if err != nil {
 			return merry.Prepend(err, "foundation pod wait")
 		}
@@ -107,14 +95,16 @@ func (fc *foundationCluster) Deploy() (err error) {
 
 	const fdbFixCommand = "chmod +x foundationdb/fix_client_version.sh && ./foundationdb/fix_client_version.sh"
 
-	// var textb []byte
-	if textb, _err := session.CombinedOutput(fdbFixCommand); _err != nil {
-		llog.Errorln(merry.Prependf(_err, "fix_client_version.sh failed with output `%s`", string(textb)))
-		// return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
+	var textb []byte
+	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
+		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
 	}
 	llog.Debugf("fix_client_version.sh applyed successfully")
 
 	// \todo: Прокидываем порт foundationdb на локальную машину
+	if err := fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
+		llog.Warnf("foundationdb failed to open port forwarding: %v", err)
+	}
 
 	if fc.k.StroppyPod != nil {
 		sourceConfigPath := fmt.Sprintf("%s/%s:///var/dynamic-conf/fdb.cluster",
@@ -125,19 +115,6 @@ func (fc *foundationCluster) Deploy() (err error) {
 		}
 	}
 
-	return
-}
-
-func (fc *foundationCluster) OpenPortForwarding() (_ error) {
-	if err := fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
-		llog.Warnf("foundationdb failed to open port forwarding: %v", err)
-	}
-
-	return
-}
-
-func (fc *foundationCluster) GetStatus() (err error) {
-	// already returns success
 	return
 }
 
