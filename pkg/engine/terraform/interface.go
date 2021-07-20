@@ -1,43 +1,18 @@
-package provider
+package terraform
 
 import (
-	"errors"
 	"io/ioutil"
+	"path/filepath"
 
 	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
 )
 
 type Provider interface {
 	Prepare(string) error
-	PerformAdditionalOps() error
+	PerformAdditionalOps(int, string, MapAddresses, string) error
 }
-
-type TemplatesConfig struct {
-	Yandex Configurations
-	Oracle Configurations
-}
-
-type ConfigurationUnitParams struct {
-	Description string
-	Platform    string
-	CPU         int
-	RAM         int
-	Disk        int
-}
-
-type Configurations struct {
-	Small    []ConfigurationUnitParams
-	Standard []ConfigurationUnitParams
-	Large    []ConfigurationUnitParams
-	Xlarge   []ConfigurationUnitParams
-	Xxlarge  []ConfigurationUnitParams
-	Maximum  []ConfigurationUnitParams
-}
-
-const TemplatesFileName = "templates.yaml"
-
-var ErrChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
 func GetCPUCount(templateConfig []ConfigurationUnitParams) int {
 	cpuCount := templateConfig[2].CPU
@@ -59,9 +34,10 @@ func GetPlatform(templateConfig []ConfigurationUnitParams) string {
 	return platform
 }
 
-func ReadTemplates() (*TemplatesConfig, error) {
+func ReadTemplates(wd string) (*TemplatesConfig, error) {
 	var templatesConfig TemplatesConfig
-	data, err := ioutil.ReadFile(TemplatesFileName)
+	TemplatesFileNamePath := filepath.Join(wd, TemplatesFileName)
+	data, err := ioutil.ReadFile(TemplatesFileNamePath)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read templates.yaml")
 	}
@@ -70,6 +46,8 @@ func ReadTemplates() (*TemplatesConfig, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to unmarshall templates.yaml")
 	}
+
+	llog.Traceln("reading templates.yaml: success")
 
 	return &templatesConfig, nil
 }

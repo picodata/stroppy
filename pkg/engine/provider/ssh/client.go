@@ -108,8 +108,9 @@ func (sc *client) GetPrivateKeyInfo() (string, string) {
 	return sc.keyFileName, sc.keyFilePath
 }
 
+// ExecuteCommandWorker - выполнить команду на определенном воркере с сохранением результата
 func ExecuteCommandWorker(workingDirectory string, address string, text string, provider string) (result []byte, err error) {
-	client, err := CreateClient(workingDirectory, address, provider, false)
+	client, err := CreateClient(workingDirectory, address, provider, true)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create ssh client")
 	}
@@ -123,7 +124,10 @@ func ExecuteCommandWorker(workingDirectory string, address string, text string, 
 	defer commandSessionObject.Close()
 
 	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
-		return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
+		// проверка на длину массива добавлена для случая, когда grep возвращает пустую строку, что приводит к exit code 1
+		if len(result) != 0 {
+			return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
+		}
 	}
 	return
 

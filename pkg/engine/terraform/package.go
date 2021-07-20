@@ -89,30 +89,38 @@ func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 	return
 }
 
-func (t *Terraform) Run() error {
+func (t *Terraform) Run() (cloudProvider Provider, err error) {
 
-	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terraform
+	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terrafor
 
-	/*	switch t.settings.Provider{
-		case yandexProvider:
-
-			err := provider.Provider.Prepare(t.WorkDirectory)
-			if err != nil {
-				return merry.Prepend(err, "failed to prepare terraform")
-			}
-		}*/
-
-	err := t.init()
+	switch t.settings.Provider {
+	case yandexProvider:
+		cloudProvider, err = CreateYandexProvider(t.settings, t.WorkDirectory)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to create provider terraform")
+		}
+	case oracleProvider:
+		cloudProvider, err = CreateOracleProvider(t.settings, t.WorkDirectory)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to create provider terraform")
+		}
+	}
+	err = cloudProvider.Prepare(t.WorkDirectory)
 	if err != nil {
-		return merry.Prepend(err, "failed to init terraform")
+		return nil, merry.Prepend(err, "failed to prepare terraform")
+	}
+
+	err = t.init()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to init terraform")
 	}
 
 	err = t.apply()
 	if err != nil {
-		return merry.Prepend(err, "failed to apply terraform")
+		return nil, merry.Prepend(err, "failed to apply terraform")
 	}
 
-	return nil
+	return cloudProvider, nil
 }
 
 // apply - развернуть кластер

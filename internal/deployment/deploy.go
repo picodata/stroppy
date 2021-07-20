@@ -148,7 +148,9 @@ func (d *Deployment) Deploy() (err error) {
 
 	deploySettings := d.settings.DeploySettings
 	d.tf = terraform.CreateTerraform(deploySettings, d.workingDirectory, d.workingDirectory)
-	if err = d.tf.Run(); err != nil {
+
+	var provider terraform.Provider
+	if provider, err = d.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
@@ -181,9 +183,9 @@ func (d *Deployment) Deploy() (err error) {
 
 	defer d.k.Stop()
 
-	/*	if err = d.k.AddNetworkStorages(d.settings.DeploySettings.Nodes, d.settings.DeploySettings.Provider); err != nil {
-		return merry.Prepend(err, "failed to add network storages")
-	}*/
+	if err = provider.PerformAdditionalOps(d.settings.DeploySettings.Nodes, d.settings.DeploySettings.Provider, addressMap, d.workingDirectory); err != nil {
+		return merry.Prepend(err, "failed to add network storages to provider")
+	}
 
 	d.chaosMesh = chaos.CreateController(d.k, d.workingDirectory, d.settings.UseChaos)
 	if err = d.chaosMesh.Deploy(); err != nil {
