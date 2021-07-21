@@ -11,8 +11,10 @@ private_key.pem
 benchmark/deploy/*.tfstate
 benchmark/deploy/*.tfstate.backup
 benchmark/deploy/terraform*.zip
+benchmark/deploy/config
 
 vendor
 bin
 
 !*/.dockerignore
+docs/examples/*/config
