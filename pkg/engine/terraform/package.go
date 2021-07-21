@@ -179,7 +179,7 @@ func (t *Terraform) Destroy() error {
 			}
 		}
 	} else {
-		destroyCmd = exec.Command("terraform", "apply", "-destroy")
+		destroyCmd = exec.Command("terraform", "apply", "-destroy", "--auto-approve")
 	}
 	destroyCmd.Dir = t.WorkDirectory
 
