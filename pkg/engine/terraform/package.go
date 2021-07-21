@@ -67,7 +67,7 @@ type Terraform struct {
 
 	WorkDirectory string
 
-	version version
+	version *version
 }
 
 type version struct {
@@ -200,18 +200,22 @@ func (t *Terraform) Destroy() error {
 	return nil
 }
 
-func (t *Terraform) getTerraformVersion() (version, error) {
+func (t *Terraform) getTerraformVersion() (*version, error) {
 	var installedVersion version
 	getVersionCMD, err := exec.Command("terraform", "version").Output()
 	if err != nil {
-		return version{}, merry.Wrap(err)
+		if !errors.Is(err, exec.ErrNotFound) {
+			return nil, merry.Wrap(err)
+		}
+
+		return nil, nil
 	}
 
 	// получаем из строки идентификатор версии в виде: v0.15.4 (как пример)
 	searchExpressionString := regexp.MustCompile(`v[0-9]+.[0-9]+.[0-9]+`)
 	installedVersionString := searchExpressionString.FindString(string(getVersionCMD))
 	if len(installedVersionString) == 0 {
-		return version{}, errVersionParsed
+		return nil, errVersionParsed
 	}
 
 	versionArray := strings.Split(installedVersionString, ".")
@@ -226,7 +230,7 @@ func (t *Terraform) getTerraformVersion() (version, error) {
 		bugfix: bugfix,
 	}
 
-	return installedVersion, nil
+	return &installedVersion, nil
 }
 
 func (t *Terraform) collectInternalExternalAddressMap() (mapIP *MapAddresses, err error) {
@@ -242,8 +246,6 @@ func (t *Terraform) collectInternalExternalAddressMap() (mapIP *MapAddresses, er
 // install
 // установить terraform, если не установлен
 func (t *Terraform) install() error {
-	llog.Infoln("Terraform is not found. Preparing the installation terraform...")
-
 	downloadURL := fmt.Sprintf("https://releases.hashicorp.com/terraform/%v/terraform_%v_linux_amd64.zip",
 		installableTerraformVersion, installableTerraformVersion)
 	downloadArchiveCmd := exec.Command("curl", "-O",
@@ -255,7 +257,7 @@ func (t *Terraform) install() error {
 	}
 
 	archiveName := fmt.Sprintf("terraform_%v_linux_amd64.zip", installableTerraformVersion)
-	unzipArchiveCmd := exec.Command("unzip", archiveName)
+	unzipArchiveCmd := exec.Command("unzip", "-u", archiveName)
 	llog.Infoln(unzipArchiveCmd.String())
 	unzipArchiveCmd.Dir = t.WorkDirectory
 	err = unzipArchiveCmd.Run()
@@ -270,7 +272,7 @@ func (t *Terraform) install() error {
 		return merry.Prepend(err, "failed to remove archive of terraform")
 	}
 
-	installCmd := exec.Command("sudo", "install", "terraform", "/usr/bin/terraform")
+	installCmd := exec.Command("bash", "-c", "sudo install terraform /usr/bin/terraform")
 	llog.Infoln(installCmd.String())
 	installCmd.Dir = t.WorkDirectory
 	err = installCmd.Run()
@@ -278,14 +280,7 @@ func (t *Terraform) install() error {
 		return merry.Prepend(err, "failed to install terraform")
 	}
 
-	tabCompleteCmd := exec.Command("terraform", "-install-autocomplete")
-	llog.Infoln(tabCompleteCmd.String())
-	tabCompleteCmd.Dir = t.WorkDirectory
-	err = tabCompleteCmd.Run()
-	if err != nil {
-		return merry.Prepend(err, "failed to add Tab complete to terraform")
-	}
-
+	llog.Infoln("terrafrom installed: success")
 	return nil
 }
 
@@ -295,6 +290,15 @@ func (t *Terraform) init() (err error) {
 
 	if t.version, err = t.getTerraformVersion(); err != nil {
 		return merry.Prepend(err, "failed to get terraform version")
+	}
+
+	if t.version == nil {
+		llog.Infoln("Terraform is not found. Preparing the installation terraform...")
+
+		err = t.install()
+		if err != nil {
+			return merry.Prepend(err, "failed to install terraform")
+		}
 	}
 
 	initCmd := exec.Command("terraform", "init")
