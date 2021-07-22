@@ -109,8 +109,8 @@ func (sc *client) GetPrivateKeyInfo() (string, string) {
 }
 
 // ExecuteCommandWorker - выполнить команду на определенном воркере с сохранением результата
-func ExecuteCommandWorker(workingDirectory string, address string, text string, provider string) (result []byte, err error) {
-	client, err := CreateClient(workingDirectory, address, provider, true)
+func ExecuteCommandWorker(workingDirectory, address, text, provider string) (result []byte, err error) {
+	client, err := CreateClient(workingDirectory, address, provider, RemoteClient)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create ssh client")
 	}
@@ -130,7 +130,6 @@ func ExecuteCommandWorker(workingDirectory string, address string, text string, 
 		}
 	}
 	return
-
 }
 
 func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {

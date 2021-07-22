@@ -90,7 +90,6 @@ func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
 }
 
 func (t *Terraform) Run() (cloudProvider Provider, err error) {
-
 	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terrafor
 
 	switch t.settings.Provider {

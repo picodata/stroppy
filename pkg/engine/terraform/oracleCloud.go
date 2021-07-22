@@ -69,7 +69,6 @@ func (op *OracleProvider) Prepare(workingDirectory string) error {
 
 // getIQNStorage - получить идентификаторы IQN (iSCSI qualified name) для каждой машины кластера
 func (op *OracleProvider) getIQNStorage(workersCount int, workingDirectory string) (iqnMap map[string]string, err error) {
-
 	stateFilePath := filepath.Join(workingDirectory, TerraformStateFileName)
 	var data []byte
 
@@ -89,12 +88,10 @@ func (op *OracleProvider) getIQNStorage(workersCount int, workingDirectory strin
 	}
 
 	return iqnMap, nil
-
 }
 
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
 func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addressMap MapAddresses, workingDirectory string) error {
-
 	iqnMap, err := op.getIQNStorage(nodes, workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")
@@ -103,7 +100,7 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 	llog.Debugln(iqnMap)
 
 	var addressArray []string
-	//временное решение до перехода на поддержку динамического кол-ва нод
+	// временное решение до перехода на поддержку динамического кол-ва нод
 	addressArray = append(addressArray, addressMap.MasterExternalIP, addressMap.MetricsExternalIP,
 		addressMap.IngressExternalIP, addressMap.DatabaseExternalIP)
 	/*
