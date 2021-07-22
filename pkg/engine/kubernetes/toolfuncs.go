@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,17 @@ func (k *Kubernetes) getKubeConfig() (*rest.Config, error) {
 // copyConfigFromMaster
 // скопировать файл kube config c мастер-инстанса кластера и применить для использования
 func (k *Kubernetes) copyConfigFromMaster() (err error) {
+	if k.useLocalSession {
+		var homeDirPath string
+		if homeDirPath, err = os.UserHomeDir(); err != nil {
+			return merry.Prepend(err, "get home dir")
+		}
+
+		kubeConfigFilePath := filepath.Join(homeDirPath, ".kube/config")
+		k.clusterConfigFile = kubeConfigFilePath
+		return
+	}
+
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
 	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
@@ -71,6 +83,11 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 }
 
 func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
+	if k.useLocalSession {
+		k.isSshKeyFileOnMaster = true
+		return
+	}
+
 	if k.isSshKeyFileOnMaster {
 		return
 	}
@@ -182,7 +199,6 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	return
 }
 
-// nolint
 func (k *Kubernetes) parseKubernetesFilePath(path string) (podName, containerName, internalPath string) {
 	parts := strings.Split(path, "://")
 	if len(parts) < 2 {

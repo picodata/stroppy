@@ -210,7 +210,7 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 	masterExternalIP := k.addressMap.MasterExternalIP
 
 	commandClientType := engineSsh.RemoteClient
-	if k.sessionIsLocal {
+	if k.useLocalSession {
 		commandClientType = engineSsh.LocalClient
 	}
 	sshClient, err := engineSsh.CreateClient(k.workingDirectory,

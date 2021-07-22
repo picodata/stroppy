@@ -6,6 +6,8 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"k8s.io/client-go/rest"
+
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
@@ -61,8 +63,8 @@ func createKubernetesObject(settings *config.Settings,
 		addressMap: terraformAddressMap,
 		sc:         sshClient,
 
-		provider:       settings.DeploySettings.Provider,
-		sessionIsLocal: settings.Local,
+		provider:        settings.DeploySettings.Provider,
+		useLocalSession: settings.Local,
 
 		isSshKeyFileOnMaster: false,
 	}
@@ -93,7 +95,7 @@ type Kubernetes struct {
 	sc             engineSsh.Client
 
 	isSshKeyFileOnMaster bool
-	sessionIsLocal       bool
+	useLocalSession      bool
 
 	portForward *engineSsh.Result
 
@@ -102,19 +104,19 @@ type Kubernetes struct {
 	StroppyPod *v1.Pod
 }
 
-func (k *Kubernetes) GetClientSet() (*kubernetes.Clientset, error) {
-	_config, err := k.getKubeConfig()
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to get kubeconfig for clientSet")
+func (k *Kubernetes) GetClientSet() (clientSet *kubernetes.Clientset, err error) {
+	var _config *rest.Config
+	if _config, err = k.getKubeConfig(); err != nil {
+		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
+		return
 	}
 
 	// clientSet - клиент для обращения к группам сущностей k8s
-	var clientSet *kubernetes.Clientset
 	if clientSet, err = kubernetes.NewForConfig(_config); err != nil {
 		return nil, merry.Prepend(err, "failed to create clientSet")
 	}
 
-	return clientSet, nil
+	return
 }
 
 func (k *Kubernetes) GetResourceURL(resource, namespace, name, subresource string) (url *url.URL, err error) {

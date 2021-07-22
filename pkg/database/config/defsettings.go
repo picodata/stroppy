@@ -9,9 +9,14 @@ import (
 	llog "github.com/sirupsen/logrus"
 )
 
-const defaultCountCPU = 4
+const (
+	defaultCountCPU = 4
 
-const workingDirectory = "benchmark/deploy"
+	workingDirectory = "benchmark/deploy"
+
+	chaosParameterFdb = "fdb-pod-kill-first,fdb-pod-kill-second"
+	chaosParameterPg  = "pg-pod-kill-first,pg-pod-kill-second"
+)
 
 type Settings struct {
 	WorkingDirectory string
@@ -28,11 +33,10 @@ type Settings struct {
 	DeploySettings   *DeploySettings
 }
 
-func DefaultSettings() *Settings {
-	return &Settings{
+func DefaultSettings() (s *Settings) {
+	s = &Settings{
 		WorkingDirectory: workingDirectory,
 		UseChaos:         false,
-		ChaosParameter:   "container",
 
 		Local: false,
 
@@ -43,14 +47,30 @@ func DefaultSettings() *Settings {
 
 		LogLevel: llog.InfoLevel.String(),
 	}
+
+	switch s.DatabaseSettings.DBType {
+	case cluster.Postgres:
+		s.ChaosParameter = chaosParameterPg
+	case cluster.Foundation:
+		s.ChaosParameter = chaosParameterFdb
+	default:
+		s.ChaosParameter = ""
+	}
+	return
 }
 
 type TestSettings struct {
 	KubernetesMasterAddress string
+	UseCloudStroppy         bool
+	RunAsPod                bool
 }
 
 func TestDefaults() *TestSettings {
-	return &TestSettings{}
+	return &TestSettings{
+		KubernetesMasterAddress: "",
+		UseCloudStroppy:         false,
+		RunAsPod:                false,
+	}
 }
 
 type DatabaseSettings struct {

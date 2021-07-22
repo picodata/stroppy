@@ -1,7 +1,6 @@
 package payload
 
 import (
-	"fmt"
 	"runtime"
 
 	"github.com/ansel1/merry"
@@ -34,8 +33,7 @@ func (p *BasePayload) Pay(_ string) (err error) {
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
 		p.config.Count, p.config.Workers, runtime.NumCPU())
 
-	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
-	if err = p.chaos.ExecuteCommand(chaosCommand); err != nil {
+	if err = p.chaos.ExecuteCommand(p.chaosParameter); err != nil {
 		llog.Errorf("failed to execute chaos command: %v", err)
 	}
 

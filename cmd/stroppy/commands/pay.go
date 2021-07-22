@@ -13,33 +13,48 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		Use:     "pay",
 		Aliases: []string{"transfer"},
 		Short:   "Run the payments workload",
+
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return initLogLevel(settings)
 		},
+
 		Run: func(cmd *cobra.Command, args []string) {
-			p, err := payload.CreateBasePayload(settings, createChaos(settings))
-			if err != nil {
-				llog.Fatalf("%v", err)
+			if settings.TestSettings.UseCloudStroppy && settings.TestSettings.RunAsPod {
+				llog.Fatalf("use-cloud-stroppy and run-as-pod flags specified at the same time")
 			}
 
-			var sum *inf.Dec
-			if sum, err = p.Check(nil); err != nil {
-				llog.Fatalf("%v", err)
+			if settings.Local && settings.TestSettings.RunAsPod {
+				llog.Fatalf("--local and --run-as-pod flags specified at the same time")
 			}
 
-			llog.Infof("Initial balance: %v", sum)
-
-			if err = p.Pay(""); err != nil {
-				llog.Fatalf("%v", err)
-			}
-
-			if settings.DatabaseSettings.Check {
-				balance, err := p.Check(sum)
+			if settings.TestSettings.UseCloudStroppy {
+				// надо подключится к (локальному или удаленному) мастеру кубернетс,
+				// запустить команду через под
+			} else {
+				p, err := payload.CreateBasePayload(settings, createChaos(settings))
 				if err != nil {
 					llog.Fatalf("%v", err)
 				}
 
-				llog.Infof("Final balance: %v", balance)
+				var sum *inf.Dec
+				if sum, err = p.Check(nil); err != nil {
+					llog.Fatalf("%v", err)
+				}
+
+				llog.Infof("Initial balance: %v", sum)
+
+				if err = p.Pay(""); err != nil {
+					llog.Fatalf("%v", err)
+				}
+
+				if settings.DatabaseSettings.Check {
+					balance, err := p.Check(sum)
+					if err != nil {
+						llog.Fatalf("%v", err)
+					}
+
+					llog.Infof("Final balance: %v", balance)
+				}
 			}
 		},
 	}
@@ -68,6 +83,11 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		"kube-master-addr", "k",
 		settings.TestSettings.KubernetesMasterAddress,
 		"kubernetes master address")
+
+	payCmd.PersistentFlags().BoolVarP(&settings.TestSettings.RunAsPod,
+		"run-as-pod", "",
+		false,
+		"run stroppy as in pod statement")
 
 	return payCmd
 }

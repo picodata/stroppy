@@ -93,6 +93,11 @@ The default value of banRangeMultipluer is 1.1.`)
 		settings.DatabaseSettings.Workers,
 		"Number of workers, 4 * NumCPU if not set.")
 
+	rootCmd.PersistentFlags().BoolVarP(&settings.TestSettings.UseCloudStroppy,
+		"use-cloud-pod", "",
+		false,
+		"specify to use cloud stroppy pod instead of local generator")
+
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),
 		newDeployCommand(settings),
