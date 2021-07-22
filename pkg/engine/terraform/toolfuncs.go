@@ -1,21 +1,23 @@
 package terraform
 
 import (
+	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"
 )
 
-func GetAddressMap(wd, provider string) (mapIP *MapAddresses, err error) {
+func GetAddressMap(wd, provider string, nodes int) (mapIP *MapAddresses, err error) {
 	stateFilePath := filepath.Join(wd, stateFileName)
 
-	mapIP, err = getAddressMap(stateFilePath, provider)
+	mapIP, err = getAddressMap(stateFilePath, provider, nodes)
 	return
 }
 
-func getAddressMap(stateFilePath, provider string) (mapIP *MapAddresses, err error) {
+func getAddressMap(stateFilePath, provider string, nodes int) (mapIPAddresses map[string]string, err error) {
 	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 	 * своя пара - внешний (NAT) и внутренний ip.
 	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
@@ -28,131 +30,87 @@ func getAddressMap(stateFilePath, provider string) (mapIP *MapAddresses, err err
 		err = merry.Prepend(err, "failed to read file terraform.tfstate")
 		return
 	}
+	//mapIP = &MapAddresses{}
 
-	mapIP = &MapAddresses{}
+	mapIPAddresses = make(map[string]string)
+	masterKeyInternal := "master_internal"
+	masterKeyExternal := "master_external"
+	workerKeyExternal := "worker_external_%v"
+	workerKeyInternal := "worker_internal_%v"
+	oracleInstanceValue := "value.0.%v"
+	yandexInstanceValue := "instances.%v"
+
 	switch provider {
 	case "yandex":
 		{
-			masterExternalIPArray := gjson.Parse(string(data)).
+			mapIPAddresses[masterKeyExternal] = gjson.Parse(string(data)).
 				Get("resources.1").
-				Get("instances.0")
-
-			mapIP.MasterExternalIP = masterExternalIPArray.
+				Get("instances.0").
 				Get("attributes").
 				Get("network_interface.0").
 				Get("nat_ip_address").Str
-
-			masterInternalIPArray := gjson.Parse(string(data)).
+			mapIPAddresses[masterKeyInternal] = gjson.Parse(string(data)).
 				Get("resources.1").
-				Get("instances.0")
-
-			mapIP.MasterInternalIP = masterInternalIPArray.
+				Get("instances.0").
 				Get("attributes").
 				Get("network_interface.0").
 				Get("ip_address").Str
 
-			metricsExternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
+			for i := 1; i <= nodes-1; i++ {
+				key := fmt.Sprintf(workerKeyExternal, i)
+				currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
+				mapIPAddresses[key] = gjson.Parse(string(data)).
+					Get("resources.2").
+					Get("instances.0").
+					Get("attributes").
+					Get(currentInstanceValue).
+					Get("network_interface.0").
+					Get("nat_ip_address").Str
+			}
 
-			mapIP.MetricsExternalIP = metricsExternalIPArray.
-				Get("instances.0").
-				Get("network_interface.0").
-				Get("nat_ip_address").Str
+			for i := 1; i <= nodes-1; i++ {
+				key := fmt.Sprintf(workerKeyInternal, i)
+				currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
+				mapIPAddresses[key] = gjson.Parse(string(data)).
+					Get("resources.2").
+					Get("instances.0").
+					Get("attributes").
+					Get(currentInstanceValue).
+					Get("network_interface.0").
+					Get("ip_address").Str
+			}
 
-			metricsInternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
-
-			mapIP.MetricsInternalIP = metricsInternalIPArray.
-				Get("instances.0").
-				Get("network_interface.0").
-				Get("ip_address").Str
-
-			ingressExternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
-
-			mapIP.IngressExternalIP = ingressExternalIPArray.
-				Get("instances.1").
-				Get("network_interface.0").
-				Get("nat_ip_address").Str
-
-			ingressInternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
-
-			mapIP.IngressInternalIP = ingressInternalIPArray.
-				Get("instances.1").
-				Get("network_interface.0").
-				Get("ip_address").Str
-
-			postgresExternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
-
-			mapIP.DatabaseExternalIP = postgresExternalIPArray.
-				Get("instances.2").
-				Get("network_interface.0").
-				Get("nat_ip_address").Str
-
-			postgresInternalIPArray := gjson.Parse(string(data)).
-				Get("resources.2").
-				Get("instances.0").
-				Get("attributes")
-
-			mapIP.PostgresInternalIP = postgresInternalIPArray.
-				Get("instances.2").
-				Get("network_interface.0").
-				Get("ip_address").Str
 		}
 
 	case "oracle":
 		{
-			mapIP.MasterInternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_private_ips").
-				Get("value.0.0").Str
-
-			mapIP.MetricsInternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_private_ips").
-				Get("value.0.1").Str
-
-			mapIP.IngressInternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_private_ips").
-				Get("value.0.2").Str
-
-			mapIP.PostgresInternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_private_ips").
-				Get("value.0.3").Str
-
-			mapIP.MasterExternalIP = gjson.Parse(string(data)).
+			mapIPAddresses[masterKeyExternal] = gjson.Parse(string(data)).
 				Get("outputs").
 				Get("instance_public_ips").
 				Get("value.0.0").Str
 
-			mapIP.MetricsExternalIP = gjson.Parse(string(data)).
+			mapIPAddresses[masterKeyInternal] = gjson.Parse(string(data)).
 				Get("outputs").
-				Get("instance_public_ips").
-				Get("value.0.1").Str
+				Get("instance_private_ips").
+				Get("value.0.0").Str
 
-			mapIP.IngressExternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_public_ips").
-				Get("value.0.2").Str
+			for i := 1; i <= nodes-1; i++ {
+				key := fmt.Sprintf(workerKeyInternal, i)
+				currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
+				mapIPAddresses[key] = gjson.Parse(string(data)).
+					Get("outputs").
+					Get("instance_private_ips").
+					Get(currentInstanceValue).Str
+			}
 
-			mapIP.DatabaseExternalIP = gjson.Parse(string(data)).
-				Get("outputs").
-				Get("instance_public_ips").
-				Get("value.0.3").Str
+			for i := 1; i <= nodes-1; i++ {
+				key := fmt.Sprintf(workerKeyExternal, i)
+				currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
+				mapIPAddresses[key] = gjson.Parse(string(data)).
+					Get("outputs").
+					Get("instance_public_ips").
+					Get(currentInstanceValue).Str
+			}
 		}
 	}
 

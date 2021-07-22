@@ -238,7 +238,7 @@ func (t *Terraform) collectInternalExternalAddressMap() (mapIP *MapAddresses, er
 		return
 	}
 
-	mapIP, err = getAddressMap(t.stateFilePath, t.settings.Provider)
+	mapIP, err = getAddressMap(t.stateFilePath, t.settings.Provider, t.settings.Nodes)
 	return
 }
 
