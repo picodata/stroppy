@@ -93,7 +93,7 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 		return
 	}
 
-	masterExternalIP := k.addressMap.MasterExternalIP
+	masterExternalIP := k.addressMap["external"]["master"]
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp",
 		"-i", k.sshKeyFileName,
@@ -253,7 +253,12 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 	llog.Debugln("start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())
 	llog.Debugln("finish time of monitoring data range", time.Unix(finishTime/1000, 0).UTC())
 
-	workersIps := fmt.Sprintf("%v;%v;%v", k.addressMap.IngressInternalIP, k.addressMap.MetricsInternalIP, k.addressMap.PostgresInternalIP)
+	var workersIps string
+
+	for _, address := range k.addressMap["internal"] {
+		workersIps += fmt.Sprintf("%v;", address)
+	}
+
 	getMonImagesCmd := fmt.Sprintf("cd grafana-on-premise && ./get_png.sh %v %v %v \"%v\"", startTime, finishTime, monImagesArchName, workersIps)
 
 	llog.Debugln(getMonImagesCmd)
@@ -317,4 +322,29 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 	llog.Infoln("Add labels to cluster nodes: success")
 
 	return nil
+
+// getHostsFile - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
+func (k Kubernetes) getHostsFile() (deployK8sSecondStep string) {
+
+	var workersAddressString string
+	var masterAddressString string
+	var workersString string
+
+	masterAddressString = fmt.Sprintf("master ansible_host=%v ip=%v etcd_member_name=etcd1 \n", k.addressMap["internal"]["master"], k.addressMap["internal"]["master"])
+
+	i := 0
+
+	for _, address := range k.addressMap["internal"] {
+		if i > 0 {
+			workersAddressString += fmt.Sprintf("worker-%v ansible_host=%v ip=%v etcd_member_name=etcd%v \n", i, address, address, i+1)
+			workersString += fmt.Sprintf("worker-%v \n", i)
+		}
+		i++
+	}
+
+	instancesString := masterAddressString + workersAddressString
+
+	deployK8sSecondStep = fmt.Sprintf(deployK8sSecondStepTemplate, instancesString, workersString, workersString)
+
+	return deployK8sSecondStep
 }

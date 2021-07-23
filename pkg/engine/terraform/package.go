@@ -30,29 +30,19 @@ var (
 )
 
 func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
+	addressMap := make(map[string]map[string]string)
 	t = &Terraform{
 		settings:          settings,
 		exePath:           filepath.Join(exeFolder, "terraform"),
 		templatesFilePath: filepath.Join(cfgFolder, templatesFileName),
 		stateFilePath:     "",
-		addressMap:        &MapAddresses{},
+		addressMap:        addressMap,
 		isInit:            false,
 		WorkDirectory:     cfgFolder,
 	}
 	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 
 	return
-}
-
-type MapAddresses struct {
-	MasterExternalIP   string
-	MasterInternalIP   string
-	MetricsExternalIP  string
-	MetricsInternalIP  string
-	IngressExternalIP  string
-	IngressInternalIP  string
-	DatabaseExternalIP string
-	PostgresInternalIP string
 }
 
 type Terraform struct {
@@ -62,7 +52,7 @@ type Terraform struct {
 	templatesFilePath string
 	stateFilePath     string
 
-	addressMap *MapAddresses
+	addressMap map[string]map[string]string
 	isInit     bool
 
 	WorkDirectory string
@@ -77,15 +67,15 @@ type version struct {
 }
 
 // GetAddressMap - получить структуру с адресами кластера
-func (t *Terraform) GetAddressMap() (addressMap MapAddresses, err error) {
-	var _map *MapAddresses
+func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
+	var _map map[string]map[string]string
 	if _map, err = t.collectInternalExternalAddressMap(); err != nil {
 		return
 	}
 
 	t.addressMap = _map
 
-	addressMap = *t.addressMap
+	addressMap = _map
 	return
 }
 
@@ -232,13 +222,14 @@ func (t *Terraform) getTerraformVersion() (*version, error) {
 	return &installedVersion, nil
 }
 
-func (t *Terraform) collectInternalExternalAddressMap() (mapIP *MapAddresses, err error) {
+func (t *Terraform) collectInternalExternalAddressMap() (mapIP map[string]map[string]string, err error) {
 	if !t.isInit {
 		err = errors.New("terraform not init")
 		return
 	}
 
 	mapIP, err = getAddressMap(t.stateFilePath, t.settings.Provider, t.settings.Nodes)
+
 	return
 }
 

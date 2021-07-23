@@ -36,7 +36,7 @@ func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err e
 		return
 	}
 
-	masterFullAddress := fmt.Sprintf("%v:22", k.addressMap.MasterExternalIP)
+	masterFullAddress := fmt.Sprintf("%v:22", k.addressMap["external"]["master"])
 
 	client := scp.NewClient(masterFullAddress, &clientSSHConfig)
 	if err = client.Connect(); err != nil {
@@ -63,7 +63,7 @@ func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err e
 }
 
 func (k *Kubernetes) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
-	destinationPath = fmt.Sprintf("ubuntu@%s:%s", k.addressMap.MasterExternalIP, destinationPath)
+	destinationPath = fmt.Sprintf("ubuntu@%s:%s", k.addressMap["external"]["master"], destinationPath)
 
 	copyDirectoryCmd := exec.Command("scp", "-r", "-i", k.sshKeyFilePath, "-o", "StrictHostKeyChecking=no",
 		directorySourcePath, destinationPath)
@@ -88,7 +88,7 @@ func (k Kubernetes) DownloadFile(remoteFullSourceFilePath, localPath string) (er
  * скопировать на мастер-ноду private key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
 func (k *Kubernetes) loadFilesToMaster() (err error) {
-	masterExternalIP := k.addressMap.MasterExternalIP
+	masterExternalIP := k.addressMap["external"]["master"]
 	llog.Infoln(masterExternalIP)
 
 	if k.provider == "yandex" {

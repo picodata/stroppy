@@ -68,7 +68,7 @@ func (yp *YandexProvider) getIQNStorage(workersCount int, workingDirectory strin
 }
 
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
-func (yp *YandexProvider) PerformAdditionalOps(nodes int, provider string, addressMap MapAddresses, workingDirectory string) error {
+func (yp *YandexProvider) PerformAdditionalOps(nodes int, provider string, addressMap map[string]map[string]string, workingDirectory string) error {
 	iqnMap, err := yp.getIQNStorage(nodes, workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")

@@ -14,7 +14,6 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
-	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -48,12 +47,12 @@ func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 		return
 	}
 
-	k = createKubernetesObject(settings, terraform.MapAddresses{}, sc)
+	k = createKubernetesObject(settings, nil, sc)
 	return
 }
 
 func createKubernetesObject(settings *config.Settings,
-	terraformAddressMap terraform.MapAddresses,
+	terraformAddressMap map[string]map[string]string,
 	sshClient engineSsh.Client) (pObj *Kubernetes) {
 
 	pObj = &Kubernetes{
@@ -72,7 +71,7 @@ func createKubernetesObject(settings *config.Settings,
 }
 
 func CreateKubernetes(settings *config.Settings,
-	terraformAddressMap terraform.MapAddresses,
+	terraformAddressMap map[string]map[string]string,
 	sshClient engineSsh.Client) (k *Kubernetes, err error) {
 
 	k = createKubernetesObject(settings, terraformAddressMap, sshClient)
@@ -87,7 +86,7 @@ type Kubernetes struct {
 	workingDirectory  string
 	clusterConfigFile string
 
-	addressMap terraform.MapAddresses
+	addressMap map[string]map[string]string
 
 	sshKeyFileName string
 	sshKeyFilePath string

@@ -91,7 +91,7 @@ func (op *OracleProvider) getIQNStorage(workersCount int, workingDirectory strin
 }
 
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
-func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addressMap MapAddresses, workingDirectory string) error {
+func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addressMap map[string]map[string]string, workingDirectory string) error {
 	iqnMap, err := op.getIQNStorage(nodes, workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")
@@ -100,9 +100,11 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 	llog.Debugln(iqnMap)
 
 	var addressArray []string
-	// временное решение до перехода на поддержку динамического кол-ва нод
-	addressArray = append(addressArray, addressMap.MasterExternalIP, addressMap.MetricsExternalIP,
-		addressMap.IngressExternalIP, addressMap.DatabaseExternalIP)
+
+	for _, address := range addressMap["external"] {
+		addressArray = append(addressArray, address)
+	}
+
 	/*
 		В цикле выполняется следующий алгоритм:
 		Если команда проверки вернула false, то выполняем команду создания/добавления сущности.

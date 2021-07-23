@@ -147,14 +147,8 @@ func (k *Kubernetes) deploy() (err error) {
 	}
 	llog.Printf("First step deploy k8s: success")
 
-	mapIP := k.addressMap
+	secondStepCommandText := k.getHostsFile()
 
-	secondStepCommandText := fmt.Sprintf(deployK8sSecondStepTemplate,
-		mapIP.MasterInternalIP, mapIP.MasterInternalIP,
-		mapIP.MetricsInternalIP, mapIP.MetricsInternalIP,
-		mapIP.IngressInternalIP, mapIP.IngressInternalIP,
-		mapIP.PostgresInternalIP, mapIP.PostgresInternalIP,
-	)
 	if err = k.executeCommand(secondStepCommandText); err != nil {
 		return merry.Prepend(err, "failed second step deploy k8s")
 	}
@@ -190,15 +184,20 @@ func (k *Kubernetes) deploy() (err error) {
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
-	// provider := kubernetes.
+
 	switch kubernetes.provider {
 	case "yandex":
 		// подставляем константы
 		return deployK8sFirstStepYandexCMD, deployK8sThirdStepYandexCMD, nil
 
 	case "oracle":
-		deployK8sFirstStepOracleCMD := fmt.Sprintf(deployK8sFirstStepOracleTemplate,
-			kubernetes.addressMap.MetricsInternalIP, kubernetes.addressMap.IngressInternalIP, kubernetes.addressMap.PostgresInternalIP)
+
+		var ipTablesFlushString string
+
+		for _, address := range kubernetes.addressMap["internal"] {
+			ipTablesFlushString += fmt.Sprintf("ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush' \n", address)
+		}
+		deployK8sFirstStepOracleCMD := fmt.Sprintf(deployK8sFirstStepOracleTemplate, ipTablesFlushString)
 		deployK8sThirdStepOracleCMD := deployK8sThirdStepOracleCMD
 
 		return deployK8sFirstStepOracleCMD, deployK8sThirdStepOracleCMD, nil
@@ -211,7 +210,7 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 // checkMasterDeploymentStatus
 // проверяет, что все поды k8s в running, что подтверждает успешность разворачивания k8s
 func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
-	masterExternalIP := k.addressMap.MasterExternalIP
+	masterExternalIP := k.addressMap["external"]["master"]
 
 	commandClientType := engineSsh.RemoteClient
 	if k.useLocalSession {

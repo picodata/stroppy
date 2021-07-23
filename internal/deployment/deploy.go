@@ -156,7 +156,7 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
-	var addressMap terraform.MapAddresses
+	var addressMap map[string]map[string]string
 	if addressMap, err = d.tf.GetAddressMap(); err != nil {
 		return merry.Prepend(err, "failed to get address map")
 	}
@@ -166,7 +166,7 @@ func (d *Deployment) Deploy() (err error) {
 		commandClientType = engineSsh.LocalClient
 	}
 	d.sc, err = engineSsh.CreateClient(d.workingDirectory,
-		addressMap.MasterExternalIP,
+		addressMap["external"]["master"],
 		deploySettings.Provider,
 		commandClientType)
 	if err != nil {

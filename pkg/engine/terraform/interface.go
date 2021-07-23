@@ -11,7 +11,7 @@ import (
 
 type Provider interface {
 	Prepare(string) error
-	PerformAdditionalOps(int, string, MapAddresses, string) error
+	PerformAdditionalOps(int, string, map[string]map[string]string, string) error
 }
 
 func GetCPUCount(templateConfig []ConfigurationUnitParams) int {

@@ -104,24 +104,17 @@ echo "change owner for /var/run/docker.sock"
 	deployK8sSecondStepTemplate = `echo \
 "tee inventory/local/hosts.ini<<EOF
 [all]
-master ansible_host=%v ip=%v etcd_member_name=etcd1
-worker-1 ansible_host=%v ip=%v etcd_member_name=etcd2
-worker-2 ansible_host=%v ip=%v etcd_member_name=etcd3
-worker-3 ansible_host=%v ip=%v etcd_member_name=etcd4
+%v
 	
 [kube-master]
 master
 	
 [etcd]
 master
-worker-1
-worker-2
-worker-3
+%v
 	
 [kube-node]
-worker-1
-worker-2
-worker-3
+%v
 	
 [k8s-cluster:children]
 kube-master
@@ -132,9 +125,7 @@ EOF" | tee -a deploy_kubernetes.sh
 	deployK8sFirstStepOracleTemplate = ` echo \
 "echo 'IdentityFile /home/ubuntu/.ssh/private_key.pem' > ~/.ssh/config
 sudo iptables --flush
-ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'
-ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'
-ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush'
+%v
 ### /Oracle.Cloud
 sudo apt-get update
 sudo apt-get install -y sshpass python3-pip git htop sysstat
