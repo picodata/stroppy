@@ -65,7 +65,11 @@ kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisione
 kubectl create namespace monitoring
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update -y
-helm install grafana-stack prometheus-community/kube-prometheus-stack --set grafana.enables=false --namespace monitoring
+helm install grafana-stack prometheus-community/kube-prometheus-stack \
+                            --set grafana.enables=false \
+                            --set prometheus.prometheusSpec.retention=180d \
+                            --namespace monitoring \
+                            --version 16.8.0
 # monitoring: grafana-on-premise
 cd 
 ansible-galaxy install cloudalchemy.grafana
@@ -154,7 +158,11 @@ kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisione
 kubectl create namespace monitoring
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
-helm install grafana-stack prometheus-community/kube-prometheus-stack --set grafana.enables=false --namespace monitoring
+helm install grafana-stack prometheus-community/kube-prometheus-stack \
+                            --set grafana.enables=false \
+                            --set prometheus.prometheusSpec.retention=180d \
+                            --namespace monitoring \
+                            --version 16.8.0
 # grafana-on-premise
 cd
 ansible-galaxy install cloudalchemy.grafana
