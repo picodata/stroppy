@@ -32,7 +32,6 @@ const (
 	ResourceDefaultNamespace  = "default"
 	SubresourcePortForwarding = "portforward"
 	SubresourceExec           = "exec"
-
 	PodWaitingWaitCreation    = true
 	PodWaitingNotWaitCreation = false
 
@@ -193,3 +192,5 @@ echo 'change owner for /var/run/docker.sock'
 const (
 	dockerRepLoginCmd = "docker login -u stroppy_deploy -p k3xG2_xe_SDjyYDREML3 registry.gitlab.com"
 )
+
+const addLabelCmd = "kubectl label nodes %v worker-type=%v"

@@ -265,3 +265,47 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 	llog.Infoln("getting of monitoring images: success")
 	return nil
 }
+
+func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
+	llog.Infoln("Starting of add labels to cluster nodes")
+
+	clientSet, err := k.GetClientSet()
+	if err != nil {
+		return merry.Prepend(err, "failed to get client set for deploy stroppy")
+	}
+
+	// используем получения списка нод ради точного кол-ва нод кластера.
+	// deploySettings.nodes не используем из-за разного кол-ва nodes для одинакового кол-ва воркеров в yc и oc
+	nodesList, err := clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		return merry.Prepend(err, "failed to get nodes list")
+	}
+
+	for i := 1; i < len(nodesList.Items); i++ {
+		name := fmt.Sprintf("worker-%v", i)
+
+		node, err := clientSet.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
+		if err != nil {
+			return merry.Prepend(err, "failed to get node")
+		}
+
+		currentLabels := node.GetLabels()
+		currentLabels["worker-type"] = "dbms-worker"
+		node.SetLabels(currentLabels)
+
+		if i == len(nodesList.Items)-1 {
+			currentLabels["worker-type"] = "stroppy-worker"
+			node.SetLabels(currentLabels)
+		}
+
+		_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+		if err != nil {
+			return merry.Prepend(err, "failed to update node")
+		}
+
+	}
+
+	llog.Infoln("Add labels to cluster nodes: success")
+
+	return nil
+}

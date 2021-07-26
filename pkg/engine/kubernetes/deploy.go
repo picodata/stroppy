@@ -40,6 +40,10 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
 
+	if err = k.AddNodeLabels(ResourceDefaultNamespace); err != nil {
+		return nil, 0, merry.Prepend(err, "failed to add labels to cluster nodes")
+	}
+
 	if err = k.prepareDeployStroppy(); err != nil {
 		err = merry.Prepend(err, "failed to prepare stroppy pod deploy")
 		return
