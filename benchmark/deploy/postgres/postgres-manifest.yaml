@@ -1,3 +1,4 @@
+---
 apiVersion: v1
 data:
   # stroppy
@@ -108,6 +109,7 @@ spec:
         - all
       volumeSource:
         emptyDir: {}
+
 #    - name: data
 #      mountPath: /home/postgres/pgdata/partitions
 #      targetContainers:
@@ -243,12 +245,12 @@ spec:
 
 # Add node affinity support by allowing postgres pods to schedule only on nodes that
 # have label: "postgres-operator:enabled" set.
-#  nodeAffinity:
-#    requiredDuringSchedulingIgnoredDuringExecution:
-#      nodeSelectorTerms:
-#        - matchExpressions:
-#            - key: postgres-operator
-#              operator: In
-#              values:
-#                - enabled
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: worker-type
+              operator: In
+              values:
+                - dbms-worker
 

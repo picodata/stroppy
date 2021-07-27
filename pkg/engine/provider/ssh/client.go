@@ -129,6 +129,9 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 			return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
 		}
 	}
+
+	llog.Debugln(string(result), err)
+
 	return
 }
 
@@ -141,7 +144,10 @@ func IsExistEntity(address string, checkCommand string, checkString string, work
 		}
 	}
 
+	llog.Debugln(string(CmdResult))
+
 	if strings.Contains(string(CmdResult), checkString) {
+
 		llog.Infoln("entity already exist or parted")
 		return true, nil
 	}

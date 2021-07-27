@@ -266,6 +266,7 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 	return nil
 }
 
+// AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
 func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 	llog.Infoln("Starting of add labels to cluster nodes")
 
@@ -290,14 +291,22 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 		}
 
 		currentLabels := node.GetLabels()
+
+		if _, ok := currentLabels["worker-type"]; ok {
+			llog.Infoln("this node already been marked")
+			continue
+		}
+
 		currentLabels["worker-type"] = "dbms-worker"
 		node.SetLabels(currentLabels)
 
+		// последний воркер оставляем для stroppy
 		if i == len(nodesList.Items)-1 {
 			currentLabels["worker-type"] = "stroppy-worker"
 			node.SetLabels(currentLabels)
 		}
 
+		// применяем изменения на ноду
 		_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
 		if err != nil {
 			return merry.Prepend(err, "failed to update node")

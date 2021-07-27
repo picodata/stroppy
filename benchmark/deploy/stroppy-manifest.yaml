@@ -11,4 +11,7 @@ spec:
     args: [ "infinity" ]
   imagePullSecrets:
   - name: stroppy-secret
+  nodeSelector:
+    worker-type: stroppy-worker
+
   
