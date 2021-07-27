@@ -130,7 +130,7 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 		}
 	}
 
-	llog.Debugln(string(result), err)
+	llog.Debugln("result of commands оn worker: ", string(result))
 
 	return
 }
@@ -143,8 +143,6 @@ func IsExistEntity(address string, checkCommand string, checkString string, work
 			return false, merry.Prepend(err, errorMessage)
 		}
 	}
-
-	llog.Debugln(string(CmdResult))
 
 	if strings.Contains(string(CmdResult), checkString) {
 

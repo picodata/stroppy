@@ -59,6 +59,9 @@ rm inventory/local/hosts.ini
 "sudo sed -i 's/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g' inventory/local/group_vars/k8s_cluster/addons.yml
 echo 'docker_dns_servers_strict: no' >> inventory/local/group_vars/k8s_cluster/k8s-cluster.yml
 # nano inventory/local/group_vars/k8s_cluster/addons.yml (!!!)
+sudo sed -i 's/no_log: true/no_log: false/g' kubespray/roles/download/tasks/download_file.yml
+sudo sed -i 's/download_force_cache: false/download_force_cache: true/g' extra_playbooks/roles/download/defaults/main.yml
+sudo sed -i 's/download_run_once: false/download_run_once: true/g' extra_playbooks/roles/download/defaults/main.yml
 ansible-playbook -b -e ignore_assert_errors=yes -i inventory/local/hosts.ini cluster.yml
 mkdir -p $HOME/.kube
 sudo cp  /etc/kubernetes/admin.conf $HOME/.kube/config
@@ -192,5 +195,3 @@ echo 'change owner for /var/run/docker.sock'
 const (
 	dockerRepLoginCmd = "docker login -u stroppy_deploy -p k3xG2_xe_SDjyYDREML3 registry.gitlab.com"
 )
-
-const addLabelCmd = "kubectl label nodes %v worker-type=%v"
