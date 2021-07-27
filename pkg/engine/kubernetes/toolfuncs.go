@@ -69,8 +69,9 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	llog.Infoln(copyFromMasterCmd.String())
 	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
 
-	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
-		return merry.Prepend(err, "failed to execute command copy from master")
+	var output []byte
+	if output, err = copyFromMasterCmd.CombinedOutput(); err != nil {
+		return merry.Prependf(err, "master kube config file copying failed: `%v`", string(output))
 	}
 
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
@@ -153,6 +154,9 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	if err != nil {
 		if k8s_errors.IsNotFound(err) && creationWait {
 
+			llog.Debugf("WaitPod: go wait '%s/%s' pod creation...",
+				namespace, podName)
+
 			creationWaitTime := waitTime
 			for k8s_errors.IsNotFound(err) && creationWaitTime > 0 {
 
@@ -167,8 +171,24 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 					})
 			}
 
+			if err != nil {
+				err = merry.Prependf(err, "'%s/%s' pod creation failed", namespace, podName)
+				return
+			}
+
+			if targetPod == nil {
+				err = fmt.Errorf("pod '%s/%s' still not created", namespace, podName)
+				return
+			}
+
+		} else {
+			err = merry.Prepend(err, "get pod")
+			return
 		}
-		err = merry.Prepend(err, "get pod")
+	}
+
+	if targetPod.Status.Phase == v1.PodRunning {
+		llog.Debugf("WaitPod: pod '%s/%s' already running", namespace, podName)
 		return
 	}
 
@@ -191,8 +211,8 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	}
 
 	if targetPod.Status.Phase != v1.PodRunning {
-		err = merry.Errorf("pod still not running, 5 minutes left, current status: '%v",
-			targetPod.Status.Phase)
+		err = merry.Errorf("pod still not running, %d minutes left, current status: '%v",
+			waitTime/time.Minute, targetPod.Status.Phase)
 		return
 	}
 
@@ -200,13 +220,13 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 }
 
 func (k *Kubernetes) parseKubernetesFilePath(path string) (podName, containerName, internalPath string) {
-	parts := strings.Split(path, "://")
+	parts := strings.SplitN(path, "://", 2)
 	if len(parts) < 2 {
 		return
 	}
 
 	kubePart := parts[0]
-	podContainerSpec := strings.Split(kubePart, "/")
+	podContainerSpec := strings.SplitN(kubePart, "/", 2)
 	podContainerSpecSize := len(podContainerSpec)
 	if podContainerSpecSize < 1 {
 		podName = kubePart
