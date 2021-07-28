@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strconv"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -200,4 +201,58 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 	}
 
 	return nil
+}
+
+func (op *OracleProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
+	 * своя пара - внешний (NAT) и внутренний ip.
+	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
+	 * т.к. использование encoding/json
+	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
+	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
+
+	var data []byte
+	if data, err = ioutil.ReadFile(stateFilePath); err != nil {
+		err = merry.Prepend(err, "failed to read file terraform.tfstate")
+		return
+	}
+
+	mapIPAddresses = make(map[string]map[string]string)
+	workerKey := "worker_%v"
+	oracleInstanceValue := "value.0.%v"
+	externalAddress := make(map[string]string)
+	internalAddress := make(map[string]string)
+
+	externalAddress["master"] = gjson.Parse(string(data)).
+		Get("outputs").
+		Get("instance_public_ips").
+		Get("value.0.0").Str
+
+	internalAddress["master"] = gjson.Parse(string(data)).
+		Get("outputs").
+		Get("instance_private_ips").
+		Get("value.0.0").Str
+
+	for i := 1; i <= nodes-1; i++ {
+		key := fmt.Sprintf(workerKey, i)
+		currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
+		externalAddress[key] = gjson.Parse(string(data)).
+			Get("outputs").
+			Get("instance_public_ips").
+			Get(currentInstanceValue).Str
+	}
+
+	for i := 1; i <= nodes-1; i++ {
+		key := fmt.Sprintf(workerKey, i)
+		currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
+		internalAddress[key] = gjson.Parse(string(data)).
+			Get("outputs").
+			Get("instance_private_ips").
+			Get(currentInstanceValue).Str
+	}
+
+	mapIPAddresses["external"] = externalAddress
+	mapIPAddresses["internal"] = internalAddress
+
+	return mapIPAddresses, nil
 }

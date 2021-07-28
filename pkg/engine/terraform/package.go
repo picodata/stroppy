@@ -31,6 +31,7 @@ var (
 
 func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
 	addressMap := make(map[string]map[string]string)
+
 	t = &Terraform{
 		settings:          settings,
 		exePath:           filepath.Join(exeFolder, "terraform"),
@@ -43,6 +44,25 @@ func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder strin
 	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 
 	return
+}
+
+// InitProvider - инициализировать провайдера в зависимости от настроек
+func (t *Terraform) InitProvider(settings *config.DeploySettings) (err error) {
+	switch settings.Provider {
+	case yandexProvider:
+		t.Provider, err = CreateYandexProvider(settings, t.WorkDirectory)
+		if err != nil {
+			return merry.Prepend(err, "failed to initialized yandex provider")
+		}
+
+	case oracleProvider:
+		t.Provider, err = CreateOracleProvider(settings, t.WorkDirectory)
+		if err != nil {
+			return merry.Prepend(err, "failed to initialized oracle provider")
+		}
+	}
+
+	return nil
 }
 
 type Terraform struct {
@@ -58,6 +78,8 @@ type Terraform struct {
 	WorkDirectory string
 
 	version *version
+
+	Provider Provider
 }
 
 type version struct {
@@ -68,48 +90,28 @@ type version struct {
 
 // GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
-	var _map map[string]map[string]string
-	if _map, err = t.collectInternalExternalAddressMap(); err != nil {
-		return
-	}
 
-	t.addressMap = _map
-
-	addressMap = _map
-	return
+	return t.Provider.GetAddressMap(t.stateFilePath, t.settings.Nodes)
 }
 
-func (t *Terraform) Run() (cloudProvider Provider, err error) {
-	// передаем варианты и ключи выбора конфигурации для формирования файла провайдера terrafor
+func (t *Terraform) Run() (err error) {
 
-	switch t.settings.Provider {
-	case yandexProvider:
-		cloudProvider, err = CreateYandexProvider(t.settings, t.WorkDirectory)
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to create provider terraform")
-		}
-	case oracleProvider:
-		cloudProvider, err = CreateOracleProvider(t.settings, t.WorkDirectory)
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to create provider terraform")
-		}
-	}
-	err = cloudProvider.Prepare(t.WorkDirectory)
+	err = t.Provider.Prepare(t.WorkDirectory)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to prepare terraform")
+		return merry.Prepend(err, "failed to prepare terraform")
 	}
 
 	err = t.init()
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to init terraform")
+		return merry.Prepend(err, "failed to init terraform")
 	}
 
 	err = t.apply()
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to apply terraform")
+		return merry.Prepend(err, "failed to apply terraform")
 	}
 
-	return cloudProvider, nil
+	return nil
 }
 
 // apply - развернуть кластер
@@ -220,17 +222,6 @@ func (t *Terraform) getTerraformVersion() (*version, error) {
 	}
 
 	return &installedVersion, nil
-}
-
-func (t *Terraform) collectInternalExternalAddressMap() (mapIP map[string]map[string]string, err error) {
-	if !t.isInit {
-		err = errors.New("terraform not init")
-		return
-	}
-
-	mapIP, err = getAddressMap(t.stateFilePath, t.settings.Provider, t.settings.Nodes)
-
-	return
 }
 
 // install

@@ -110,6 +110,7 @@ func (k *Kubernetes) DeployStroppy() error {
 		k.StroppyPod, err = k.WaitPod(stroppyPodName, ResourceDefaultNamespace,
 			PodWaitingNotWaitCreation, PodWaitingTime10Minutes)
 		if err != nil {
+
 			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}
@@ -147,7 +148,7 @@ func (k *Kubernetes) deploy() (err error) {
 	}
 	llog.Printf("First step deploy k8s: success")
 
-	secondStepCommandText := k.getHostsFile()
+	secondStepCommandText := k.getHostsFileAttributes()
 
 	if err = k.executeCommand(secondStepCommandText); err != nil {
 		return merry.Prepend(err, "failed second step deploy k8s")
@@ -216,6 +217,7 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 	if k.useLocalSession {
 		commandClientType = engineSsh.LocalClient
 	}
+
 	sshClient, err := engineSsh.CreateClient(k.workingDirectory,
 		masterExternalIP,
 		k.provider,
@@ -224,16 +226,15 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 		return false, merry.Prependf(err, "failed to establish ssh client to '%s' address", masterExternalIP)
 	}
 
-	var checkSession engineSsh.Session
-	if checkSession, err = sshClient.GetNewSession(); err != nil {
+	checkSession, err := sshClient.GetNewSession()
+	if err != nil {
 		return false, merry.Prepend(err, "failed to open ssh connection for Check deploy")
 	}
-	defer checkSession.Close()
 
 	const checkCmd = "kubectl get pods --all-namespaces"
-
-	var resultCheckCmd []byte
-	if resultCheckCmd, err = checkSession.CombinedOutput(checkCmd); err != nil {
+	resultCheckCmd, err := checkSession.CombinedOutput(checkCmd)
+	if err != nil {
+		//nolint:errorlint
 		e, ok := err.(*ssh.ExitError)
 		if !ok {
 			return false, merry.Prepend(err, "failed сheck deploy k8s")
@@ -244,11 +245,12 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 		}
 	}
 
-	countPods := strings.Count(string(resultCheckCmd), string(v1.PodRunning))
+	countPods := strings.Count(string(resultCheckCmd), "Running")
 	if countPods < runningPodsCount {
 		return false, nil
 	}
 
+	_ = checkSession.Close()
 	return true, nil
 }
 

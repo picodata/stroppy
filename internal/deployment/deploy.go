@@ -150,9 +150,13 @@ func (d *Deployment) Deploy() (err error) {
 
 	deploySettings := d.settings.DeploySettings
 	d.tf = terraform.CreateTerraform(deploySettings, d.workingDirectory, d.workingDirectory)
+	/* отдельный метод, чтобы не смешивать инициализацию terraform, где просто заполняем структуру,
+	и провайдера, где читаем файл и его может не быть*/
+	if err = d.tf.InitProvider(deploySettings); err != nil {
+		return merry.Prepend(err, "failed to init provider")
+	}
 
-	var provider terraform.Provider
-	if provider, err = d.tf.Run(); err != nil {
+	if err = d.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
@@ -189,7 +193,7 @@ func (d *Deployment) Deploy() (err error) {
 
 	defer d.k.Stop()
 
-	if err = provider.PerformAdditionalOps(d.settings.DeploySettings.Nodes, d.settings.DeploySettings.Provider, addressMap, d.workingDirectory); err != nil {
+	if err = d.tf.Provider.PerformAdditionalOps(d.settings.DeploySettings.Nodes, d.settings.DeploySettings.Provider, addressMap, d.workingDirectory); err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}
 

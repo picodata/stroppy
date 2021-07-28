@@ -3,13 +3,10 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-
-	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -18,6 +15,7 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -69,9 +67,8 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 	llog.Infoln(copyFromMasterCmd.String())
 	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
 
-	var output []byte
-	if output, err = copyFromMasterCmd.CombinedOutput(); err != nil {
-		return merry.Prependf(err, "master kube config file copying failed: `%v`", string(output))
+	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
+		return merry.Prepend(err, "failed to execute command copy from master")
 	}
 
 	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
@@ -84,11 +81,6 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 }
 
 func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
-	if k.useLocalSession {
-		k.isSshKeyFileOnMaster = true
-		return
-	}
-
 	if k.isSshKeyFileOnMaster {
 		return
 	}
@@ -109,9 +101,7 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	for i := 0; i <= connectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("failed to copy private key file '%s' onto master: '%s', %v",
-				k.sshKeyFileName, string(copyMasterCmdResult), err)
-
+			llog.Errorf("failed to copy private key key onto master: %v %v \n", string(copyMasterCmdResult), err)
 			copyPrivateKeyCmd = exec.Command("scp",
 				"-i", k.sshKeyFileName,
 				"-o", "StrictHostKeyChecking=no",
@@ -203,7 +193,6 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 			llog.Warnf("WaitPod: failed to update information: %v", err)
 			continue
 		}
-
 		waitTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
@@ -219,14 +208,15 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	return
 }
 
+// nolint
 func (k *Kubernetes) parseKubernetesFilePath(path string) (podName, containerName, internalPath string) {
-	parts := strings.SplitN(path, "://", 2)
+	parts := strings.Split(path, "://")
 	if len(parts) < 2 {
 		return
 	}
 
 	kubePart := parts[0]
-	podContainerSpec := strings.SplitN(kubePart, "/", 2)
+	podContainerSpec := strings.Split(kubePart, "/")
 	podContainerSpecSize := len(podContainerSpec)
 	if podContainerSpecSize < 1 {
 		podName = kubePart
@@ -323,9 +313,8 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 
 	return nil
 
-// getHostsFile - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
-func (k Kubernetes) getHostsFile() (deployK8sSecondStep string) {
-
+// getHostsFileAttributes - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
+func (k Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 	var workersAddressString string
 	var masterAddressString string
 	var workersString string
