@@ -144,7 +144,7 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	if err != nil {
 		if k8s_errors.IsNotFound(err) && creationWait {
 
-			llog.Debugf("WaitPod: go wait '%s/%s' pod creation...",
+			llog.Infof("WaitPod: go wait '%s/%s' pod creation...",
 				namespace, podName)
 
 			creationWaitTime := waitTime
@@ -200,7 +200,7 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 	}
 
 	if targetPod.Status.Phase != v1.PodRunning {
-		err = merry.Errorf("pod still not running, %d minutes left, current status: '%v",
+		err = merry.Errorf("pod still not running, %d minutes left, current status: '%v'",
 			waitTime/time.Minute, targetPod.Status.Phase)
 		return
 	}

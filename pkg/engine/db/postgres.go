@@ -41,7 +41,7 @@ func (pc *postgresCluster) Deploy() (err error) {
 		return merry.Prepend(err, "deploy")
 	}
 
-	llog.Debugln("Checking of deploy postgres...")
+	llog.Infoln("Checking of deploy postgres...")
 
 	var postgresPodsCount int64
 	var postgresPodName string
@@ -63,7 +63,7 @@ func (pc *postgresCluster) Deploy() (err error) {
 		}
 
 		pc.clusterSpec.Pods = append(pc.clusterSpec.Pods, targetPod)
-		llog.Debugf("'%s/%s' pod registered", targetPod.Namespace, targetPod.Name)
+		llog.Infof("'%s/%s' pod registered", targetPod.Namespace, targetPod.Name)
 		if i == 0 {
 			pc.clusterSpec.MainPod = targetPod
 			llog.Debugln("... and this pod is main")
