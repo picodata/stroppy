@@ -49,7 +49,7 @@ func (pc *postgresCluster) Deploy() (err error) {
 		return merry.Prepend(err, "failed to get postgres pods count")
 	}
 
-	postgresPodNameTemplate := postgresPodName + "-%s"
+	postgresPodNameTemplate := postgresPodName + "-%d"
 	for i := int64(0); i < postgresPodsCount; i++ {
 		podName := fmt.Sprintf(postgresPodNameTemplate, i)
 

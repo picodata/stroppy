@@ -25,8 +25,11 @@ func (chaos *workableController) Deploy() (err error) {
 		return
 	}
 
-	const rbacFileName = "rbac.yaml"
-	rbacFileSourcePath := filepath.Join(chaos.wd, ".config", rbacFileName)
+	const (
+		chaosConfigDirName = "_config"
+		rbacFileName       = "rbac.yaml"
+	)
+	rbacFileSourcePath := filepath.Join(chaos.wd, chaosConfigDirName, rbacFileName)
 	rbacFileKubemasterPath := filepath.Join("/home/ubuntu", rbacFileName)
 	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath); err != nil {
 		return merry.Prepend(err, "rbac.yaml copying")
@@ -34,8 +37,10 @@ func (chaos *workableController) Deploy() (err error) {
 
 	const rbacApplyCommand = "kubectl apply -f %s"
 	if err = chaos.k.ExecuteF(rbacApplyCommand, rbacFileKubemasterPath); err != nil {
-		return merry.Prepend(err, "apply rbac.yaml")
+		return merry.Prepend(err, "rbac.yaml applying")
 	}
+	llog.Warnf("to access chaos dashboard please login to cloud master machine and run command\n%s\n",
+		"kubectl -n chaos-testing describe secret account-cluster-manager-picodata")
 
 	if err = chaos.establishDashboardAvailability(); err != nil {
 		return
@@ -93,11 +98,9 @@ func (chaos *workableController) establishDashboardAvailability() (err error) {
 		chaos.portForwardStopChan)
 	if err != nil {
 		// return merry.Prepend(err, "port-forward is not established")
+		llog.Errorf("chaos dashboard pf fail: %v", err)
 		err = nil
 	}
-
-	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам
-	// defer sshSession.Close()
 
 	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333, 2334)
 	return
