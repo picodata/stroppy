@@ -31,7 +31,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 			"--count", fmt.Sprintf("%v", settings.Count),
 			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 			"-w", fmt.Sprintf("%v", settings.Workers),
-			"--kube-master-addr", d.settings.TestSettings.KubernetesMasterAddress,
+			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
 		}
 
 		logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
@@ -80,8 +80,8 @@ func (d *Deployment) executePop(_ string) (err error) {
 			"--url", fmt.Sprintf("%v", settings.DBURL),
 			"--count", fmt.Sprintf("%v", settings.Count),
 			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-			"--kube-master-addr", d.settings.TestSettings.KubernetesMasterAddress,
-			"-w", fmt.Sprintf("%v", settings.Workers), ">>", "pop.txt",
+			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
+			"-w", fmt.Sprintf("%v", settings.Workers),
 		}
 		logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
 			settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -92,7 +92,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = d.payload.Pay(""); err != nil {
+		if err = d.payload.Pop(""); err != nil {
 			return
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000

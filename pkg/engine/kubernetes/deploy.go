@@ -53,6 +53,7 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 		err = merry.Prepend(err, "failed to deploy stroppy pod")
 		return
 	}
+
 	llog.Infoln("status of stroppy pod deploy: success")
 
 	pPortForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
@@ -195,7 +196,7 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 
 		var ipTablesFlushString string
 
-		for _, address := range kubernetes.addressMap["internal"] {
+		for _, address := range kubernetes.AddressMap["internal"] {
 			ipTablesFlushString += fmt.Sprintf("ssh %v -o StrictHostKeyChecking=no 'sudo iptables --flush' \n", address)
 		}
 		deployK8sFirstStepOracleCMD := fmt.Sprintf(deployK8sFirstStepOracleTemplate, ipTablesFlushString)
@@ -211,7 +212,7 @@ func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
 // checkMasterDeploymentStatus
 // проверяет, что все поды k8s в running, что подтверждает успешность разворачивания k8s
 func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
-	masterExternalIP := k.addressMap["external"]["master"]
+	masterExternalIP := k.AddressMap["external"]["master"]
 
 	commandClientType := engineSsh.RemoteClient
 	if k.useLocalSession {

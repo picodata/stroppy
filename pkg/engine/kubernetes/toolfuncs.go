@@ -3,6 +3,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -60,7 +61,7 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 		return
 	}
 
-	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.addressMap.MasterExternalIP)
+	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.AddressMap["external"]["master"])
 	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
 
@@ -85,7 +86,7 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 		return
 	}
 
-	masterExternalIP := k.addressMap["external"]["master"]
+	masterExternalIP := k.AddressMap["external"]["master"]
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp",
 		"-i", k.sshKeyFileName,
@@ -196,7 +197,7 @@ func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitT
 		waitTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
-		llog.Debugf("WaitPod: '%s' pod status: %v", targetPod.Name, targetPod.Status.Phase)
+		llog.Infof("WaitPod: '%s' pod status: %v", targetPod.Name, targetPod.Status.Phase)
 	}
 
 	if targetPod.Status.Phase != v1.PodRunning {
@@ -245,7 +246,7 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 
 	var workersIps string
 
-	for _, address := range k.addressMap["internal"] {
+	for _, address := range k.AddressMap["internal"] {
 		workersIps += fmt.Sprintf("%v;", address)
 	}
 
@@ -313,17 +314,19 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 
 	return nil
 
+}
+
 // getHostsFileAttributes - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
 func (k Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 	var workersAddressString string
 	var masterAddressString string
 	var workersString string
 
-	masterAddressString = fmt.Sprintf("master ansible_host=%v ip=%v etcd_member_name=etcd1 \n", k.addressMap["internal"]["master"], k.addressMap["internal"]["master"])
+	masterAddressString = fmt.Sprintf("master ansible_host=%v ip=%v etcd_member_name=etcd1 \n", k.AddressMap["internal"]["master"], k.AddressMap["internal"]["master"])
 
 	i := 0
 
-	for _, address := range k.addressMap["internal"] {
+	for _, address := range k.AddressMap["internal"] {
 		if i > 0 {
 			workersAddressString += fmt.Sprintf("worker-%v ansible_host=%v ip=%v etcd_member_name=etcd%v \n", i, address, address, i+1)
 			workersString += fmt.Sprintf("worker-%v \n", i)

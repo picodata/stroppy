@@ -95,7 +95,7 @@ func (k *Kubernetes) getSessionObject() (stdout io.Reader, session engineSsh.Ses
 
 // открыть ssh-соединение и передать указатель на него вызывающему коду для управления
 func (k *Kubernetes) OpenSecureShellTunnel(caller string, mainPort int, reservePort int) (result *engineSsh.Result) {
-	mastersConnectionString := fmt.Sprintf("ubuntu@%v", k.addressMap["external"]["master"])
+	mastersConnectionString := fmt.Sprintf("ubuntu@%v", k.AddressMap["external"]["master"])
 
 	tunnelPort := mainPort
 	/*	проверяем доступность портов для postgres на локальной машине */

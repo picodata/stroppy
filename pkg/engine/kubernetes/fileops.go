@@ -10,10 +10,10 @@ import (
 	"time"
 
 	v1 "k8s.io/api/core/v1"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
-	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/tools/remotecommand"
 
 	"github.com/ansel1/merry"
@@ -22,6 +22,9 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"golang.org/x/crypto/ssh"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	cp "k8s.io/kubectl/pkg/cmd/cp"
 )
 
 func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err error) {
@@ -36,7 +39,7 @@ func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err e
 		return
 	}
 
-	masterFullAddress := fmt.Sprintf("%v:22", k.addressMap["external"]["master"])
+	masterFullAddress := fmt.Sprintf("%v:22", k.AddressMap["external"]["master"])
 
 	client := scp.NewClient(masterFullAddress, &clientSSHConfig)
 	if err = client.Connect(); err != nil {
@@ -63,7 +66,7 @@ func (k *Kubernetes) LoadFile(sourceFilePath, destinationFilePath string) (err e
 }
 
 func (k *Kubernetes) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
-	destinationPath = fmt.Sprintf("ubuntu@%s:%s", k.addressMap["external"]["master"], destinationPath)
+	destinationPath = fmt.Sprintf("ubuntu@%s:%s", k.AddressMap["external"]["master"], destinationPath)
 
 	copyDirectoryCmd := exec.Command("scp", "-r", "-i", k.sshKeyFilePath, "-o", "StrictHostKeyChecking=no",
 		directorySourcePath, destinationPath)
@@ -88,7 +91,7 @@ func (k Kubernetes) DownloadFile(remoteFullSourceFilePath, localPath string) (er
  * скопировать на мастер-ноду private key для работы мастера с воркерами
  * и файлы для развертывания мониторинга и postgres */
 func (k *Kubernetes) loadFilesToMaster() (err error) {
-	masterExternalIP := k.addressMap["external"]["master"]
+	masterExternalIP := k.AddressMap["external"]["master"]
 	llog.Infoln(masterExternalIP)
 
 	if k.provider == "yandex" {
@@ -131,16 +134,45 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) LoadFileToPod(podName, containerName, sourcePath, destinationPath string) (err error) {
-	kubeConfig := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
-		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{},
-	)
+func (k *Kubernetes) LoadFileToPodV2(podName, containerName, sourcePath, destinationPath string) (err error) {
+	ioStreams, _, _, _ := genericclioptions.NewTestIOStreams()
+	copyOptions := cp.NewCopyOptions(ioStreams)
 
-	var restConfig *rest.Config
-	if restConfig, err = kubeConfig.ClientConfig(); err != nil {
-		return merry.Prepend(err, "failed to configure kube connection")
+	src := sourcePath
+	copyOptions.ClientConfig, err = k.getKubeConfig()
+	if err != nil {
+		return merry.Prepend(err, "failed to get kube config for copy file to pod")
 	}
+
+	var GroupName = ""
+	var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
+	copyOptions.ClientConfig.GroupVersion = &SchemeGroupVersion
+	copyOptions.ClientConfig.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
+	//llog.Infoln(copyOptions.ClientConfig)
+
+	copyOptions.Clientset, err = k.GetClientSet()
+	if err != nil {
+		return merry.Prepend(err, "failed to get clientset for copy file to pod")
+	}
+
+	destSecretFile := fmt.Sprintf("/root/deploy/%v", k.clusterConfigFile)
+	dest := fmt.Sprintf("%v/%v:%v", ResourceDefaultNamespace, stroppyPodName, destSecretFile)
+	args := []string{src, dest}
+	if err := copyOptions.Run(args); err != nil {
+		llog.Errorln(err.Error(), copyOptions.ErrOut)
+		return merry.Prepend(err, "failed to run copy file")
+	}
+	return nil
+}
+
+func (k *Kubernetes) LoadFileToPod(podName, containerName, sourcePath, destinationPath string) (err error) {
+	var restConfig *rest.Config
+	if restConfig, err = k.getKubeConfig(); err != nil {
+		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
+		return
+	}
+
+	restConfig.Host = "localhost:6444"
 
 	var coreClient *corev1client.CoreV1Client
 	if coreClient, err = corev1client.NewForConfig(restConfig); err != nil {
@@ -152,6 +184,13 @@ func (k *Kubernetes) LoadFileToPod(podName, containerName, sourcePath, destinati
 		return merry.Prependf(err, "source file '%s'", sourcePath)
 	}
 
+	path, err := os.Getwd()
+	if err != nil {
+		return merry.Prependf(err, "failed to get work durectory")
+	}
+
+	sourceFullPath := fmt.Sprintf("%v/%v", path, sourcePath)
+
 	req := coreClient.RESTClient().
 		Post().
 		Namespace(ResourceDefaultNamespace).
@@ -160,7 +199,7 @@ func (k *Kubernetes) LoadFileToPod(podName, containerName, sourcePath, destinati
 		SubResource(SubresourceExec).
 		VersionedParams(&v1.PodExecOptions{
 			Container: containerName,
-			Command:   []string{"cp", "/dev/stdin", destinationPath},
+			Command:   []string{"cp", sourceFullPath, destinationPath},
 			Stdin:     true,
 			Stdout:    false,
 			Stderr:    true,

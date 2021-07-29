@@ -59,7 +59,7 @@ func createKubernetesObject(settings *config.Settings,
 		workingDirectory:  settings.WorkingDirectory,
 		clusterConfigFile: filepath.Join(settings.WorkingDirectory, "config"),
 
-		addressMap: terraformAddressMap,
+		AddressMap: terraformAddressMap,
 		sc:         sshClient,
 
 		provider:        settings.DeploySettings.Provider,
@@ -86,7 +86,7 @@ type Kubernetes struct {
 	workingDirectory  string
 	clusterConfigFile string
 
-	addressMap map[string]map[string]string
+	AddressMap map[string]map[string]string
 
 	sshKeyFileName string
 	sshKeyFilePath string
