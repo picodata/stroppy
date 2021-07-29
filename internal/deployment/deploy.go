@@ -156,6 +156,10 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "failed to init provider")
 	}
 
+	if ok, err := d.tf.Provider.IsPrivateKeyExist(d.tf.WorkDirectory); !ok {
+		return merry.Prepend(err, "failed to check private key exist")
+	}
+
 	if err = d.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}

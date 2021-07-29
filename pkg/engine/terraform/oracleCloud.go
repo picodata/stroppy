@@ -3,6 +3,7 @@ package terraform
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strconv"
 
@@ -254,5 +255,19 @@ func (op *OracleProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	mapIPAddresses["external"] = externalAddress
 	mapIPAddresses["internal"] = internalAddress
 
+	llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+
 	return mapIPAddresses, nil
+}
+
+func (op *OracleProvider) IsPrivateKeyExist(workingDirectory string) (bool, error) {
+	privateKeyPath := filepath.Join(workingDirectory, "private_key.pem")
+
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, merry.Prepend(err, "private key file not found. Create it, please.")
+		}
+		return false, merry.Prepend(err, "failed to find private key file")
+	}
+	return true, nil
 }

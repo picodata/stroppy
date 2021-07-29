@@ -3,6 +3,8 @@ package terraform
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	"github.com/ansel1/merry"
@@ -146,5 +148,29 @@ func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	mapIPAddresses["external"] = externalAddress
 	mapIPAddresses["internal"] = internalAddress
 
+	llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+
 	return mapIPAddresses, nil
+}
+
+func (yp *YandexProvider) IsPrivateKeyExist(workingDirectory string) (bool, error) {
+	privateKeyPath := filepath.Join(workingDirectory, "id_rsa")
+
+	publicKeyPath := filepath.Join(workingDirectory, "id_rsa.pub")
+
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, merry.Prepend(err, "private key file not found. Create it, please.")
+		}
+		return false, merry.Prepend(err, "failed to find private key file")
+	}
+
+	if _, err := os.Stat(publicKeyPath); err != nil {
+		if os.IsNotExist(err) {
+			return false, merry.Prepend(err, "public key file not found. Create it, please.")
+		}
+		return false, merry.Prepend(err, "failed to find public key file")
+	}
+
+	return true, nil
 }
