@@ -3,7 +3,6 @@ package terraform
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
 	"path/filepath"
 	"strconv"
 
@@ -11,8 +10,11 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/engine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
+
+const oraclePrivateKeyFile = "private_key.pem"
 
 func CreateOracleProvider(settings *config.DeploySettings, wd string) (op *OracleProvider, err error) {
 	templatesConfig, err := ReadTemplates(wd)
@@ -260,14 +262,15 @@ func (op *OracleProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	return mapIPAddresses, nil
 }
 
-func (op *OracleProvider) IsPrivateKeyExist(workingDirectory string) (bool, error) {
-	privateKeyPath := filepath.Join(workingDirectory, "private_key.pem")
+func (op *OracleProvider) IsPrivateKeyExist(workingDirectory string) bool {
+	var isFoundPrivateKey bool
 
-	if _, err := os.Stat(privateKeyPath); err != nil {
-		if os.IsNotExist(err) {
-			return false, merry.Prepend(err, "private key file not found. Create it, please.")
-		}
-		return false, merry.Prepend(err, "failed to find private key file")
+	llog.Infoln("checking of private key for oracle provider...")
+	if isFoundPrivateKey = engine.IsFileExists(workingDirectory, oraclePrivateKeyFile); !isFoundPrivateKey {
+		llog.Infoln("checking of private key for oracle provider: unsuccess")
+		return false
 	}
-	return true, nil
+
+	llog.Infoln("checking of private key for oracle provider: success")
+	return true
 }

@@ -123,7 +123,9 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 
 	defer commandSessionObject.Close()
 
-	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
+	llog.Debugf("executing of commands:%v \n", text)
+
+	if result, err = commandSessionObject.CombinedOutput(text); err != nil {
 		// проверка на длину массива добавлена для случая, когда grep возвращает пустую строку, что приводит к exit code 1
 		if len(result) != 0 {
 			return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
@@ -136,6 +138,8 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 }
 
 func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {
+
+	llog.Debugf("executing of commands %v for check \n", checkCommand)
 	var CmdResult []byte
 	if CmdResult, err = ExecuteCommandWorker(workingDirectory, address, checkCommand, provider); err != nil {
 		if err != nil {

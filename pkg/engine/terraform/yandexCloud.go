@@ -3,15 +3,18 @@ package terraform
 import (
 	"fmt"
 	"io/ioutil"
-	"os"
-	"path/filepath"
 	"strconv"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/engine"
 )
+
+const yandexPrivateKeyFile = "id_rsa"
+
+const yandexPublicKeyFile = "id_rsa.pub"
 
 func CreateYandexProvider(settings *config.DeploySettings, wd string) (yp *YandexProvider, err error) {
 	templatesConfig, err := ReadTemplates(wd)
@@ -153,24 +156,29 @@ func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	return mapIPAddresses, nil
 }
 
-func (yp *YandexProvider) IsPrivateKeyExist(workingDirectory string) (bool, error) {
-	privateKeyPath := filepath.Join(workingDirectory, "id_rsa")
+func (yp *YandexProvider) IsPrivateKeyExist(workingDirectory string) bool {
+	var isFoundPrivateKey bool
+	var isFoundPublicKey bool
 
-	publicKeyPath := filepath.Join(workingDirectory, "id_rsa.pub")
-
-	if _, err := os.Stat(privateKeyPath); err != nil {
-		if os.IsNotExist(err) {
-			return false, merry.Prepend(err, "private key file not found. Create it, please.")
-		}
-		return false, merry.Prepend(err, "failed to find private key file")
+	llog.Infoln("checking of private key for yandex provider...")
+	isFoundPrivateKey = engine.IsFileExists(workingDirectory, yandexPrivateKeyFile)
+	if !isFoundPrivateKey {
+		llog.Infoln("checking of private key for yandex provider: unsuccess")
+	} else {
+		llog.Infoln("checking of private key for yandex provider: success")
 	}
 
-	if _, err := os.Stat(publicKeyPath); err != nil {
-		if os.IsNotExist(err) {
-			return false, merry.Prepend(err, "public key file not found. Create it, please.")
-		}
-		return false, merry.Prepend(err, "failed to find public key file")
+	llog.Infoln("checking of public key for yandex provider...")
+	if isFoundPublicKey = engine.IsFileExists(workingDirectory, yandexPublicKeyFile); !isFoundPublicKey {
+		llog.Infoln("checking of public key for yandex provider: unsuccess")
 	}
 
-	return true, nil
+	if isFoundPrivateKey && isFoundPublicKey {
+		llog.Infoln("checking of authtorized keys for yandex provider: success")
+		return true
+	}
+
+	llog.Errorln("checking of authtorized keys for yandex provider: unsuccess")
+	return false
+
 }

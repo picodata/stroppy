@@ -3,6 +3,8 @@ package engine
 import (
 	"bufio"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
 
 	llog "github.com/sirupsen/logrus"
@@ -51,4 +53,18 @@ func HandleReader(reader *bufio.Reader) {
 			llog.Debugln(str)
 		}
 	}
+}
+
+func IsFileExists(workingDirectory string, file string) bool {
+	privateKeyPath := filepath.Join(workingDirectory, file)
+
+	if _, err := os.Stat(privateKeyPath); err != nil {
+		if os.IsNotExist(err) {
+			llog.Errorf("file %v not found. Create it, please.\n", file)
+			return false
+		}
+		llog.Errorf("failed to find file %v: %v\n", file, err)
+		return false
+	}
+	return true
 }

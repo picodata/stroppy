@@ -156,7 +156,7 @@ func (d *Deployment) Deploy() (err error) {
 		return merry.Prepend(err, "failed to init provider")
 	}
 
-	if ok, err := d.tf.Provider.IsPrivateKeyExist(d.tf.WorkDirectory); !ok {
+	if ok := d.tf.Provider.IsPrivateKeyExist(d.tf.WorkDirectory); !ok {
 		return merry.Prepend(err, "failed to check private key exist")
 	}
 
