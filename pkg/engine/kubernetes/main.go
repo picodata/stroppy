@@ -37,6 +37,9 @@ func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 	}
 
 	commandClientType := engineSsh.RemoteClient
+	if settings.TestSettings.RunAsPod {
+		commandClientType = engineSsh.DummyClient
+	}
 	var sc engineSsh.Client
 	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
 		kubernetesMasterAddress,
