@@ -148,7 +148,7 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 					err = nil
 					break
 				}
-				llog.Debugf("storage mount %d/2 failed: %v", err)
+				llog.Debugf("storage mount %d/2 failed: %v", i, err)
 			}
 			if err != nil {
 				return merry.Prependf(err, "additional storage is not mounted to %v", worker)

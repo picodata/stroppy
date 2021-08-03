@@ -90,12 +90,10 @@ type version struct {
 
 // GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
-
 	return t.Provider.GetAddressMap(t.stateFilePath, t.settings.Nodes)
 }
 
 func (t *Terraform) Run() (err error) {
-
 	err = t.Provider.Prepare(t.WorkDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to prepare terraform")

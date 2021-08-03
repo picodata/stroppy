@@ -144,11 +144,11 @@ func (k *Kubernetes) LoadFileToPodV2(podName, containerName, sourcePath, destina
 		return merry.Prepend(err, "failed to get kube config for copy file to pod")
 	}
 
-	var GroupName = ""
-	var SchemeGroupVersion = schema.GroupVersion{Group: GroupName, Version: "v1"}
+	GroupName := ""
+	SchemeGroupVersion := schema.GroupVersion{Group: GroupName, Version: "v1"}
 	copyOptions.ClientConfig.GroupVersion = &SchemeGroupVersion
 	copyOptions.ClientConfig.NegotiatedSerializer = serializer.WithoutConversionCodecFactory{CodecFactory: scheme.Codecs}
-	//llog.Infoln(copyOptions.ClientConfig)
+	// llog.Infoln(copyOptions.ClientConfig)
 
 	copyOptions.Clientset, err = k.GetClientSet()
 	if err != nil {

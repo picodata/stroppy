@@ -180,5 +180,4 @@ func (yp *YandexProvider) IsPrivateKeyExist(workingDirectory string) bool {
 
 	llog.Errorln("checking of authtorized keys for yandex provider: unsuccess")
 	return false
-
 }

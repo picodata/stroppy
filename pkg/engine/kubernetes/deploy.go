@@ -111,7 +111,6 @@ func (k *Kubernetes) DeployStroppy() error {
 		k.StroppyPod, err = k.WaitPod(stroppyPodName, ResourceDefaultNamespace,
 			PodWaitingNotWaitCreation, PodWaitingTime10Minutes)
 		if err != nil {
-
 			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}
@@ -186,7 +185,6 @@ func (k *Kubernetes) deploy() (err error) {
 }
 
 func getProviderDeployCommands(kubernetes *Kubernetes) (string, string, error) {
-
 	switch kubernetes.provider {
 	case "yandex":
 		// подставляем константы

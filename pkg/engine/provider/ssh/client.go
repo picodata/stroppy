@@ -138,7 +138,6 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 }
 
 func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {
-
 	llog.Debugf("executing of commands %v for check \n", checkCommand)
 	var CmdResult []byte
 	if CmdResult, err = ExecuteCommandWorker(workingDirectory, address, checkCommand, provider); err != nil {

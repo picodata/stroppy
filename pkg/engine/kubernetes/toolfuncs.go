@@ -313,7 +313,6 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 	llog.Infoln("Add labels to cluster nodes: success")
 
 	return nil
-
 }
 
 // getHostsFileAttributes - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
