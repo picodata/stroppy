@@ -143,10 +143,17 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 		if !ok {
 
-			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider); err != nil {
-				errorMessage := fmt.Sprintf("additional storage is not mounted to %v", worker)
-				return merry.Prepend(err, errorMessage)
+			for i := 0; i < 3; i++ {
+				if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider); err == nil {
+					err = nil
+					break
+				}
+				llog.Debugf("storage mount %d/2 failed: %v", err)
 			}
+			if err != nil {
+				return merry.Prependf(err, "additional storage is not mounted to %v", worker)
+			}
+
 			llog.Infoln("mount additional storage: success")
 		}
 
