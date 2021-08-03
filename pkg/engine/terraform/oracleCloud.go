@@ -18,7 +18,7 @@ import (
 
 const oraclePrivateKeyFile = "private_key.pem"
 
-func CreateOracleProvider(settings *config.DeploySettings, wd string) (op *OracleProvider, err error) {
+func CreateOracleProvider(settings *config.DeploymentSettings, wd string) (op *OracleProvider, err error) {
 	templatesConfig, err := ReadTemplates(wd)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read templates for create yandex provider")
@@ -36,7 +36,7 @@ func CreateOracleProvider(settings *config.DeploySettings, wd string) (op *Oracl
 
 type OracleProvider struct {
 	templatesConfig TemplatesConfig
-	settings        *config.DeploySettings
+	settings        *config.DeploymentSettings
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform

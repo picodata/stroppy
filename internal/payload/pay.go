@@ -28,9 +28,6 @@ type PayStats struct {
 }
 
 func (p *BasePayload) Pay(_ string) (err error) {
-
-	llog.Infof("Establishing connection to the cluster")
-
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
 		p.config.Count, p.config.Workers, runtime.NumCPU())
 

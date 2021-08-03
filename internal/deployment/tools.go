@@ -12,39 +12,47 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
+const dateFormat = "02-01-2006_15_04_05"
+
+func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
+	payTestCommand := []string{
+		"/root/stroppy", "pay",
+		"--run-as-pod",
+		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--check",
+		"--count", fmt.Sprintf("%v", settings.Count),
+		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
+		"-w", fmt.Sprintf("%v", settings.Workers),
+		"--kube-master-addr", sh.k.AddressMap["internal"]["master"],
+		"--dbtype", sh.settings.DatabaseSettings.DBType,
+	}
+
+	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
+		settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.Zipfian, time.Now().Format(dateFormat))
+
+	if beginTime, endTime, err = sh.k.ExecuteRemoteTest(payTestCommand, logFileName); err != nil {
+		err = merry.Prepend(err, "failed to execute remote transfer test")
+	}
+	return
+}
+
 // executePay - выполнить тест переводов внутри удаленного пода stroppy
-func (d *Deployment) executePay(_ string) (err error) {
+func (sh *shell) executePay(_ string) (err error) {
 	var settings *config.DatabaseSettings
-	if settings, err = d.readDatabaseConfig("pay"); err != nil {
+	if settings, err = sh.readDatabaseConfig("pay"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	const dateFormat = "02-01-2006_15_04_05"
-
 	var beginTime, endTime int64
-	if d.settings.TestSettings.UseCloudStroppy {
-		payTestCommand := []string{
-			"/root/stroppy", "pay",
-			"--run-as-pod",
-			"--url", fmt.Sprintf("%v", settings.DBURL),
-			"--check",
-			"--count", fmt.Sprintf("%v", settings.Count),
-			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-			"-w", fmt.Sprintf("%v", settings.Workers),
-			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
-			"--dbtype", d.settings.DatabaseSettings.DBType,
-		}
-
-		logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
-			settings.DBType, settings.Count, settings.BanRangeMultiplier,
-			settings.Zipfian, time.Now().Format(dateFormat))
-
-		if beginTime, endTime, err = d.k.ExecuteRemoteTest(payTestCommand, logFileName); err != nil {
-			return merry.Prepend(err, "failed to execute remote transfer test")
+	if sh.settings.TestSettings.UseCloudStroppy {
+		beginTime, endTime, err = sh.executeRemotePay(settings)
+		if err != nil {
+			return
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = d.payload.Pay(""); err != nil {
+		if err = sh.payload.Pay(""); err != nil {
 			return
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
@@ -56,44 +64,51 @@ func (d *Deployment) executePay(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = d.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
 	return
 }
 
+func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
+	popTestCommand := []string{
+		"/root/stroppy", "pop",
+		"--run-as-pod",
+		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--count", fmt.Sprintf("%v", settings.Count),
+		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
+		"--kube-master-addr", sh.k.AddressMap["internal"]["master"],
+		"-w", fmt.Sprintf("%v", settings.Workers),
+		"--dbtype", sh.settings.DatabaseSettings.DBType,
+	}
+	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
+		settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.Zipfian, time.Now().Format(dateFormat))
+
+	if beginTime, endTime, err = sh.k.ExecuteRemoteTest(popTestCommand, logFileName); err != nil {
+		err = merry.Prepend(err, "failed to execute remote populate test")
+	}
+	return
+}
+
 // executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
-func (d *Deployment) executePop(_ string) (err error) {
+func (sh *shell) executePop(_ string) (err error) {
 	var settings *config.DatabaseSettings
-	if settings, err = d.readDatabaseConfig("pop"); err != nil {
+	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-
-	const dateFormat = "02-01-2006_15_04_05"
+	// sh.payload.UpdateSettings(settings)
 
 	var beginTime, endTime int64
-	if d.settings.TestSettings.UseCloudStroppy {
-		popTestCommand := []string{
-			"/root/stroppy", "pop",
-			"--run-as-pod",
-			"--url", fmt.Sprintf("%v", settings.DBURL),
-			"--count", fmt.Sprintf("%v", settings.Count),
-			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
-			"-w", fmt.Sprintf("%v", settings.Workers),
-			"--dbtype", d.settings.DatabaseSettings.DBType,
-		}
-		logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
-			settings.DBType, settings.Count, settings.BanRangeMultiplier,
-			settings.Zipfian, time.Now().Format(dateFormat))
-
-		if beginTime, endTime, err = d.k.ExecuteRemoteTest(popTestCommand, logFileName); err != nil {
-			return merry.Prepend(err, "failed to execute remote populate test")
+	if sh.settings.TestSettings.UseCloudStroppy {
+		beginTime, endTime, err = sh.executeRemotePop(settings)
+		if err != nil {
+			return
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = d.payload.Pop(""); err != nil {
+		if err = sh.payload.Pop(""); err != nil {
 			return
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
@@ -105,7 +120,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = d.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
@@ -114,9 +129,9 @@ func (d *Deployment) executePop(_ string) (err error) {
 
 // readDatabaseConfig
 // прочитать конфигурационный файл test_config.json
-func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
+func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
 	var data []byte
-	configFilePath := filepath.Join(d.workingDirectory, configFileName)
+	configFilePath := filepath.Join(sh.workingDirectory, configFileName)
 	if data, err = ioutil.ReadFile(configFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read config file")
 		return
@@ -124,9 +139,9 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 
 	settings = config.DatabaseDefaults()
 	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
-	settings.DBType = d.settings.DatabaseSettings.DBType
+	settings.DBType = sh.settings.DatabaseSettings.DBType
 
-	switch d.settings.DatabaseSettings.DBType {
+	switch sh.settings.DatabaseSettings.DBType {
 	case cluster.Postgres:
 		settings.DBURL = "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable"
 
@@ -134,7 +149,7 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 		settings.DBURL = "fdb.cluster"
 
 	default:
-		err = merry.Errorf("unknown db type '%s'", d.settings.DatabaseSettings.DBType)
+		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return
 	}
 

@@ -10,8 +10,8 @@ func Execute() {
 	settings := config.DefaultSettings()
 
 	rootCmd := &cobra.Command{
-		Use:   "lightest [pop|pay|deploy]",
-		Short: "lightest - a sample LWT application implementing an account ledger",
+		Use:   "stroppy [pop|pay|deploy|shell]",
+		Short: "stroppy - a sample LWT application implementing an account ledger",
 		Long: `
 This program models an automatic banking system.  It implements 3 model
 workloads, for populating the database with accounts, making transfers, and
@@ -60,10 +60,10 @@ bandwidth along the way.`,
 		settings.DatabaseSettings.Password,
 		"Database password")
 
-	rootCmd.PersistentFlags().StringVarP(&settings.DatabaseSettings.DBType,
-		"database", "d",
+	rootCmd.PersistentFlags().StringVar(&settings.DatabaseSettings.DBType,
+		"dbtype",
 		settings.DatabaseSettings.DBType,
-		"Database type, postgreSQL if not set.")
+		"database type for deploy/ use")
 
 	rootCmd.PersistentFlags().StringVar(&settings.DatabaseSettings.DBURL,
 		"url",

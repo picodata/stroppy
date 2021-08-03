@@ -3,6 +3,7 @@ package commands
 import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gopkg.in/inf.v0"
@@ -28,8 +29,13 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 			}
 
 			if settings.TestSettings.UseCloudStroppy {
-				// надо подключится к (локальному или удаленному) мастеру кубернетс,
-				// запустить команду через под
+				sh, err := deployment.LoadShell(settings)
+				if err != nil {
+					llog.Fatalf("shell load state failed: %v", err)
+				}
+				if err = sh.RunRemotePayTest(); err != nil {
+					llog.Fatalf("test failed with error %v", err)
+				}
 			} else {
 				p, err := payload.CreateBasePayload(settings, createChaos(settings))
 				if err != nil {

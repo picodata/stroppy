@@ -29,7 +29,7 @@ var (
 	errChooseProvider = errors.New("failed to choose provider. Unexpected provider's name")
 )
 
-func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder string) (t *Terraform) {
+func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder string) (t *Terraform) {
 	addressMap := make(map[string]map[string]string)
 
 	t = &Terraform{
@@ -47,26 +47,26 @@ func CreateTerraform(settings *config.DeploySettings, exeFolder, cfgFolder strin
 }
 
 // InitProvider - инициализировать провайдера в зависимости от настроек
-func (t *Terraform) InitProvider(settings *config.DeploySettings) (err error) {
-	switch settings.Provider {
+func (t *Terraform) InitProvider() (err error) {
+	switch t.settings.Provider {
 	case yandexProvider:
-		t.Provider, err = CreateYandexProvider(settings, t.WorkDirectory)
+		t.Provider, err = CreateYandexProvider(t.settings, t.WorkDirectory)
 		if err != nil {
 			return merry.Prepend(err, "failed to initialized yandex provider")
 		}
 
 	case oracleProvider:
-		t.Provider, err = CreateOracleProvider(settings, t.WorkDirectory)
+		t.Provider, err = CreateOracleProvider(t.settings, t.WorkDirectory)
 		if err != nil {
 			return merry.Prepend(err, "failed to initialized oracle provider")
 		}
 	}
 
-	return nil
+	return
 }
 
 type Terraform struct {
-	settings *config.DeploySettings
+	settings *config.DeploymentSettings
 
 	exePath           string
 	templatesFilePath string

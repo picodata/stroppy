@@ -1,7 +1,9 @@
 package commands
 
 import (
+	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
@@ -15,6 +17,13 @@ func newShellCommand(settings *config.Settings) (shellCmd *cobra.Command) {
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
+			sh, err := deployment.LoadShell(settings)
+			if err != nil {
+				llog.Fatalf("load shell error: %v", err)
+			}
+			if err = sh.ReadEvalPrintLoop(); err != nil {
+				llog.Fatalf("repl return with error %v", err)
+			}
 		},
 	}
 	return

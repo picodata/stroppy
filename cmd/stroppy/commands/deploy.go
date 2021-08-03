@@ -14,7 +14,7 @@ import (
 func newDeployCommand(settings *config.Settings) *cobra.Command {
 	rand.Seed(time.Now().UnixNano())
 
-	deploySettings := settings.DeploySettings
+	deploySettings := settings.DeploymentSettings
 	deployCmd := &cobra.Command{
 		Use:                    "dep",
 		Aliases:                []string{"deploy"},
@@ -39,9 +39,12 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		},
 		PreRunE: nil,
 		Run: func(cmd *cobra.Command, args []string) {
-			d := deployment.CreateDeployment(settings)
-			if err := d.Deploy(); err != nil {
+			sh, err := deployment.Deploy(settings)
+			if err != nil {
 				llog.Fatalf("status of exit: %v", err)
+			}
+			if err = sh.ReadEvalPrintLoop(); err != nil {
+				llog.Fatalf("repl failed with error %v", err)
 			}
 			llog.Infoln("status of exit: success")
 		},
@@ -78,11 +81,6 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		"nodes",
 		deploySettings.Nodes,
 		"count nodes of cluster")
-
-	deployCmd.PersistentFlags().StringVar(&settings.DatabaseSettings.DBType,
-		"dbtype",
-		settings.DatabaseSettings.DBType,
-		"database type for deploy")
 
 	return deployCmd
 }

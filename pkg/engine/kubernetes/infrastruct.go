@@ -31,3 +31,9 @@ func (k *Kubernetes) ListPods(namespace string) (pods []v1.Pod, err error) {
 	pods = podList.Items
 	return
 }
+
+func (k *Kubernetes) GetInfraPorts() (grafanaPort, kubernetesMasterPort int) {
+	grafanaPort = k.portForward.Port
+	kubernetesMasterPort = k.sshTunnel.Port
+	return
+}

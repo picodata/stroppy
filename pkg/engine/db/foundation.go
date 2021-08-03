@@ -22,7 +22,7 @@ const (
 	foundationClusterClientName = "sample-cluster-client"
 )
 
-func CreateFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (fc Cluster) {
+func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (fc Cluster) {
 	fc = &foundationCluster{
 		commonCluster: createCommonCluster(
 			sc,

@@ -16,7 +16,7 @@ const yandexPrivateKeyFile = "id_rsa"
 
 const yandexPublicKeyFile = "id_rsa.pub"
 
-func CreateYandexProvider(settings *config.DeploySettings, wd string) (yp *YandexProvider, err error) {
+func CreateYandexProvider(settings *config.DeploymentSettings, wd string) (yp *YandexProvider, err error) {
 	templatesConfig, err := ReadTemplates(wd)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read templates for create yandex provider")
@@ -34,7 +34,7 @@ func CreateYandexProvider(settings *config.DeploySettings, wd string) (yp *Yande
 
 type YandexProvider struct {
 	templatesConfig TemplatesConfig
-	settings        *config.DeploySettings
+	settings        *config.DeploymentSettings
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform

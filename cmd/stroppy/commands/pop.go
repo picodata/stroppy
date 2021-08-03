@@ -3,6 +3,7 @@ package commands
 import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
+	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gopkg.in/inf.v0"
@@ -30,6 +31,13 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 			}
 
 			if settings.TestSettings.UseCloudStroppy {
+				sh, err := deployment.LoadShell(settings)
+				if err != nil {
+					llog.Fatalf("shell load state failed: %v", err)
+				}
+				if err = sh.RunRemotePopTest(); err != nil {
+					llog.Fatalf("test failed with error %v", err)
+				}
 			} else {
 				p, err := payload.CreateBasePayload(settings, createChaos(settings))
 				if err != nil {

@@ -72,8 +72,9 @@ func (k *Kubernetes) CopyFileFromMaster(filePath string) (err error) {
 	llog.Infoln(copyFromMasterCmd.String())
 	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
 
-	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
-		return merry.Prepend(err, "failed to execute command copy from master")
+	var output []byte
+	if output, err = copyFromMasterCmd.CombinedOutput(); err != nil {
+		return merry.Prependf(err, "failed to execute command copy from master, output: %s", string(output))
 	}
 
 	return
@@ -121,7 +122,9 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 	return
 }
 
-func (k *Kubernetes) WaitPod(podName, namespace string, creationWait bool, waitTime time.Duration) (targetPod *v1.Pod, err error) {
+func (k *Kubernetes) WaitPod(podName, namespace string,
+	creationWait bool, waitTime time.Duration) (targetPod *v1.Pod, err error) {
+
 	const waitTimeQuantum = 10 * time.Second
 	if waitTime < waitTimeQuantum {
 		err = fmt.Errorf("input wait time %v (s) is less than quantum 10 seconds", waitTime.Seconds())

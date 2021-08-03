@@ -36,7 +36,7 @@ const (
 	PodWaitingWaitCreation    = true
 	PodWaitingNotWaitCreation = false
 
-	PodWaitingTime10Minutes = 2 * time.Minute
+	PodWaitingTime10Minutes = 10 * time.Minute
 )
 
 const (

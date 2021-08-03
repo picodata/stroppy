@@ -29,8 +29,8 @@ type Settings struct {
 
 	TestSettings *TestSettings
 
-	DatabaseSettings *DatabaseSettings
-	DeploySettings   *DeploySettings
+	DatabaseSettings   *DatabaseSettings
+	DeploymentSettings *DeploymentSettings
 }
 
 func DefaultSettings() (s *Settings) {
@@ -40,8 +40,8 @@ func DefaultSettings() (s *Settings) {
 
 		Local: false,
 
-		DeploySettings:   deployDefaults(),
-		DatabaseSettings: DatabaseDefaults(),
+		DeploymentSettings: deployDefaults(),
+		DatabaseSettings:   DatabaseDefaults(),
 
 		TestSettings: TestDefaults(),
 
@@ -113,7 +113,7 @@ func DatabaseDefaults() *DatabaseSettings {
 	}
 }
 
-type DeploySettings struct {
+type DeploymentSettings struct {
 	Provider string
 	Flavor   string
 	Nodes    int
@@ -121,8 +121,8 @@ type DeploySettings struct {
 
 // DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.
 // линтер требует указания всех полей структуры при присвоении переменной
-func deployDefaults() *DeploySettings {
-	d := DeploySettings{
+func deployDefaults() *DeploymentSettings {
+	d := DeploymentSettings{
 		Provider: "yandex",
 		Flavor:   "small",
 		Nodes:    3,

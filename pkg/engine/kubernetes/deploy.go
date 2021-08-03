@@ -21,31 +21,32 @@ import (
 	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
 )
 
-func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err error) {
+func (k *Kubernetes) Deploy() (err error) {
 	if err = k.loadFilesToMaster(); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to сopy files to cluster")
+		return merry.Prepend(err, "failed to сopy files to cluster")
 	}
 
 	if err = k.deploy(); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to deploy k8s")
+		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
 	if err = k.CopyFileFromMaster(kubeConfigPath); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to copy kube config from master")
+		return merry.Prepend(err, "failed to copy kube config from master")
 	}
 
 	if err = k.editClusterURL(clusterK8sPort); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
+		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
-	if k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {
+	k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort)
+	if k.sshTunnel.Err != nil {
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
 
 	if err = k.AddNodeLabels(ResourceDefaultNamespace); err != nil {
-		return nil, 0, merry.Prepend(err, "failed to add labels to cluster nodes")
+		return merry.Prepend(err, "failed to add labels to cluster nodes")
 	}
 
 	if err = k.prepareDeployStroppy(); err != nil {
@@ -60,17 +61,17 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 
 	llog.Infoln("status of stroppy pod deploy: success")
 
-	pPortForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
-
-	if pPortForward.Err != nil {
-		return nil, 0, merry.Prepend(pPortForward.Err, "failed to port forward")
+	k.portForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
+	if k.portForward.Err != nil {
+		return merry.Prepend(k.portForward.Err, "failed to port forward")
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
 
-	port = k.sshTunnel.Port
-	k.portForward = pPortForward
-
 	return
+}
+
+func (k *Kubernetes) Shutdown() {
+	k.portForward.Tunnel.Close()
 }
 
 func (k *Kubernetes) DeployStroppy() error {

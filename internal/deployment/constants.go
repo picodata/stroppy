@@ -5,8 +5,8 @@ const (
 
 	interactiveUsageHelpTemplate = `
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
-To access Grafana use address localhost:%v.
-To access to kubernetes cluster in cloud use address localhost:%v.
+To access Grafana use address localhost:%d.
+To access to kubernetes cluster in cloud use address localhost:%d.
 Enter "quit" to exit stroppy and destroy cluster.
 Enter "postgres pop" to start populating PostgreSQL with accounts.
 Enter "postgres pay" to start transfers test in PostgreSQL.

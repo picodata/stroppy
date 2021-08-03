@@ -43,7 +43,7 @@ func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
 	var sc engineSsh.Client
 	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
 		kubernetesMasterAddress,
-		settings.DeploySettings.Provider,
+		settings.DeploymentSettings.Provider,
 		commandClientType)
 	if err != nil {
 		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
@@ -65,7 +65,7 @@ func createKubernetesObject(settings *config.Settings,
 		AddressMap: terraformAddressMap,
 		sc:         sshClient,
 
-		provider:        settings.DeploySettings.Provider,
+		provider:        settings.DeploymentSettings.Provider,
 		useLocalSession: settings.Local,
 
 		isSshKeyFileOnMaster: false,
