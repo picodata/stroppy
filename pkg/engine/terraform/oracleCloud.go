@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"sort"
 	"strconv"
+	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -105,8 +107,15 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 	var addressArray []string
 
-	for _, address := range addressMap["external"] {
-		addressArray = append(addressArray, address)
+	var keys []string
+	for k := range addressMap["external"] {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		addressArray = append(addressArray, addressMap["external"][k])
 	}
 
 	/*
@@ -144,6 +153,7 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 		if !ok {
 
 			for i := 0; i < 3; i++ {
+				time.Sleep(5 * time.Second)
 				if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider); err == nil {
 					err = nil
 					break
@@ -154,6 +164,7 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 				return merry.Prependf(err, "additional storage is not mounted to %v", worker)
 			}
 
+			time.Sleep(5 * time.Second)
 			llog.Infoln("mount additional storage: success")
 		}
 

@@ -39,7 +39,6 @@ const (
 sudo iscsiadm -m node -o new -T %v -p 169.254.2.2:3260
 sudo iscsiadm -m node -o update -T %v -n node.startup -v automatic
 sudo iscsiadm -m node -T %v -p 169.254.2.2:3260 -l
-sleep 5
 `
 
 	PartedVolumeCmd = `
