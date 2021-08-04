@@ -39,12 +39,12 @@ type PopStats struct {
 func (p *BasePayload) Pop(_ string) (err error) {
 	stats := PopStats{}
 
-	if err = p.cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
+	if err = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
 		return merry.Prepend(err, "cluster bootstrap failed")
 	}
 
 	var clusterSettings cluster.Settings
-	if clusterSettings, err = p.cluster.FetchSettings(); err != nil {
+	if clusterSettings, err = p.Cluster.FetchSettings(); err != nil {
 		return merry.Prepend(err, "cluster settings fetch failed")
 	}
 
@@ -69,7 +69,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
 			for {
-				err := p.cluster.InsertAccount(acc)
+				err := p.Cluster.InsertAccount(acc)
 				if err != nil {
 					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)

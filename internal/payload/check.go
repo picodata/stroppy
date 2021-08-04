@@ -13,7 +13,7 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 	persistBalance := false
 
 	if prev == nil {
-		sum, err = p.cluster.FetchTotal()
+		sum, err = p.Cluster.FetchTotal()
 		if err != nil {
 			if err != cluster.ErrNoRows {
 				llog.Fatalf("Failed to fetch the stored total: %v", err)
@@ -25,7 +25,7 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 
 	if sum == nil {
 		llog.Infof("Calculating the total balance...")
-		if sum, err = p.cluster.CheckBalance(); err != nil {
+		if sum, err = p.Cluster.CheckBalance(); err != nil {
 			llog.Fatalf("Failed to calculate the total: %v", err)
 		}
 	}
@@ -39,7 +39,7 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 	if persistBalance {
 		// Do not overwrite the total balance if it is already persisted.
 		llog.Infof("Persisting the total balance...")
-		if err := p.cluster.PersistTotal(*sum); err != nil {
+		if err := p.Cluster.PersistTotal(*sum); err != nil {
 			llog.Fatalf("Failed to persist total balance: error %v, sum: %v", err, sum)
 		}
 	}

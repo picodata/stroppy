@@ -3,10 +3,13 @@ package deployment
 import (
 	"fmt"
 	"io/ioutil"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
@@ -68,7 +71,20 @@ func (d *Deployment) executePop(_ string) (err error) {
 	if settings, err = d.readDatabaseConfig("pop"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	// d.payload.UpdateSettings(settings)
+
+	stopChan := make(chan bool)
+	errChan := make(chan error)
+
+	if settings.DBType == "fdb" {
+
+		go d.GetFDBStatistics(d.workingDirectory, stopChan, errChan)
+
+	}
+
+	errorCheck, ok := <-errChan
+	if ok {
+		return merry.Prepend(errorCheck, "failed to get statistic fdb")
+	}
 
 	const dateFormat = "01-02-2006_15:04:05"
 
@@ -96,6 +112,12 @@ func (d *Deployment) executePop(_ string) (err error) {
 			return
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+	}
+
+	stopChan <- true
+	errorCheck, ok = <-errChan
+	if ok {
+		llog.Errorf("failed to get statistic fdb: %v", errorCheck)
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
@@ -147,4 +169,44 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 	}
 
 	return
+}
+
+func (d *Deployment) GetFDBStatistics(workingDirectory string, stopChan chan bool, errChan chan error) {
+
+	statFilePath := filepath.Join(workingDirectory, statJsonFileName)
+
+	statFile, err := os.OpenFile(statFilePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		errChan <- merry.Prepend(err, "failed to open statistic file")
+	}
+
+	defer statFile.Close()
+
+	var FDBPool fdb.Database
+	if FDBPool, err = fdb.OpenDatabase(d.settings.DatabaseSettings.DBURL); err != nil {
+		errChan <- merry.Prepend(err, "failed to open connect to fdb to get statictics")
+	}
+
+	for {
+		_, ok := <-stopChan
+		if ok {
+			break
+		}
+
+		data, err := FDBPool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+			status := tx.Get(fdb.Key("\xFF\xFF/status/json"))
+			return status, nil
+		})
+
+		result, ok := data.([]byte)
+		if !ok {
+			errChan <- merry.Errorf("status data type is not supported, value: %v", result)
+		}
+
+		if _, err = statFile.Write(result); err != nil {
+			errChan <- merry.Prepend(err, "failed to write to statistic file")
+		}
+
+	}
+
 }

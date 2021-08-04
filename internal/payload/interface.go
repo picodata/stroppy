@@ -33,7 +33,7 @@ func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Pay
 			bp.config.DBURL = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 			llog.Infoln("changed DBURL on", bp.config.DBURL)
 		}
-		bp.cluster, bp.closeConns, err = cluster.NewPostgresCluster(bp.config.DBURL)
+		bp.Cluster, bp.closeConns, err = cluster.NewPostgresCluster(bp.config.DBURL)
 		if err != nil {
 			return
 		}
@@ -42,7 +42,7 @@ func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Pay
 		if bp.config.DBURL == "" {
 			bp.config.DBURL = "fdb.cluster"
 		}
-		bp.cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
+		bp.Cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
 		if err != nil {
 			return
 		}
@@ -53,7 +53,7 @@ func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Pay
 	}
 
 	if bp.config.Oracle {
-		predictableCluster, ok := bp.cluster.(database.PredictableCluster)
+		predictableCluster, ok := bp.Cluster.(database.PredictableCluster)
 		if !ok {
 			err = merry.Errorf("oracle is not supported for %s cluster", bp.config.DBType)
 			return
@@ -72,11 +72,12 @@ func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Pay
 		bp.config.DBType, bp.config.DBURL)
 
 	p = bp
+
 	return
 }
 
 type BasePayload struct {
-	cluster    CustomTxTransfer
+	Cluster    CustomTxTransfer
 	closeConns func()
 
 	config     *config.DatabaseSettings

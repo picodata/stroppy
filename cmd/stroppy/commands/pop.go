@@ -9,6 +9,7 @@ import (
 )
 
 func newPopCommand(settings *config.Settings) *cobra.Command {
+
 	popCmd := &cobra.Command{
 		Use:     "pop",
 		Aliases: []string{"populate"},

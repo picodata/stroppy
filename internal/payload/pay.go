@@ -28,6 +28,7 @@ type PayStats struct {
 }
 
 func (p *BasePayload) Pay(_ string) (err error) {
+
 	llog.Infof("Establishing connection to the cluster")
 
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
@@ -38,7 +39,7 @@ func (p *BasePayload) Pay(_ string) (err error) {
 	}
 
 	var payStats *PayStats
-	if payStats, err = p.payFunc(p.config, p.cluster, p.oracle); err != nil {
+	if payStats, err = p.payFunc(p.config, p.Cluster, p.oracle); err != nil {
 		return merry.Prepend(err, "pay function failed")
 	}
 	p.chaos.Stop()
