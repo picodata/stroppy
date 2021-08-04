@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -321,16 +322,22 @@ func (k Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 	var masterAddressString string
 	var workersString string
 
-	masterAddressString = fmt.Sprintf("master ansible_host=%v ip=%v etcd_member_name=etcd1 \n", k.AddressMap["internal"]["master"], k.AddressMap["internal"]["master"])
+	internalAddressMap := k.AddressMap["internal"]
 
-	i := 0
+	var keys []string
+	for k := range k.AddressMap["internal"] {
+		keys = append(keys, k)
+	}
 
-	for _, address := range k.AddressMap["internal"] {
-		if i > 0 {
-			workersAddressString += fmt.Sprintf("worker-%v ansible_host=%v ip=%v etcd_member_name=etcd%v \n", i, address, address, i+1)
+	sort.Strings(keys)
+
+	for i, k := range keys {
+		if i == 0 {
+			masterAddressString = fmt.Sprintf("master ansible_host=%v ip=%v etcd_member_name=etcd1 \n", internalAddressMap["master"], internalAddressMap["master"])
+		} else {
+			workersAddressString += fmt.Sprintf("worker-%v ansible_host=%v ip=%v etcd_member_name=etcd%v \n", i, internalAddressMap[k], internalAddressMap[k], i+1)
 			workersString += fmt.Sprintf("worker-%v \n", i)
 		}
-		i++
 	}
 
 	instancesString := masterAddressString + workersAddressString
