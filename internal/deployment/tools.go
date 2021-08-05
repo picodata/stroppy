@@ -32,6 +32,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 			"-w", fmt.Sprintf("%v", settings.Workers),
 			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
+			"-d", d.settings.DatabaseSettings.DBType,
 		}
 
 		logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
@@ -81,6 +82,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 			"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 			"--kube-master-addr", d.k.AddressMap["internal"]["master"],
 			"-w", fmt.Sprintf("%v", settings.Workers),
+			"-d", d.settings.DatabaseSettings.DBType,
 		}
 		logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
 			settings.DBType, settings.Count, settings.BanRangeMultiplier,

@@ -135,6 +135,7 @@ func (p *BasePayload) GetStatistics() error {
 func (p *BasePayload) getStatistics(stopChan chan bool, errChan chan error) {
 	var once sync.Once
 	var resultMap map[string]interface{}
+	var jsonResult []byte
 
 	const dateFormat = "02-01-2006_15:04:05"
 
@@ -169,24 +170,30 @@ func (p *BasePayload) getStatistics(stopChan chan bool, errChan chan error) {
 			return status, nil
 		})
 
+		if err != nil {
+			errChan <- merry.Prepend(err, "failed to get status json from db")
+		}
+
 		result, ok := data.([]byte)
 		if !ok {
 			errChan <- merry.Errorf("status data type is not supported, value: %v", result)
 		}
 
-		err = json.Unmarshal(result, &resultMap)
-		if err != nil {
+		if err = json.Unmarshal(result, &resultMap); err != nil {
 			errChan <- merry.Prepend(err, "failed to unmarchal status json")
 		}
 
 		separateString := fmt.Sprintf("\n %v \n", time.Now().Format(dateFormat))
 		if _, err = statFile.Write([]byte(separateString)); err != nil {
-			errChan <- merry.Prepend(err, "failed to write to statistic file")
+			errChan <- merry.Prepend(err, "failed to write separate string to statistic file")
 		}
 
-		jsonResult, err := json.MarshalIndent(resultMap, "", "    ")
+		if jsonResult, err = json.MarshalIndent(resultMap, "", "    "); err != nil {
+			errChan <- merry.Prepend(err, "failed to marshal data")
+		}
+
 		if _, err = statFile.Write(jsonResult); err != nil {
-			errChan <- merry.Prepend(err, "failed to write to statistic file")
+			errChan <- merry.Prepend(err, "failed to write data to statistic file")
 		}
 
 		once.Do(onceBody)
