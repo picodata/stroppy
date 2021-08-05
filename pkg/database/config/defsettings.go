@@ -81,9 +81,9 @@ type DatabaseSettings struct {
 	Password string
 	Seed     int64
 
-	// long story short - enabled ZIPFian distribution means that some of bic/ban compositions
+	// long story short - enabled Zipfian distribution means that some of bic/ban compositions
 	// are used much much more often than others
-	ZIPFian bool
+	Zipfian bool
 	Oracle  bool
 	Check   bool
 
@@ -104,7 +104,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		Password:           "",
 		Check:              false,
 		Seed:               time.Now().UnixNano(),
-		ZIPFian:            false,
+		Zipfian:            false,
 		Oracle:             false,
 		DBURL:              "",
 		UseCustomTx:        false,

@@ -383,7 +383,7 @@ func payCustomTx(settings *config.DatabaseSettings,
 		if i < remainder {
 			nTransfers++
 		}
-		go payWorkerCustomTx(*settings, nTransfers, settings.ZIPFian, clusterCustomTx, oracle, &payStats, &wg)
+		go payWorkerCustomTx(*settings, nTransfers, settings.Zipfian, clusterCustomTx, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()

@@ -169,7 +169,7 @@ func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, o
 		if i < remainder {
 			nTransfers++
 		}
-		go payWorkerBuiltinTx(settings, nTransfers, settings.ZIPFian, cluster, oracle, &payStats, &wg)
+		go payWorkerBuiltinTx(settings, nTransfers, settings.Zipfian, cluster, oracle, &payStats, &wg)
 	}
 
 	wg.Wait()

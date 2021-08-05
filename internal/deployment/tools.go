@@ -37,7 +37,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 
 		logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
 			settings.DBType, settings.Count, settings.BanRangeMultiplier,
-			settings.ZIPFian, time.Now().Format(dateFormat))
+			settings.Zipfian, time.Now().Format(dateFormat))
 
 		if beginTime, endTime, err = d.k.ExecuteRemoteTest(payTestCommand, logFileName); err != nil {
 			return merry.Prepend(err, "failed to execute remote transfer test")
@@ -52,7 +52,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
+		settings.Zipfian, time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -86,7 +86,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 		}
 		logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
 			settings.DBType, settings.Count, settings.BanRangeMultiplier,
-			settings.ZIPFian, time.Now().Format(dateFormat))
+			settings.Zipfian, time.Now().Format(dateFormat))
 
 		if beginTime, endTime, err = d.k.ExecuteRemoteTest(popTestCommand, logFileName); err != nil {
 			return merry.Prepend(err, "failed to execute remote populate test")
@@ -101,7 +101,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
+		settings.Zipfian, time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -143,7 +143,7 @@ func (d *Deployment) readDatabaseConfig(cmdType string) (settings *config.Databa
 	} else if cmdType == "pay" {
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
 		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
-		settings.ZIPFian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
+		settings.Zipfian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
 		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
 	}
 

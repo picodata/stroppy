@@ -67,8 +67,8 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		"count", "n", settings.DatabaseSettings.Count,
 		"Number of transfers to make")
 
-	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.ZIPFian,
-		"zipfian", "z", settings.DatabaseSettings.ZIPFian,
+	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Zipfian,
+		"zipfian", "z", settings.DatabaseSettings.Zipfian,
 		"Use zipfian distribution for payments")
 
 	payCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Oracle,
