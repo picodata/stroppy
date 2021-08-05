@@ -22,7 +22,10 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 )
 
-func (k *Kubernetes) editClusterURL(url string) error {
+// editClusterURL - подменить адрес и порт внутри kubeconfig
+func (k *Kubernetes) editClusterURL(port int) error {
+	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
+	url := fmt.Sprintf("https://localhost:%v", port)
 	llog.Infoln("changing of cluster url on", url)
 	kubeConfig, err := clientcmd.LoadFromFile(k.clusterConfigFile)
 	if err != nil {
@@ -48,21 +51,21 @@ func (k *Kubernetes) getKubeConfig() (*rest.Config, error) {
 	return _config, nil
 }
 
-// copyConfigFromMaster
-// скопировать файл kube config c мастер-инстанса кластера и применить для использования
-func (k *Kubernetes) copyConfigFromMaster() (err error) {
+// CopyFileFromMaster - скопировать файл c мастер-инстанса кластера
+func (k *Kubernetes) CopyFileFromMaster(filePath string) (err error) {
 	if k.useLocalSession {
 		var homeDirPath string
 		if homeDirPath, err = os.UserHomeDir(); err != nil {
 			return merry.Prepend(err, "get home dir")
 		}
-
-		kubeConfigFilePath := filepath.Join(homeDirPath, ".kube/config")
-		k.clusterConfigFile = kubeConfigFilePath
+		if filePath == kubeConfigLocate {
+			kubeConfigFilePath := filepath.Join(homeDirPath, filePath)
+			k.clusterConfigFile = kubeConfigFilePath
+		}
 		return
 	}
 
-	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.kube/config", k.AddressMap["external"]["master"])
+	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/%v", k.AddressMap["external"]["master"], filePath)
 	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = k.workingDirectory
 
@@ -71,12 +74,6 @@ func (k *Kubernetes) copyConfigFromMaster() (err error) {
 
 	if _, err = copyFromMasterCmd.CombinedOutput(); err != nil {
 		return merry.Prepend(err, "failed to execute command copy from master")
-	}
-
-	// подменяем адрес кластера, т.к. будет открыт туннель по порту 6443 к мастеру
-	clusterURL := "https://localhost:6443"
-	if err = k.editClusterURL(clusterURL); err != nil {
-		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
 	return

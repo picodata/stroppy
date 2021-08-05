@@ -107,6 +107,8 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 	p.config = &unpConfig
 }
 
+// GetStatistics - получить статистику работу БД в процессе теста
+// Внимание! Пока поддерживается только получение status json для fdb
 func (p *BasePayload) GetStatistics() error {
 
 	switch p.config.DBType {

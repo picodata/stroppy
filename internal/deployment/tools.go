@@ -109,6 +109,11 @@ func (d *Deployment) executePop(_ string) (err error) {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
+	monImagesArchNamePath := fmt.Sprintf("grafana-on-premise/%v", monImagesArchName)
+
+	if err = d.k.CopyFileFromMaster(monImagesArchNamePath); err != nil {
+		return merry.Prepend(err, "failed to upload monitoring images for pop test from master")
+	}
 	return
 }
 

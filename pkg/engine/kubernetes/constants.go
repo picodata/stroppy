@@ -23,6 +23,7 @@ const (
 
 	stroppyPodName      = "stroppy-client"
 	stroppyFieldManager = "stroppy-deploy"
+	kubeConfigLocate    = ".kube/config"
 )
 
 // Externally avail constants

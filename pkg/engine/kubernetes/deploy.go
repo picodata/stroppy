@@ -30,8 +30,12 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 		return nil, 0, merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	if err = k.copyConfigFromMaster(); err != nil {
+	if err = k.CopyFileFromMaster(".kube/config"); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to copy kube config from master")
+	}
+
+	if err = k.editClusterURL(clusterK8sPort); err != nil {
+		return nil, 0, merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
 	if k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort); k.sshTunnel.Err != nil {

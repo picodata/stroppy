@@ -115,8 +115,7 @@ func (k *Kubernetes) OpenSecureShellTunnel(caller string, mainPort int, reserveP
 
 		// если туннель для k8s и недоступен основной порт, то меняем его на резервный
 		if tunnelPort == 6444 {
-			clusterURL := fmt.Sprintf("https://localhost:%v", reserveClusterK8sPort)
-			if err := k.editClusterURL(clusterURL); err != nil {
+			if err := k.editClusterURL(tunnelPort); err != nil {
 				llog.Infof("failed to replace port: %v", err)
 				result = &engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
 				return
