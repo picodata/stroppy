@@ -19,7 +19,7 @@ func (d *Deployment) executePay(_ string) (err error) {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	const dateFormat = "02-01-2006_15:04:05"
+	const dateFormat = "02-01-2006_15_04_05"
 
 	var beginTime, endTime int64
 	if d.settings.TestSettings.UseCloudStroppy {
@@ -70,7 +70,7 @@ func (d *Deployment) executePop(_ string) (err error) {
 		return merry.Prepend(err, "failed to read config")
 	}
 
-	const dateFormat = "02-01-2006_15:04:05"
+	const dateFormat = "02-01-2006_15_04_05"
 
 	var beginTime, endTime int64
 	if d.settings.TestSettings.UseCloudStroppy {
@@ -109,11 +109,6 @@ func (d *Deployment) executePop(_ string) (err error) {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
-	monImagesArchNamePath := fmt.Sprintf("grafana-on-premise/%v", monImagesArchName)
-
-	if err = d.k.CopyFileFromMaster(monImagesArchNamePath); err != nil {
-		return merry.Prepend(err, "failed to upload monitoring images for pop test from master")
-	}
 	return
 }
 

@@ -248,11 +248,11 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 		workersIps += fmt.Sprintf("%v;", address)
 	}
 
-	getMonImagesCmd := fmt.Sprintf("cd grafana-on-premise && ./get_png.sh %v %v %v \"%v\"", startTime, finishTime, monImagesArchName, workersIps)
-
-	llog.Debugln(getMonImagesCmd)
-	err := k.executeCommand(getMonImagesCmd)
-	if err != nil {
+	workingDirectory := fmt.Sprintf("%v/%v", k.workingDirectory, "grafana-on-premise")
+	getImagesCmd := exec.Command("./get_png.sh", fmt.Sprintf("%v", startTime), fmt.Sprintf("%v", finishTime), monImagesArchName, workersIps)
+	getImagesCmd.Dir = workingDirectory
+	if result, err := getImagesCmd.CombinedOutput(); err != nil {
+		llog.Errorln(string(result))
 		return merry.Prepend(err, "failed to get monitoring images")
 	}
 
