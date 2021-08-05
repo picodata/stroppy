@@ -1,9 +1,14 @@
 package payload
 
 import (
+	"encoding/json"
+	"fmt"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -17,7 +22,10 @@ type Payload interface {
 	Pop(string) error
 	Check(*inf.Dec) (*inf.Dec, error)
 	UpdateSettings(*config.DatabaseSettings)
+	GetStatistics() error
 }
+
+const statJsonFileTemplate = "status_json_%v.json"
 
 func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
 	bp := &BasePayload{
@@ -42,6 +50,7 @@ func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Pay
 		if bp.config.DBURL == "" {
 			bp.config.DBURL = "fdb.cluster"
 		}
+
 		bp.Cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
 		if err != nil {
 			return
@@ -96,4 +105,92 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 
 	unpConfig := *newConfig
 	p.config = &unpConfig
+}
+
+func (p *BasePayload) GetStatistics() error {
+
+	switch p.config.DBType {
+	case "fdb":
+		stopChan := make(chan bool)
+		errChan := make(chan error)
+
+		if p.config.DBType == "fdb" {
+			llog.Debugln("starting of statistic goroutine...")
+			go p.getStatistics(stopChan, errChan)
+		}
+
+		errorCheck := <-errChan
+
+		if errorCheck != nil {
+			return merry.Prepend(errorCheck, "failed to get statistic")
+		}
+
+	case "postges":
+		llog.Debugln("statictis for postgres not supported")
+	}
+
+	return nil
+}
+
+func (p *BasePayload) getStatistics(stopChan chan bool, errChan chan error) {
+	var once sync.Once
+	var resultMap map[string]interface{}
+
+	const dateFormat = "02-01-2006_15:04:05"
+
+	statFileName := fmt.Sprintf(statJsonFileTemplate, time.Now().Format(dateFormat))
+	llog.Debugln("Opening statistic file...")
+	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		errChan <- merry.Prepend(err, "failed to open statistic file")
+	}
+
+	defer statFile.Close()
+
+	llog.Debugln("Opening statistic file: success")
+
+	var FDBPool fdb.Database
+
+	if FDBPool, err = fdb.OpenDatabase(p.config.DBURL); err != nil {
+		errChan <- merry.Prepend(err, "failed to open connect to fdb to get statictics")
+	}
+
+	// если ошибки нет, то отправляем nil, чтобы продолжить работу
+	onceBody := func() {
+		errChan <- nil
+	}
+
+	for {
+		data, err := FDBPool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+			status, err := tx.Get(fdb.Key("\xFF\xFF/status/json")).Get()
+			if err != nil {
+				return nil, err
+			}
+			return status, nil
+		})
+
+		result, ok := data.([]byte)
+		if !ok {
+			errChan <- merry.Errorf("status data type is not supported, value: %v", result)
+		}
+
+		err = json.Unmarshal(result, &resultMap)
+		if err != nil {
+			errChan <- merry.Prepend(err, "failed to unmarchal status json")
+		}
+
+		separateString := fmt.Sprintf("\n %v \n", time.Now().Format(dateFormat))
+		if _, err = statFile.Write([]byte(separateString)); err != nil {
+			errChan <- merry.Prepend(err, "failed to write to statistic file")
+		}
+
+		jsonResult, err := json.MarshalIndent(resultMap, "", "    ")
+		if _, err = statFile.Write(jsonResult); err != nil {
+			errChan <- merry.Prepend(err, "failed to write to statistic file")
+		}
+
+		once.Do(onceBody)
+
+		time.Sleep(30 * time.Second)
+	}
 }

@@ -36,6 +36,10 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("%v", err)
 				}
 
+				if err = p.GetStatistics(); err != nil {
+					llog.Fatalf("%v", err)
+				}
+
 				var sum *inf.Dec
 				if sum, err = p.Check(nil); err != nil {
 					llog.Fatalf("%v", err)

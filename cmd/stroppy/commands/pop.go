@@ -36,6 +36,10 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("payload creation failed: %v", err)
 				}
 
+				if err = p.GetStatistics(); err != nil {
+					llog.Fatalf("%v", err)
+				}
+
 				if err = p.Pop(""); err != nil {
 					llog.Fatalf("%v", err)
 				}

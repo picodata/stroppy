@@ -1,8 +1,7 @@
 package deployment
 
 const (
-	configFileName   = "test_config.json"
-	statJsonFileName = "status_json.json"
+	configFileName = "test_config.json"
 
 	interactiveUsageHelpTemplate = `
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.

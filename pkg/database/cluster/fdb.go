@@ -441,7 +441,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 			// для скорости обработки возвращаем необработанный массив пар ключ-значение
 			accountKeyValueArray = append(accountKeyValueArray, accountKeyValue)
 		}
-		llog.Println("count of elements inside loop of transaction", len(accountKeyValueArray))
+		llog.Traceln("count of elements inside loop of transaction", len(accountKeyValueArray))
 		return accountKeyValueArray, nil
 	})
 	if err != nil {
@@ -453,8 +453,8 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		return nil, merry.Errorf("this type data of fdb.KeyValue is not supported")
 	}
 
-	llog.Println("count of elements outside loop of transaction", len(accountKeyValueArray))
-	for i, accountKeyValue := range accountKeyValues {
+	llog.Traceln("count of elements outside loop of transaction", len(accountKeyValueArray))
+	for _, accountKeyValue := range accountKeyValues {
 		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to unpack by key in FetchAccounts FDB")
@@ -469,7 +469,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		if err != nil {
 			return nil, err
 		}
-		llog.Println(i)
+
 		fetchAccount.Balance = fetchAccountValue.Balance
 		Bic, ok := keyAccountTuple[0].(string)
 		if !ok {
