@@ -58,7 +58,7 @@ func (k *Kubernetes) CopyFileFromMaster(filePath string) (err error) {
 		if homeDirPath, err = os.UserHomeDir(); err != nil {
 			return merry.Prepend(err, "get home dir")
 		}
-		if filePath == kubeConfigLocate {
+		if filePath == kubeConfigPath {
 			kubeConfigFilePath := filepath.Join(homeDirPath, filePath)
 			k.clusterConfigFile = kubeConfigFilePath
 		}

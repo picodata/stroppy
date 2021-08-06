@@ -91,6 +91,7 @@ type DatabaseSettings struct {
 	DBURL              string
 	UseCustomTx        bool
 	BanRangeMultiplier float64
+	StatInterval       int
 }
 
 // DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию

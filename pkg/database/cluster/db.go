@@ -45,8 +45,9 @@ func (e DBClusterType) String() string {
 }
 
 const (
-	Foundation = "fdb"
-	Postgres   = "postgres"
+	Foundation           = "fdb"
+	Postgres             = "postgres"
+	statJsonFileTemplate = "status_json_%v.json"
 )
 
 // Settings returns the test run settings

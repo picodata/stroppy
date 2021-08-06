@@ -3,7 +3,11 @@ package cluster
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -619,4 +623,82 @@ func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Trans
 	transferKey := cluster.getTransferKey(transfer)
 	tx.Set(transferKey, transferValue)
 	return err
+}
+
+func (cluster *FDBCluster) GetStatistics() error {
+
+	errChan := make(chan error)
+
+	llog.Debugln("starting of statistic goroutine...")
+	go cluster.getStatistics(errChan)
+
+	errorCheck := <-errChan
+
+	if errorCheck != nil {
+		return merry.Prepend(errorCheck, "failed to get statistic")
+	}
+
+	return nil
+}
+
+func (cluster *FDBCluster) getStatistics(errChan chan error) {
+	var once sync.Once
+	var resultMap map[string]interface{}
+	var jsonResult []byte
+
+	const dateFormat = "02-01-2006_15:04:05"
+
+	statFileName := fmt.Sprintf(statJsonFileTemplate, time.Now().Format(dateFormat))
+	llog.Debugln("Opening statistic file...")
+	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		errChan <- merry.Prepend(err, "failed to open statistic file")
+	}
+
+	defer statFile.Close()
+
+	llog.Debugln("Opening statistic file: success")
+
+	for {
+		data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
+			status, err := tx.Get(fdb.Key("\xFF\xFF/status/json")).Get()
+			if err != nil {
+				return nil, err
+			}
+			return status, nil
+		})
+
+		if err != nil {
+			errChan <- merry.Prepend(err, "failed to get status json from db")
+		}
+
+		result, ok := data.([]byte)
+		if !ok {
+			errChan <- merry.Errorf("status data type is not supported, value: %v", result)
+		}
+
+		if err = json.Unmarshal(result, &resultMap); err != nil {
+			errChan <- merry.Prepend(err, "failed to unmarchal status json")
+		}
+
+		separateString := fmt.Sprintf("\n %v \n", time.Now().Format(dateFormat))
+		if _, err = statFile.Write([]byte(separateString)); err != nil {
+			errChan <- merry.Prepend(err, "failed to write separate string to statistic file")
+		}
+
+		if jsonResult, err = json.MarshalIndent(resultMap, "", "    "); err != nil {
+			errChan <- merry.Prepend(err, "failed to marshal data")
+		}
+
+		if _, err = statFile.Write(jsonResult); err != nil {
+			errChan <- merry.Prepend(err, "failed to write data to statistic file")
+		}
+
+		// если ошибки нет, то отправляем nil, чтобы продолжить работу
+		once.Do(func() {
+			errChan <- nil
+		})
+
+		time.Sleep(30 * time.Second)
+	}
 }

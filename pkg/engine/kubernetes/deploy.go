@@ -30,7 +30,7 @@ func (k *Kubernetes) Deploy() (pPortForward *engineSsh.Result, port int, err err
 		return nil, 0, merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	if err = k.CopyFileFromMaster(".kube/config"); err != nil {
+	if err = k.CopyFileFromMaster(kubeConfigPath); err != nil {
 		return nil, 0, merry.Prepend(err, "failed to copy kube config from master")
 	}
 
