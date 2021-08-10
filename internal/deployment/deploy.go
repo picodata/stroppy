@@ -120,6 +120,9 @@ func (sh *shell) preparePayload() (err error) {
 			return merry.Prepend(err, "failed to init payload")
 		}
 		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
+
+		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
+		err = nil
 	}
 
 	grafanaPort, kubernetesMasterPort := sh.k.GetInfraPorts()

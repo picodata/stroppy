@@ -39,7 +39,6 @@ func setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	privateKeyPathBlock := instanceFileBody.AppendNewBlock("variable", []string{"private_key_path"})
 	privateKeyPathBody := privateKeyPathBlock.Body()
 	privateKeyPathBody.SetAttributeTraversal("type", hcl.Traversal{
-		//nolint:exhaustivestruct
 		hcl.TraverseRoot{
 			Name: "string",
 		},

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/tools"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -152,14 +154,13 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 		if !ok {
 
-			for i := 0; i < 3; i++ {
-				time.Sleep(5 * time.Second)
-				if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider); err == nil {
-					err = nil
-					break
-				}
-				llog.Debugf("storage mount %d/2 failed: %v", i, err)
-			}
+			err = tools.Retry("storage mount",
+				func() (err error) {
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider)
+					return
+				},
+				tools.RetryStandardRetryCount,
+				tools.RetryStandardWaitingTime)
 			if err != nil {
 				return merry.Prependf(err, "additional storage is not mounted to %v", worker)
 			}

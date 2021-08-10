@@ -13,13 +13,13 @@ const (
 	RetryStandardNoWaitTime  = 0
 )
 
-func Retry(tag string, f func() error, retryCount, sleepTimeout int) (err error) {
+func Retry(tag string, fClos func() error, retryCount, sleepTimeout int) (err error) {
 	for i := 0; i < retryCount; i++ {
-		err = f()
+		err = fClos()
 		if err == nil {
 			return
 		}
-		llog.Errorf("Retry '%s', run %d/%d: %v", tag, i, retryCount, err)
+		llog.Warnf("Retry '%s', run %d/%d: %v", tag, i, retryCount, err)
 
 		if sleepTimeout > 0 {
 			time.Sleep(time.Duration(sleepTimeout) * time.Second)
