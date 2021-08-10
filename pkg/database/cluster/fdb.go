@@ -626,7 +626,6 @@ func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Trans
 }
 
 func (cluster *FDBCluster) GetStatistics() error {
-
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")
@@ -650,7 +649,7 @@ func (cluster *FDBCluster) getStatistics(errChan chan error) {
 
 	statFileName := fmt.Sprintf(statJsonFileTemplate, time.Now().Format(dateFormat))
 	llog.Debugln("Opening statistic file...")
-	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		errChan <- merry.Prepend(err, "failed to open statistic file")
 	}
@@ -667,7 +666,6 @@ func (cluster *FDBCluster) getStatistics(errChan chan error) {
 			}
 			return status, nil
 		})
-
 		if err != nil {
 			errChan <- merry.Prepend(err, "failed to get status json from db")
 		}

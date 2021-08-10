@@ -115,7 +115,7 @@ func (sh *shell) preparePayload() (err error) {
 		return
 	}
 
-	if sh.payload, err = payload.CreateBasePayload(sh.settings, sh.chaosMesh); err != nil {
+	if sh.payload, err = payload.CreatePayload(sh.settings, sh.chaosMesh); err != nil {
 		if dbtype != cluster.Foundation {
 			return merry.Prepend(err, "failed to init payload")
 		}
@@ -144,9 +144,10 @@ func (sh *shell) deploy() (err error) {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 
-	if err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes,
+	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes,
 		sh.settings.DeploymentSettings.Provider,
-		sh.k.AddressMap, sh.workingDirectory); err != nil {
+		sh.k.AddressMap, sh.workingDirectory)
+	if err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}
 

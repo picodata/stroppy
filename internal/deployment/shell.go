@@ -19,7 +19,7 @@ type Shell interface {
 	RunRemotePopTest() error
 }
 
-func LoadShell(settings *config.Settings) (shell Shell, err error) {
+func LoadState(settings *config.Settings) (shell Shell, err error) {
 	sh := createShell(settings)
 	if err = sh.LoadState(); err != nil {
 		return
@@ -113,8 +113,11 @@ func (sh *shell) RunRemotePayTest() (err error) {
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
+		settings.DBType,
+		settings.Count,
+		settings.BanRangeMultiplier,
+		settings.Zipfian,
+		time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -134,8 +137,11 @@ func (sh *shell) RunRemotePopTest() (err error) {
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.ZIPFian, time.Now().Format(dateFormat))
+		settings.DBType,
+		settings.Count,
+		settings.BanRangeMultiplier,
+		settings.Zipfian,
+		time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)

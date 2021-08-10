@@ -10,12 +10,11 @@ import (
 )
 
 func newPopCommand(settings *config.Settings) *cobra.Command {
-
 	popCmd := &cobra.Command{
 		Use:     "pop",
 		Aliases: []string{"populate"},
 		Short:   "Create and populate the accounts database",
-		Example: "./lightest populate -n 100000000",
+		Example: "./stroppy pop -c 100000000",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return initLogLevel(settings)
@@ -31,7 +30,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 			}
 
 			if settings.TestSettings.UseCloudStroppy {
-				sh, err := deployment.LoadShell(settings)
+				sh, err := deployment.LoadState(settings)
 				if err != nil {
 					llog.Fatalf("shell load state failed: %v", err)
 				}
@@ -39,13 +38,13 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("test failed with error %v", err)
 				}
 			} else {
-				p, err := payload.CreateBasePayload(settings, createChaos(settings))
+				p, err := payload.CreatePayload(settings, createChaos(settings))
 				if err != nil {
 					llog.Fatalf("payload creation failed: %v", err)
 				}
 
 				if err = p.GetStatistics(); err != nil {
-					llog.Fatalf("%v", err)
+					llog.Fatalf("get stat err %v", err)
 				}
 
 				if err = p.Pop(""); err != nil {

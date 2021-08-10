@@ -17,7 +17,7 @@ func newShellCommand(settings *config.Settings) (shellCmd *cobra.Command) {
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
-			sh, err := deployment.LoadShell(settings)
+			sh, err := deployment.LoadState(settings)
 			if err != nil {
 				llog.Fatalf("load shell error: %v", err)
 			}

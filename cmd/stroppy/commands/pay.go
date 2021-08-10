@@ -29,7 +29,7 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 			}
 
 			if settings.TestSettings.UseCloudStroppy {
-				sh, err := deployment.LoadShell(settings)
+				sh, err := deployment.LoadState(settings)
 				if err != nil {
 					llog.Fatalf("shell load state failed: %v", err)
 				}
@@ -37,7 +37,7 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("test failed with error %v", err)
 				}
 			} else {
-				p, err := payload.CreateBasePayload(settings, createChaos(settings))
+				p, err := payload.CreatePayload(settings, createChaos(settings))
 				if err != nil {
 					llog.Fatalf("%v", err)
 				}

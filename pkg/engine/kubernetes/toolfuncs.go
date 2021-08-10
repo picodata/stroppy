@@ -264,7 +264,7 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 }
 
 // AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
-func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
+func (k Kubernetes) AddNodeLabels(_ string) (err error) {
 	llog.Infoln("Starting of add labels to cluster nodes")
 
 	clientSet, err := k.GetClientSet()
@@ -313,7 +313,7 @@ func (k Kubernetes) AddNodeLabels(namespace string) (err error) {
 
 	llog.Infoln("Add labels to cluster nodes: success")
 
-	return nil
+	return
 }
 
 // getHostsFileAttributes - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера

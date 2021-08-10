@@ -20,7 +20,7 @@ type Payload interface {
 	GetStatistics() error
 }
 
-func CreateBasePayload(settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
+func CreatePayload(settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
 	bp := &BasePayload{
 		config:         settings.DatabaseSettings,
 		chaos:          chaos,
@@ -101,7 +101,6 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 }
 
 func (p *BasePayload) GetStatistics() (err error) {
-
 	if err = p.Cluster.GetStatistics(); err != nil {
 		return merry.Errorf("failed to get statistic for %v cluster: %v", p.config.DBType, err)
 	}
