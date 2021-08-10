@@ -103,21 +103,42 @@ func (k *Kubernetes) DeployStroppy() error {
 	}
 
 	llog.Infoln("Applying stroppy pod...")
-	k.StroppyPod, err = clientSet.CoreV1().
-		Pods(ResourceDefaultNamespace).
-		Apply(context.TODO(),
-			stroppy,
-			metav1.ApplyOptions{
-				TypeMeta: metav1.TypeMeta{
-					Kind:       "",
-					APIVersion: "",
-				},
-				DryRun:       []string{},
-				Force:        false,
-				FieldManager: stroppyFieldManager,
-			})
+	err = tools.Retry("deploy stroppy pod",
+		func() (err error) {
+			k.StroppyPod, err = clientSet.CoreV1().
+				Pods(ResourceDefaultNamespace).
+				Apply(context.TODO(),
+					stroppy,
+					metav1.ApplyOptions{
+						TypeMeta: metav1.TypeMeta{
+							Kind:       "",
+							APIVersion: "",
+						},
+						DryRun:       []string{},
+						Force:        false,
+						FieldManager: stroppyFieldManager,
+					})
+			if err != nil {
+				return merry.Prepend(err, "failed to apply pod stroppy")
+			}
+
+			const podImagePullBackOff = "ImagePullBackOff"
+			if k.StroppyPod.Status.Phase == podImagePullBackOff {
+				err = clientSet.CoreV1().
+					Pods(ResourceDefaultNamespace).
+					Delete(context.TODO(), stroppyPodName, metav1.DeleteOptions{})
+				if err != nil {
+					llog.Warnf("failed to delete stroppy pod: %v", err)
+				}
+				err = fmt.Errorf("stroppy pod '%s' in status '%s'",
+					k.StroppyPod.Name, podImagePullBackOff)
+			}
+			return
+		},
+		tools.RetryStandardRetryCount,
+		tools.RetryStandardWaitingTime)
 	if err != nil {
-		llog.Error(merry.Prepend(err, "failed to apply pod stroppy"))
+		return err
 	}
 
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
