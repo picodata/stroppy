@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"gitlab.com/picodata/stroppy/pkg/tools"
+
 	"github.com/ansel1/merry"
 	"github.com/ghodss/yaml"
 	llog "github.com/sirupsen/logrus"
@@ -30,7 +32,14 @@ func (k *Kubernetes) Deploy() (err error) {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	if err = k.CopyFileFromMaster(kubeConfigPath); err != nil {
+	err = tools.Retry("copy file from master on deploy",
+		func() (err error) {
+			err = k.CopyFileFromMaster(kubeConfigPath)
+			return
+		},
+		tools.RetryStandardRetryCount,
+		tools.RetryStandardWaitingTime)
+	if err != nil {
 		return merry.Prepend(err, "failed to copy kube config from master")
 	}
 

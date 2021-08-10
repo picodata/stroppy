@@ -57,7 +57,7 @@ func (sh *shell) ReadEvalPrintLoop() (err error) {
 				return
 
 			case "pop":
-				llog.Println("Starting accounts populating for postgres...")
+				llog.Println("Starting accounts populating")
 
 				if err = sh.executePop(params); err != nil {
 					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
