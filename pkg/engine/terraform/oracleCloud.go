@@ -129,19 +129,23 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 	llog.Debugln(addressArray)
 
 	for i := range addressArray {
-
-		var targetLoginCmd string
+		var newLoginCmd string
+		var updateTargetCmd string
+		var loginTargetCmd string
 
 		worker := fmt.Sprintf("worker-%v", i)
-		// заполняем шаблон для воркера или мастера
-		targetLoginCmd = fmt.Sprintf(TargetLoginCmdTemplate, iqnMap[worker], iqnMap[worker], iqnMap[worker])
+
+		newLoginCmd = NewTargetCmdTemplate
+		updateTargetCmd = fmt.Sprintf(UpdateTargetCmdTemplate, iqnMap[worker])
+		loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap[worker])
 
 		if i == 0 {
 
 			worker = "master"
 
-			targetLoginCmd = fmt.Sprintf(TargetLoginCmdTemplate, iqnMap["master"], iqnMap["master"], iqnMap["master"])
-
+			newLoginCmd = NewTargetCmdTemplate
+			updateTargetCmd = fmt.Sprintf(UpdateTargetCmdTemplate, iqnMap["master"])
+			loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap["master"])
 		}
 
 		llog.Infof("Adding network storage to %v %v", worker, addressArray[i])
@@ -154,15 +158,37 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 		if !ok {
 
-			err = tools.Retry("storage mount",
+			err = tools.Retry("send targets",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], targetLoginCmd, provider)
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], newLoginCmd, provider)
 					return
 				},
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "additional storage is not mounted to %v", worker)
+				return merry.Prependf(err, "send target is failed to worker %v", worker)
+			}
+
+			err = tools.Retry("add automatic startup for node",
+				func() (err error) {
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], updateTargetCmd, provider)
+					return
+				},
+				tools.RetryStandardRetryCount,
+				tools.RetryStandardWaitingTime)
+			if err != nil {
+				return merry.Prependf(err, "adding automatic startup for node is failed to worker %v", worker)
+			}
+
+			err = tools.Retry("target login",
+				func() (err error) {
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], loginTargetCmd, provider)
+					return
+				},
+				tools.RetryStandardRetryCount,
+				tools.RetryStandardWaitingTime)
+			if err != nil {
+				return merry.Prependf(err, "storage is not logged in target %v", worker)
 			}
 
 			time.Sleep(5 * time.Second)

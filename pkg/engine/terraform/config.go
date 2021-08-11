@@ -35,11 +35,9 @@ const TemplatesFileName = "templates.yaml"
 var ErrChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
 
 const (
-	TargetLoginCmdTemplate = `
-sudo iscsiadm -m node -o new -T %v -p 169.254.2.2:3260
-sudo iscsiadm -m node -o update -T %v -n node.startup -v automatic
-sudo iscsiadm -m node -T %v -p 169.254.2.2:3260 -l
-`
+	NewTargetCmdTemplate    = "sudo iscsiadm -m discoverydb -t sendtargets -p 169.254.2.2:3260 -D"
+	UpdateTargetCmdTemplate = "sudo iscsiadm -m node -o update -T %v -n node.startup -v automatic"
+	loginTargetCmdTemplate  = "sudo iscsiadm -d 8 -m node -T %v -l"
 
 	PartedVolumeCmd = `
 sudo parted /dev/sdb mklabel gpt
