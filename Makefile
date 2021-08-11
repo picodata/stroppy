@@ -35,7 +35,7 @@ fmt:
 	gofumpt -w -s .
 
 lint:
-	golangci-lint run --new-from-rev=master
+	golangci-lint run --new-from-rev=main
 
 fmt-lint: fmt lint
 

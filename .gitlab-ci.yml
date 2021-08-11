@@ -16,11 +16,11 @@ lint:
   stage: build
   variables:
     # gitlab internally fetches only current HEAD in detached state
-    # add master refspec as fetch arg to make 'git diff master' possible
-    GIT_FETCH_EXTRA_FLAGS: refs/heads/master:refs/remotes/origin/master
+    # add main refspec as fetch arg to make 'git diff main' possible
+    GIT_FETCH_EXTRA_FLAGS: refs/heads/main:refs/remotes/origin/main
   image: registry.gitlab.com/picodata/dockers/stroppy_linter:v2
   script:
-    - golangci-lint run --new-from-rev=$(git merge-base origin/master HEAD) --timeout 5m
+    - golangci-lint run --new-from-rev=$(git merge-base origin/main HEAD) --timeout 5m
 
 docker:
   image: docker:dind
@@ -30,7 +30,7 @@ docker:
   services:
   - docker:dind
   only:
-    - master
+    - main
     - /^staging-.*$/
     - /^hotfix-.*$/
     - check-ci
