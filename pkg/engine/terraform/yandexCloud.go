@@ -105,7 +105,7 @@ func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	}
 
 	mapIPAddresses = make(map[string]map[string]string)
-	workerKey := "worker_%v"
+	workerKey := "worker-%v"
 	yandexInstanceValue := "instances.%v"
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)

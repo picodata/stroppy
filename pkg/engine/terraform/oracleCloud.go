@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"time"
 
@@ -107,51 +106,25 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 	llog.Debugln(iqnMap)
 
-	var addressArray []string
-
-	var keys []string
-	for k := range addressMap["external"] {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
-	for _, k := range keys {
-		addressArray = append(addressArray, addressMap["external"][k])
-	}
-
 	/*
 		В цикле выполняется следующий алгоритм:
 		Если команда проверки вернула false, то выполняем команду создания/добавления сущности.
 		Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя.
 	*/
 
-	llog.Debugln(addressArray)
-
-	for i := range addressArray {
+	for k, address := range addressMap["external"] {
 		var newLoginCmd string
 		var updateTargetCmd string
 		var loginTargetCmd string
 
-		worker := fmt.Sprintf("worker-%v", i)
-
 		newLoginCmd = NewTargetCmdTemplate
-		updateTargetCmd = fmt.Sprintf(UpdateTargetCmdTemplate, iqnMap[worker])
-		loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap[worker])
+		updateTargetCmd = fmt.Sprintf(UpdateTargetCmdTemplate, iqnMap[k])
+		loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap[k])
 
-		if i == 0 {
-
-			worker = "master"
-
-			newLoginCmd = NewTargetCmdTemplate
-			updateTargetCmd = fmt.Sprintf(UpdateTargetCmdTemplate, iqnMap["master"])
-			loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap["master"])
-		}
-
-		llog.Infof("Adding network storage to %v %v", worker, addressArray[i])
+		llog.Infof("Adding network storage to %v %v", k, address)
 
 		llog.Infoln("checking additional storage mount ...")
-		ok, err := engineSsh.IsExistEntity(addressArray[i], CheckAdddedDiskCmd, "block special", workingDirectory, provider)
+		ok, err := engineSsh.IsExistEntity(address, CheckAdddedDiskCmd, "block special", workingDirectory, provider)
 		if err != nil {
 			return merry.Prepend(err, "failed to check additional storage mount ")
 		}
@@ -160,35 +133,35 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 			err = tools.Retry("send targets",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], newLoginCmd, provider)
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, newLoginCmd, provider)
 					return
 				},
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "send target is failed to worker %v", worker)
+				return merry.Prependf(err, "send target is failed to worker %v", k)
 			}
 
 			err = tools.Retry("add automatic startup for node",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], updateTargetCmd, provider)
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, updateTargetCmd, provider)
 					return
 				},
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "adding automatic startup for node is failed to worker %v", worker)
+				return merry.Prependf(err, "adding automatic startup for node is failed to worker %v", k)
 			}
 
 			err = tools.Retry("target login",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], loginTargetCmd, provider)
+					_, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, loginTargetCmd, provider)
 					return
 				},
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "storage is not logged in target %v", worker)
+				return merry.Prependf(err, "storage is not logged in target %v", k)
 			}
 
 			time.Sleep(5 * time.Second)
@@ -196,55 +169,55 @@ func (op *OracleProvider) PerformAdditionalOps(nodes int, provider string, addre
 		}
 
 		llog.Infoln("checking the partition of additional storage...")
-		ok, err = engineSsh.IsExistEntity(addressArray[i], CheckPartedCmd, "primary", workingDirectory, provider)
+		ok, err = engineSsh.IsExistEntity(address, CheckPartedCmd, "primary", workingDirectory, provider)
 		if err != nil {
 			return merry.Prepend(err, "failed to check the partition of additional storage")
 		}
 
 		if !ok {
 
-			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], PartedVolumeCmd, provider); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for additional storage partitioning %v", worker)
+			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, PartedVolumeCmd, provider); err != nil {
+				errorMessage := fmt.Sprintf("failed to execute commands for additional storage partitioning %v", k)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Partition of  additional storage: success")
 		}
 
 		llog.Infoln("checking of additional storage file system exist...")
-		ok, err = engineSsh.IsExistEntity(addressArray[i], CheckExistFileSystemCmd, "ext4", workingDirectory, provider)
+		ok, err = engineSsh.IsExistEntity(address, CheckExistFileSystemCmd, "ext4", workingDirectory, provider)
 		if err != nil {
 			return merry.Prepend(err, "failed to check additional storage file system exist.")
 		}
 
 		if !ok {
-			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], CreatefileSystemCmd, provider); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for create additional storage file system %v", worker)
+			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, CreatefileSystemCmd, provider); err != nil {
+				errorMessage := fmt.Sprintf("failed to execute commands for create additional storage file system %v", k)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Create additional storage filesystem: success")
 		}
 
 		llog.Infoln("checking of disk /dev/sdb1 mount ...")
-		ok, err = engineSsh.IsExistEntity(addressArray[i], CheckMountCmd, "/opt/local-path-provisioner", workingDirectory, provider)
+		ok, err = engineSsh.IsExistEntity(address, CheckMountCmd, "/opt/local-path-provisioner", workingDirectory, provider)
 		if err != nil {
 			return merry.Prepend(err, "failed to check checking of disk /dev/sdb1 mount")
 		}
 
 		if !ok {
 
-			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], AddDirectoryCmdTemplate, provider); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for add directory to %v", worker)
+			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, AddDirectoryCmdTemplate, provider); err != nil {
+				errorMessage := fmt.Sprintf("failed to execute commands for add directory to %v", k)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Added directory /opt/local-path-provisioner/: success")
 
-			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, addressArray[i], MountLocalPathTemplate, provider); err != nil {
-				errorMessage := fmt.Sprintf("failed to mount disk to /opt/local-path-provisioner/ %v", worker)
+			if _, err = engineSsh.ExecuteCommandWorker(workingDirectory, address, MountLocalPathTemplate, provider); err != nil {
+				errorMessage := fmt.Sprintf("failed to mount disk to /opt/local-path-provisioner/ %v", k)
 				return merry.Prepend(err, errorMessage)
 			}
-			llog.Infof("Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success", worker)
+			llog.Infof("Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success", k)
 		}
-		llog.Infof("added network storage to %v", worker)
+		llog.Infof("added network storage to %v", k)
 
 	}
 
@@ -266,7 +239,7 @@ func (op *OracleProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 	}
 
 	mapIPAddresses = make(map[string]map[string]string)
-	workerKey := "worker_%v"
+	workerKey := "worker-%v"
 	oracleInstanceValue := "value.0.%v"
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)

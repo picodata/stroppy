@@ -34,7 +34,7 @@ func getAddressMap(stateFilePath, provider string, nodes int) (mapIPAddresses ma
 	}
 
 	mapIPAddresses = make(map[string]map[string]string)
-	workerKey := "worker_%v"
+	workerKey := "worker-%v"
 	oracleInstanceValue := "value.0.%v"
 	yandexInstanceValue := "instances.%v"
 	externalAddress := make(map[string]string)
