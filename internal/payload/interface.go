@@ -3,10 +3,11 @@ package payload
 import (
 	"sync"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/db"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database"
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"gopkg.in/inf.v0"
@@ -17,41 +18,16 @@ type Payload interface {
 	Pop(string) error
 	Check(*inf.Dec) (*inf.Dec, error)
 	UpdateSettings(*config.DatabaseSettings)
-	GetStatistics() error
+	StartStatisticsCollect() error
+	Connect() error
 }
 
-func CreatePayload(settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
+func CreatePayload(cluster db.Cluster, settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
 	bp := &BasePayload{
+		cluster:        cluster,
 		config:         settings.DatabaseSettings,
 		chaos:          chaos,
 		chaosParameter: settings.ChaosParameter,
-	}
-
-	switch bp.config.DBType {
-	case cluster.Postgres:
-		// для возможности подключиться к БД в кластере с локальной машины
-		if bp.config.DBURL == "" {
-			bp.config.DBURL = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
-			llog.Infoln("changed DBURL on", bp.config.DBURL)
-		}
-		bp.Cluster, bp.closeConns, err = cluster.NewPostgresCluster(bp.config.DBURL)
-		if err != nil {
-			return
-		}
-
-	case cluster.Foundation:
-		if bp.config.DBURL == "" {
-			bp.config.DBURL = "fdb.cluster"
-		}
-
-		bp.Cluster, err = cluster.NewFoundationCluster(bp.config.DBURL)
-		if err != nil {
-			return
-		}
-
-	default:
-		err = merry.Errorf("unknown database type for setup")
-		return
 	}
 
 	if bp.config.Oracle {
@@ -74,13 +50,13 @@ func CreatePayload(settings *config.Settings, chaos chaos.Controller) (p Payload
 		bp.config.DBType, bp.config.DBURL)
 
 	p = bp
-
 	return
 }
 
 type BasePayload struct {
-	Cluster    CustomTxTransfer
-	closeConns func()
+	// \todo: Имеем две сущности описывающие кластер базы данных - произвести рефакторинг
+	cluster db.Cluster
+	Cluster CustomTxTransfer
 
 	config     *config.DatabaseSettings
 	configLock sync.Mutex
@@ -100,10 +76,23 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 	p.config = &unpConfig
 }
 
-func (p *BasePayload) GetStatistics() (err error) {
-	if err = p.Cluster.GetStatistics(); err != nil {
+func (p *BasePayload) StartStatisticsCollect() (err error) {
+	if err = p.Cluster.StartStatisticsCollect(); err != nil {
 		return merry.Errorf("failed to get statistic for %v cluster: %v", p.config.DBType, err)
 	}
 
+	return
+}
+
+func (p *BasePayload) Connect() (err error) {
+	// p.Cluster, err = p.cluster.Connect()
+
+	// \todo: необходим большой рефакторинг
+	var c interface{}
+	if c, err = p.cluster.Connect(); err != nil {
+		return
+	}
+
+	p.Cluster = c.(CustomTxTransfer)
 	return
 }

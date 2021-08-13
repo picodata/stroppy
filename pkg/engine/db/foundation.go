@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
+
 	llog "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 
@@ -22,13 +24,14 @@ const (
 	foundationClusterClientName = "sample-cluster-client"
 )
 
-func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (fc Cluster) {
+func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string) (fc Cluster) {
 	fc = &foundationCluster{
 		commonCluster: createCommonCluster(
 			sc,
 			k,
 			filepath.Join(wd, foundationDbDirectory),
 			foundationDbDirectory,
+			dbURL,
 		),
 	}
 	return
@@ -36,6 +39,15 @@ func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd s
 
 type foundationCluster struct {
 	*commonCluster
+}
+
+func (fc *foundationCluster) Connect() (cluster interface{}, err error) {
+	if fc.DBUrl == "" {
+		fc.DBUrl = "fdb.cluster"
+	}
+
+	cluster, err = cluster2.NewFoundationCluster(fc.DBUrl)
+	return
 }
 
 func (fc *foundationCluster) Deploy() (err error) {

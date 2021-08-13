@@ -4,7 +4,6 @@ import (
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
-	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gopkg.in/inf.v0"
 )
@@ -37,12 +36,9 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("test failed with error %v", err)
 				}
 			} else {
-				p, err := payload.CreatePayload(settings, createChaos(settings))
+				p := createPayload(settings)
+				err := p.StartStatisticsCollect()
 				if err != nil {
-					llog.Fatalf("%v", err)
-				}
-
-				if err = p.GetStatistics(); err != nil {
 					llog.Fatalf("%v", err)
 				}
 

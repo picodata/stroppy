@@ -29,24 +29,32 @@ var (
 	errProviderChoice = errors.New("selected provider not found")
 )
 
-func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
+func CreateSystemShell(settings *config.Settings) (sc engineSsh.Client, err error) {
 	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
-	if kubernetesMasterAddress == "" {
-		err = fmt.Errorf("kubernetes master address is empty")
-		return
-	}
-
 	commandClientType := engineSsh.RemoteClient
-	if settings.TestSettings.RunAsPod {
+	if !settings.TestSettings.RunAsPod {
+		if kubernetesMasterAddress == "" {
+			err = fmt.Errorf("kubernetes master address is empty")
+			return
+		}
+	} else {
 		commandClientType = engineSsh.DummyClient
 	}
-	var sc engineSsh.Client
+
 	sc, err = engineSsh.CreateClient(settings.WorkingDirectory,
 		kubernetesMasterAddress,
 		settings.DeploymentSettings.Provider,
 		commandClientType)
 	if err != nil {
 		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
+	}
+
+	return
+}
+
+func CreateShell(settings *config.Settings) (k *Kubernetes, err error) {
+	var sc engineSsh.Client
+	if sc, err = CreateSystemShell(settings); err != nil {
 		return
 	}
 

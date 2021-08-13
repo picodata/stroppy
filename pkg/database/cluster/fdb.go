@@ -625,7 +625,7 @@ func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Trans
 	return err
 }
 
-func (cluster *FDBCluster) GetStatistics() error {
+func (cluster *FDBCluster) StartStatisticsCollect() error {
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")

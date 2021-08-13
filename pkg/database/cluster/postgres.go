@@ -26,22 +26,22 @@ type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresCluster(dbURL string) (*PostgresCluster, func(), error) {
+func NewPostgresCluster(dbURL string) (*PostgresCluster, error) {
 	llog.Infof("Establishing connection to pg on %v", dbURL)
 
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
-		return nil, nil, merry.Wrap(err)
+		return nil, merry.Wrap(err)
 	}
 
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {
-		return nil, nil, merry.Wrap(err)
+		return nil, merry.Wrap(err)
 	}
 
 	return &PostgresCluster{
 		pgPool,
-	}, pgPool.Close, nil
+	}, nil
 }
 
 func (*PostgresCluster) GetClusterType() DBClusterType {
@@ -767,7 +767,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 	return nil
 }
 
-func (self *PostgresCluster) GetStatistics() error {
+func (self *PostgresCluster) StartStatisticsCollect() error {
 	llog.Debugln("statistic for postgres not supported, watch grafana metrics, please")
 	return nil
 }

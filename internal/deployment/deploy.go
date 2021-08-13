@@ -110,13 +110,13 @@ func (sh *shell) prepareEngine() (err error) {
 }
 
 func (sh *shell) preparePayload() (err error) {
-	dbtype := sh.settings.DatabaseSettings.DBType
-	if sh.cluster, err = db.CreateCluster(dbtype, sh.sc, sh.k, sh.workingDirectory); err != nil {
+	sh.cluster, err = db.CreateCluster(sh.settings.DatabaseSettings, sh.sc, sh.k, sh.workingDirectory)
+	if err != nil {
 		return
 	}
 
-	if sh.payload, err = payload.CreatePayload(sh.settings, sh.chaosMesh); err != nil {
-		if dbtype != cluster.Foundation {
+	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
+		if sh.settings.DatabaseSettings.DBType != cluster.Foundation {
 			return merry.Prepend(err, "failed to init payload")
 		}
 		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
@@ -164,6 +164,10 @@ func (sh *shell) deploy() (err error) {
 	}
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(err, "'%s' database deploy failed", sh.settings.DatabaseSettings.DBType)
+	}
+
+	if err = sh.payload.Connect(); err != nil {
+		return merry.Prepend(err, "cluster connect")
 	}
 
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)

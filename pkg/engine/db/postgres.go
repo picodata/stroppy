@@ -11,6 +11,7 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	kuberv1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
@@ -20,12 +21,13 @@ import (
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
 
-func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd string) (pc Cluster) {
+func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string) (pc Cluster) {
 	pc = &postgresCluster{
 		commonCluster: createCommonCluster(sc,
 			k,
 			filepath.Join(wd, cluster.Postgres),
-			cluster.Postgres),
+			cluster.Postgres,
+			dbURL),
 	}
 	return
 }
@@ -34,10 +36,20 @@ type postgresCluster struct {
 	*commonCluster
 }
 
+func (pc *postgresCluster) Connect() (cluster interface{}, err error) {
+	// для возможности подключиться к БД в кластере с локальной машины
+	if pc.DBUrl == "" {
+		pc.DBUrl = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
+		llog.Infoln("changed DBURL on", pc.DBUrl)
+	}
+	cluster, err = cluster2.NewPostgresCluster(pc.DBUrl)
+	return
+}
+
 // Deploy
 // разворачивает postgres в кластере
 func (pc *postgresCluster) Deploy() (err error) {
-	if err = pc.commonCluster.deploy(); err != nil {
+	if err = pc.deploy(); err != nil {
 		return merry.Prepend(err, "deploy")
 	}
 
