@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/tools"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"k8s.io/client-go/kubernetes"
@@ -304,11 +305,16 @@ func (k Kubernetes) AddNodeLabels(_ string) (err error) {
 		}
 
 		// применяем изменения на ноду
-		_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+		err = tools.Retry("adding labels to nodes",
+			func() (err error) {
+				_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+				return
+			},
+			tools.RetryStandardRetryCount,
+			tools.RetryStandardWaitingTime)
 		if err != nil {
 			return merry.Prepend(err, "failed to update node")
 		}
-
 	}
 
 	llog.Infoln("Add labels to cluster nodes: success")
