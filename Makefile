@@ -35,7 +35,7 @@ fmt:
 	gofumpt -w -s .
 
 lint:
-	golangci-lint run --new-from-rev=main
+	golangci-lint run --new-from-rev=main --timeout=10m
 
 fmt-lint: fmt lint
 
