@@ -47,7 +47,7 @@ func (k *Kubernetes) Deploy() (err error) {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
-	k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort, reserveClusterK8sPort)
+	k.sshTunnel = k.OpenSecureShellTunnel(kubernetesSshEntity, clusterK8sPort)
 	if k.sshTunnel.Err != nil {
 		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
 		return
@@ -70,7 +70,7 @@ func (k *Kubernetes) Deploy() (err error) {
 
 	llog.Infoln("status of stroppy pod deploy: success")
 
-	k.portForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort, reserveClusterMonitoringPort)
+	k.portForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort)
 	if k.portForward.Err != nil {
 		return merry.Prepend(k.portForward.Err, "failed to port forward")
 	}

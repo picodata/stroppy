@@ -102,6 +102,6 @@ func (chaos *workableController) establishDashboardAvailability() (err error) {
 		err = nil
 	}
 
-	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333, 2334)
+	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333)
 	return
 }

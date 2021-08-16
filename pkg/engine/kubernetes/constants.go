@@ -3,14 +3,12 @@ package kubernetes
 import "time"
 
 const (
-	clusterK8sPort        = 6443
-	reserveClusterK8sPort = 6444
+	clusterK8sPort = 6443
 
 	// кол-во подов при успешном деплое k8s в master-ноде
 	runningPodsCount = 27
 
-	clusterMonitoringPort        = 3000
-	reserveClusterMonitoringPort = 3001
+	clusterMonitoringPort = 3000
 
 	// задержка для случаев ожидания переповтора или соблюдения порядка запуска
 	execTimeout = 5

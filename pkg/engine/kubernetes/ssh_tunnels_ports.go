@@ -13,6 +13,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/sshtunnel"
+	"gitlab.com/picodata/stroppy/pkg/tools"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
@@ -94,34 +95,36 @@ func (k *Kubernetes) getSessionObject() (stdout io.Reader, session engineSsh.Ses
 // OpenSecureShellTunnel
 
 // открыть ssh-соединение и передать указатель на него вызывающему коду для управления
-func (k *Kubernetes) OpenSecureShellTunnel(caller string, mainPort int, reservePort int) (result *engineSsh.Result) {
+func (k *Kubernetes) OpenSecureShellTunnel(caller string, mainPort int) (result *engineSsh.Result) {
 	mastersConnectionString := fmt.Sprintf("ubuntu@%v", k.AddressMap["external"]["master"])
 
 	tunnelPort := mainPort
+	retryStandardRetryCount := tools.RetryStandardRetryCount
 	/*	проверяем доступность портов для postgres на локальной машине */
 	llog.Infof("Checking the status of %s port on the localhost for %v...\n", caller, tunnelPort)
-	if !engine.IsLocalPortOpen(tunnelPort) {
+	for !engine.IsLocalPortOpen(tunnelPort) {
 		// проверяем резервный порт в случае недоступности основного
-		tunnelPort = reservePort
+		tunnelPort++
 		llog.Infof("Checking the status of port %v of the localhost for %v...\n", caller, tunnelPort)
-		if !engine.IsLocalPortOpen(tunnelPort) {
+		// условие добавляем здесь, чтобы не портить им последующий код
+		if tunnelPort >= tunnelPort+retryStandardRetryCount {
 			result = &engineSsh.Result{
 				Port:   0,
 				Tunnel: nil,
-				Err:    merry.Prepend(errPortCheck, "ports 6443 and 6444 are not available"),
+				Err: merry.Prepend(errPortCheck,
+					fmt.Sprintf("ports %v-%v are not available", mainPort, mainPort+retryStandardRetryCount)),
 			}
 			return
 		}
+	}
 
-		// если туннель для k8s и недоступен основной порт, то меняем его на резервный
-		if tunnelPort == 6444 {
-			if err := k.editClusterURL(tunnelPort); err != nil {
-				llog.Infof("failed to replace port: %v", err)
-				result = &engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
-				return
-			}
+	// если туннель для k8s и недоступен основной порт, то меняем его на резервный
+	if tunnelPort != mainPort && caller == kubernetesSshEntity {
+		if err := k.editClusterURL(tunnelPort); err != nil {
+			llog.Infof("failed to replace port: %v", err)
+			result = &engineSsh.Result{Port: 0, Tunnel: nil, Err: err}
+			return
 		}
-
 	}
 
 	authMethod, err := sshtunnel.PrivateKeyFile(k.sshKeyFilePath)
