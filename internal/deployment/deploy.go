@@ -124,9 +124,6 @@ func (sh *shell) preparePayload() (err error) {
 		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
 		err = nil
 	}
-
-	grafanaPort, kubernetesMasterPort := sh.k.GetInfraPorts()
-	llog.Infof(interactiveUsageHelpTemplate, grafanaPort, kubernetesMasterPort)
 	return
 }
 
@@ -167,9 +164,16 @@ func (sh *shell) deploy() (err error) {
 	}
 
 	if err = sh.payload.Connect(); err != nil {
-		return merry.Prepend(err, "cluster connect")
+		// return merry.Prepend(err, "cluster connect")
+		// \todo: временно необращаем внимание на эту ошибку
+
+		llog.Errorf("cluster connect: %v", err)
+		err = nil
 	}
 
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
+
+	grafanaPort, kubernetesMasterPort := sh.k.GetInfraPorts()
+	llog.Infof(interactiveUsageHelpTemplate, grafanaPort, kubernetesMasterPort)
 	return
 }

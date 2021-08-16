@@ -1,7 +1,6 @@
 package main
 
 import (
-	"os"
 	"runtime/debug"
 
 	"gitlab.com/picodata/stroppy/cmd/stroppy/commands"
@@ -11,16 +10,15 @@ import (
 	llog "github.com/sirupsen/logrus"
 )
 
+// The section lists vars that should be defined on build using ldflags.
+// nolint gochecknoglobals
+var (
+	version string
+	commit  string
+	date    string
+)
+
 func main() {
-	llog.SetOutput(os.Stdout)
-
-	formatter := new(llog.TextFormatter)
-	// Stackoverflow wisdom
-	formatter.TimestampFormat = "Jan _2 15:04:05.000"
-	formatter.FullTimestamp = true
-	formatter.ForceColors = true
-	llog.SetFormatter(formatter)
-
 	defer func() {
 		if r := recover(); r != nil {
 			llog.Errorf("main: panic caught: '%v'\n\nstack:\n%s\n\n",
@@ -30,5 +28,7 @@ func main() {
 	}()
 
 	statistics.StatsInit()
+
+	commands.UpdateBuildVersion(version, commit, date)
 	commands.Execute()
 }

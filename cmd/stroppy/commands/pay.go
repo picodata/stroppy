@@ -15,7 +15,7 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		Short:   "Run the payments workload",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return initLogLevel(settings)
+			return initLogFacility(settings)
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {

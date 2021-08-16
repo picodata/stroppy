@@ -16,7 +16,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		Example: "./stroppy pop -c 100000000",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return initLogLevel(settings)
+			return initLogFacility(settings)
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {

@@ -17,6 +17,7 @@ const dateFormat = "02-01-2006_15_04_05"
 func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
 	payTestCommand := []string{
 		"/root/stroppy", "pay",
+		"--dir", "/root",
 		"--run-as-pod",
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--check",
@@ -74,6 +75,7 @@ func (sh *shell) executePay(_ string) (err error) {
 func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
 	popTestCommand := []string{
 		"/root/stroppy", "pop",
+		"--dir", "/root",
 		"--run-as-pod",
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--count", fmt.Sprintf("%v", settings.Count),

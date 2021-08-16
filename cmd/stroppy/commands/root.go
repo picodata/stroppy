@@ -19,7 +19,7 @@ checking correctness. It collects client-side metrics for latency and
 bandwidth along the way.`,
 		Version: "0.9",
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) (err error) {
-			if err = initLogLevel(settings); err != nil {
+			if err = initLogFacility(settings); err != nil {
 				return
 			}
 
@@ -106,7 +106,8 @@ The default value of banRangeMultipluer is 1.1.`)
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),
 		newDeployCommand(settings),
-		newShellCommand(settings))
+		newShellCommand(settings),
+		newVersionCommand())
 
 	_ = rootCmd.Execute()
 }

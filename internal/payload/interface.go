@@ -85,8 +85,6 @@ func (p *BasePayload) StartStatisticsCollect() (err error) {
 }
 
 func (p *BasePayload) Connect() (err error) {
-	// p.Cluster, err = p.cluster.Connect()
-
 	// \todo: необходим большой рефакторинг
 	var c interface{}
 	if c, err = p.cluster.Connect(); err != nil {

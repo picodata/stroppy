@@ -94,7 +94,7 @@ func (sh *shell) ReadEvalPrintLoop() (err error) {
 					sh.chaosMesh.Stop()
 				}
 
-			case "\n":
+			case "\n", "":
 
 			default:
 				llog.Warnf("You entered unknown command '%s'. To exit enter quit", command)

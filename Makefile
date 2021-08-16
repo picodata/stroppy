@@ -1,9 +1,16 @@
+BUILD_COMMIT=$(shell git rev-list -1 HEAD)
+BUILD_DATE=$(shell date +%d-%m-%Y-%H:%M)
+VERSION=$(shell build/get_version.sh)
+
+LDFLAGS="-s -w -X main.version=$(VERSION) -X main.commit=$(BUILD_COMMIT) -X main.date=$(BUILD_DATE)"
+
 cache:
 	go mod tidy
 	go mod vendor
 
 build:
-	go build -o bin/stroppy ./cmd/stroppy
+	go build -ldflags=$(LDFLAGS) -o bin/stroppy ./cmd/stroppy
+.PHONY: build
 
 all: cache build
 
@@ -36,8 +43,6 @@ fmt:
 
 lint:
 	golangci-lint run --new-from-rev=main --timeout=10m
-
-fmt-lint: fmt lint
 
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3

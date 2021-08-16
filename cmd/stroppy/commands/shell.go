@@ -13,7 +13,7 @@ func newShellCommand(settings *config.Settings) (shellCmd *cobra.Command) {
 		Short: "Open shell to already deployed cluster",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
-			return initLogLevel(settings)
+			return initLogFacility(settings)
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
