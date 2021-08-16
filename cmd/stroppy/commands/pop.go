@@ -38,7 +38,12 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 				}
 			} else {
 				p := createPayload(settings)
-				err := p.StartStatisticsCollect()
+				err := p.Connect()
+				if err != nil {
+					llog.Fatalf("failed to connecto to cluster: %v", err)
+				}
+
+				err = p.StartStatisticsCollect()
 				if err != nil {
 					llog.Fatalf("get stat err %v", err)
 				}
