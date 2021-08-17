@@ -275,9 +275,22 @@ func (k Kubernetes) AddNodeLabels(_ string) (err error) {
 
 	// используем получения списка нод ради точного кол-ва нод кластера.
 	// deploySettings.nodes не используем из-за разного кол-ва nodes для одинакового кол-ва воркеров в yc и oc
-	nodesList, err := clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+
+	nodeListRaw, err := tools.RetryWithResult("get nodes list",
+		func() (result interface{}, err error) {
+			nodesList, err := clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+			return nodesList, err
+		},
+		tools.RetryStandardRetryCount,
+		tools.RetryStandardWaitingTime)
+
 	if err != nil {
 		return merry.Prepend(err, "failed to get nodes list")
+	}
+
+	nodesList, ok := nodeListRaw.(*v1.NodeList)
+	if !ok {
+		return merry.Prepend(err, "failed to check nodes list type")
 	}
 
 	for i := 1; i < len(nodesList.Items); i++ {
