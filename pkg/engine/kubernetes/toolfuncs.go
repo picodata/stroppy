@@ -293,15 +293,11 @@ func (k Kubernetes) AddNodeLabels(_ string) (err error) {
 		return merry.Prepend(err, "failed to check nodes list type")
 	}
 
-	for i := 1; i < len(nodesList.Items); i++ {
-		name := fmt.Sprintf("worker-%v", i)
+	workerNodeList := nodesList.Items[1:]
 
-		node, err := clientSet.CoreV1().Nodes().Get(context.TODO(), name, metav1.GetOptions{})
-		if err != nil {
-			return merry.Prepend(err, "failed to get node")
-		}
+	for i := 0; i < len(workerNodeList); i++ {
 
-		currentLabels := node.GetLabels()
+		currentLabels := workerNodeList[i].GetLabels()
 
 		if _, ok := currentLabels["worker-type"]; ok {
 			llog.Infoln("this node already been marked")
@@ -309,18 +305,19 @@ func (k Kubernetes) AddNodeLabels(_ string) (err error) {
 		}
 
 		currentLabels["worker-type"] = "dbms-worker"
-		node.SetLabels(currentLabels)
+		workerNodeList[i].SetLabels(currentLabels)
 
 		// последний воркер оставляем для stroppy
-		if i == len(nodesList.Items)-1 {
+		if i == len(workerNodeList)-1 {
+
 			currentLabels["worker-type"] = "stroppy-worker"
-			node.SetLabels(currentLabels)
+			workerNodeList[i].SetLabels(currentLabels)
 		}
 
 		// применяем изменения на ноду
 		err = tools.Retry("adding labels to nodes",
 			func() (err error) {
-				_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), node, metav1.UpdateOptions{})
+				_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), &workerNodeList[i], metav1.UpdateOptions{})
 				return
 			},
 			tools.RetryStandardRetryCount,
