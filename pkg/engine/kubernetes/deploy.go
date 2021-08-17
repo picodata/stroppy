@@ -316,12 +316,20 @@ func (k *Kubernetes) prepareDeployStroppy() error {
 	}
 
 	llog.Infoln("Applying the stroppy secret...")
-	_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
-		TypeMeta:     metav1.TypeMeta{},
-		DryRun:       []string{},
-		Force:        false,
-		FieldManager: "stroppy-deploy",
-	})
+
+	err = tools.Retry("apply stroppy secret",
+		func() (err error) {
+			_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
+				TypeMeta:     metav1.TypeMeta{},
+				DryRun:       []string{},
+				Force:        false,
+				FieldManager: "stroppy-deploy",
+			})
+			return
+		},
+		tools.RetryStandardRetryCount,
+		tools.RetryStandardWaitingTime)
+
 	if err != nil {
 		return merry.Prepend(err, "failed to apply stroppy secret")
 	}
