@@ -99,7 +99,7 @@ The default value of banRangeMultipluer is 1.1.`)
 		"specify to use cloud stroppy pod instead of local generator")
 
 	rootCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.StatInterval,
-		"--stattime", "t",
+		"statinterval", "s",
 		settings.DatabaseSettings.StatInterval,
 		"interval for gettings db stats. Only fdb yet.")
 
