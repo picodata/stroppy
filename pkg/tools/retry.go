@@ -29,20 +29,3 @@ func Retry(tag string, fClos func() error, retryCount, sleepTimeout int) (err er
 
 	return
 }
-
-// RetryWithResult - выполнить переповтор фукнции с возвратом результата и ошибки
-func RetryWithResult(tag string, fClos func() (result interface{}, err error), retryCount, sleepTimeout int) (result interface{}, err error) {
-	for i := 0; i < retryCount; i++ {
-		result, err = fClos()
-		if err == nil {
-			return
-		}
-		llog.Warnf("Retry '%s', run %d/%d: %v", tag, i, retryCount, err)
-
-		if sleepTimeout > 0 {
-			time.Sleep(time.Duration(sleepTimeout) * time.Second)
-		}
-	}
-
-	return
-}
