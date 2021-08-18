@@ -1,7 +1,7 @@
 variable "yc_token" {
   type = string
   description = "Yandex Cloud API key"
-  default = "AgAAAAAiwSBdAATuwf72YMk12Un9reJndvsVFag"
+  default = "AQAAAABR2lbZAATuwebZv951gUuRg0rnMNx7AXo"
 }
 variable "yc_region" {
   type = string
