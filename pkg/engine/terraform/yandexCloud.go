@@ -124,7 +124,7 @@ func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 		Get("network_interface.0").
 		Get("ip_address").Str
 
-	for i := 1; i <= nodes-1; i++ {
+	for i := 1; i <= nodes; i++ {
 		key := fmt.Sprintf(workerKey, i)
 		currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
 		externalAddress[key] = gjson.Parse(string(data)).
@@ -136,7 +136,7 @@ func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPA
 			Get("nat_ip_address").Str
 	}
 
-	for i := 1; i <= nodes-1; i++ {
+	for i := 1; i <= nodes; i++ {
 		key := fmt.Sprintf(workerKey, i)
 		currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
 		internalAddress[key] = gjson.Parse(string(data)).
