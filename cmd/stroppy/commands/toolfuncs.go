@@ -66,9 +66,11 @@ func initLogFacility(settings *config.Settings) (err error) {
 	logFileName := fmt.Sprintf("%s_test_run_%s.log", os.Args[1], startDateTime)
 
 	var logFileDescriptor *os.File
+	// по умолчанию файл создается без прав вообще, нужны права на чтение
+	var modePerm fs.FileMode = 444
 	logFileDescriptor, err = os.OpenFile(filepath.Join(settings.WorkingDirectory, logFileName),
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
-		fs.ModeAppend)
+		os.O_CREATE|os.O_APPEND|os.O_RDWR,
+		modePerm)
 	if err != nil {
 		err = merry.Prependf(err, "open log file '%s' in '%s' directory", logFileName, settings.WorkingDirectory)
 		return
