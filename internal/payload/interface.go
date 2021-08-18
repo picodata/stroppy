@@ -2,6 +2,7 @@ package payload
 
 import (
 	"sync"
+	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/db"
 
@@ -18,7 +19,7 @@ type Payload interface {
 	Pop(string) error
 	Check(*inf.Dec) (*inf.Dec, error)
 	UpdateSettings(*config.DatabaseSettings)
-	StartStatisticsCollect() error
+	StartStatisticsCollect(statInterval time.Duration) error
 	Connect() error
 }
 
@@ -76,7 +77,7 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 	p.config = &unpConfig
 }
 
-func (p *BasePayload) StartStatisticsCollect() (err error) {
+func (p *BasePayload) StartStatisticsCollect(statInterval time.Duration) (err error) {
 	if err = p.Cluster.StartStatisticsCollect(); err != nil {
 		return merry.Errorf("failed to get statistic for %v cluster: %v", p.config.DBType, err)
 	}

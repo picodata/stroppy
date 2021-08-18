@@ -42,7 +42,7 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("failed to connect to cluster: %v", err)
 				}
 
-				err = p.StartStatisticsCollect()
+				err = p.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
 				if err != nil {
 					llog.Fatalf("%v", err)
 				}

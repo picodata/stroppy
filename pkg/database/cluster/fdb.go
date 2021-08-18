@@ -625,11 +625,11 @@ func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Trans
 	return err
 }
 
-func (cluster *FDBCluster) StartStatisticsCollect() error {
+func (cluster *FDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")
-	go cluster.getStatistics(errChan)
+	go cluster.getStatistics(statInterval, errChan)
 
 	errorCheck := <-errChan
 
@@ -640,7 +640,7 @@ func (cluster *FDBCluster) StartStatisticsCollect() error {
 	return nil
 }
 
-func (cluster *FDBCluster) getStatistics(errChan chan error) {
+func (cluster *FDBCluster) getStatistics(statInterval time.Duration, errChan chan error) {
 	var once sync.Once
 	var resultMap map[string]interface{}
 	var jsonResult []byte
@@ -697,6 +697,6 @@ func (cluster *FDBCluster) getStatistics(errChan chan error) {
 			errChan <- nil
 		})
 
-		time.Sleep(30 * time.Second)
+		time.Sleep(statInterval * time.Second)
 	}
 }

@@ -767,7 +767,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 	return nil
 }
 
-func (self *PostgresCluster) StartStatisticsCollect() error {
+func (self *PostgresCluster) StartStatisticsCollect(statInterval time.Duration) error {
 	llog.Debugln("statistic for postgres not supported, watch grafana metrics, please")
 	return nil
 }

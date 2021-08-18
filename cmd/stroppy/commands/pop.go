@@ -43,7 +43,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("failed to connecto to cluster: %v", err)
 				}
 
-				err = p.StartStatisticsCollect()
+				err = p.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
 				if err != nil {
 					llog.Fatalf("get stat err %v", err)
 				}
