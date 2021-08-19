@@ -107,9 +107,6 @@ func (sh *shell) prepareEngine() (err error) {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
 
-	if err = sh.k.OpenPortForwarding(); err != nil {
-		return
-	}
 	return
 }
 

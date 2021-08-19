@@ -38,6 +38,10 @@ func (sh *shell) LoadState() (err error) {
 		return
 	}
 
+	if err = sh.k.OpenPortForwarding(); err != nil {
+		return
+	}
+
 	sh.chaosMesh = chaos.CreateController(sh.k, sh.workingDirectory, sh.settings.UseChaos)
 
 	err = sh.preparePayload()
