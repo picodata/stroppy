@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	"gitlab.com/picodata/stroppy/pkg/tools"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
@@ -94,7 +96,7 @@ func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, er
 }
 
 func (t *Terraform) Run() (err error) {
-	err = t.Provider.Prepare(t.WorkDirectory)
+	err = t.Provider.Prepare()
 	if err != nil {
 		return merry.Prepend(err, "failed to prepare terraform")
 	}
@@ -143,18 +145,15 @@ func (t *Terraform) apply() (err error) {
 
 // nolint
 func (t *Terraform) deleteTfstateFiles() {
-	files2BeDeleted := []string{
+	terraformFilesToClean := []string{
 		stateFileName,
+		".terraform",
+		"terraform.tfstate.backup",
 		".terraform.lock.hcl",
+		"terraform.tfstate.backup",
 	}
-
-	var err error
-	for _, file := range files2BeDeleted {
-		path := filepath.Join(t.WorkDirectory, file)
-		if err = os.Remove(path); err != nil {
-			llog.Warnf("delete terraform service files: %v", merry.Prepend(err, path))
-		}
-	}
+	tools.RemovePathList(terraformFilesToClean, t.WorkDirectory)
+	t.Provider.RemoveProviderSpecificFiles()
 }
 
 // Destroy - уничтожить кластер

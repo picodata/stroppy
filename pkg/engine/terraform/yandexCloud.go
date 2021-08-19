@@ -5,6 +5,8 @@ import (
 	"io/ioutil"
 	"strconv"
 
+	"gitlab.com/picodata/stroppy/pkg/tools"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
@@ -23,22 +25,23 @@ func CreateYandexProvider(settings *config.DeploymentSettings, wd string) (yp *Y
 	}
 
 	provider := YandexProvider{
-		templatesConfig: *templatesConfig,
-		settings:        settings,
+		templatesConfig:  *templatesConfig,
+		settings:         settings,
+		workingDirectory: wd,
 	}
 
 	yp = &provider
-
-	return yp, nil
+	return
 }
 
 type YandexProvider struct {
-	templatesConfig TemplatesConfig
-	settings        *config.DeploymentSettings
+	templatesConfig  TemplatesConfig
+	settings         *config.DeploymentSettings
+	workingDirectory string
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
-func (yp *YandexProvider) Prepare(workingDirectory string) error {
+func (yp *YandexProvider) Prepare() error {
 	var templatesInit []ConfigurationUnitParams
 
 	switch yp.settings.Flavor {
@@ -65,7 +68,7 @@ func (yp *YandexProvider) Prepare(workingDirectory string) error {
 	platform := GetPlatform(templatesInit)
 
 	err := PrepareYandex(cpuCount, ramSize,
-		diskSize, yp.settings.Nodes, platform, workingDirectory)
+		diskSize, yp.settings.Nodes, platform, yp.workingDirectory)
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -73,13 +76,13 @@ func (yp *YandexProvider) Prepare(workingDirectory string) error {
 	return nil
 }
 
-func (yp *YandexProvider) getIQNStorage(workersCount int, workingDirectory string) (iqnMap map[string]string, err error) {
-	return iqnMap, nil
+func (yp *YandexProvider) getIQNStorage(_ int, _ string) (_ map[string]string, _ error) {
+	return
 }
 
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
-func (yp *YandexProvider) PerformAdditionalOps(nodes int, provider string, addressMap map[string]map[string]string, workingDirectory string) error {
-	iqnMap, err := yp.getIQNStorage(nodes, workingDirectory)
+func (yp *YandexProvider) PerformAdditionalOps(nodes int, _ string, _ map[string]map[string]string) error {
+	iqnMap, err := yp.getIQNStorage(nodes, yp.workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")
 	}
@@ -88,6 +91,13 @@ func (yp *YandexProvider) PerformAdditionalOps(nodes int, provider string, addre
 
 	llog.Infoln("Storages adding for yandex is not used now")
 	return nil
+}
+
+func (yp *YandexProvider) RemoveProviderSpecificFiles() {
+	yandexFilesToClear := []string{
+		providerFileName,
+	}
+	tools.RemovePathList(yandexFilesToClear, yp.workingDirectory)
 }
 
 func (yp *YandexProvider) GetAddressMap(stateFilePath string, nodes int) (mapIPAddresses map[string]map[string]string, err error) {

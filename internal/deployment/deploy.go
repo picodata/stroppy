@@ -150,7 +150,7 @@ func (sh *shell) deploy() (err error) {
 
 	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes,
 		sh.settings.DeploymentSettings.Provider,
-		sh.k.AddressMap, sh.workingDirectory)
+		sh.k.AddressMap)
 	if err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}

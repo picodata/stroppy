@@ -1,7 +1,11 @@
 package tools
 
 import (
+	"os"
+	"path/filepath"
 	"time"
+
+	"github.com/ansel1/merry"
 
 	llog "github.com/sirupsen/logrus"
 )
@@ -28,4 +32,14 @@ func Retry(tag string, fClos func() error, retryCount, sleepTimeout int) (err er
 	}
 
 	return
+}
+
+func RemovePathList(list []string, rootDir string) {
+	var err error
+	for _, file := range list {
+		path := filepath.Join(rootDir, file)
+		if err = os.RemoveAll(path); err != nil {
+			llog.Warnf("delete file: %v", merry.Prepend(err, path))
+		}
+	}
 }

@@ -10,10 +10,11 @@ import (
 )
 
 type Provider interface {
-	Prepare(string) error
-	PerformAdditionalOps(int, string, map[string]map[string]string, string) error
+	Prepare() error
+	PerformAdditionalOps(int, string, map[string]map[string]string) error
 	GetAddressMap(stateFilePath string, nodes int) (map[string]map[string]string, error)
 	IsPrivateKeyExist(privateKeyPath string) bool
+	RemoveProviderSpecificFiles()
 }
 
 func GetCPUCount(templateConfig []ConfigurationUnitParams) int {
