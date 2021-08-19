@@ -298,7 +298,6 @@ func (op *OracleProvider) IsPrivateKeyExist(workingDirectory string) bool {
 
 func (op *OracleProvider) RemoveProviderSpecificFiles() {
 	oracleFileToClean := []string{
-		"main.tf",
 		instanceFileName,
 	}
 	tools.RemovePathList(oracleFileToClean, op.workingDirectory)
