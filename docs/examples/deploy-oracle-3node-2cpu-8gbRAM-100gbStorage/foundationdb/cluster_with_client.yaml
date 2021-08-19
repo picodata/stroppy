@@ -113,6 +113,8 @@ spec:
           volumeMounts:
             - name: dynamic-conf
               mountPath: /var/dynamic-conf
+      nodeSelector:
+        worker-type: dbms-worker
       volumes:
         - name: config-map
           configMap:
