@@ -52,7 +52,7 @@ func (sh *shell) ReadEvalPrintLoop() (err error) {
 			statistics.StatsInit()
 
 			switch command {
-			case "quit":
+			case "quit", "exit":
 				err = sh.gracefulShutdown()
 				return
 

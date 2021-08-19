@@ -31,6 +31,8 @@ type Settings struct {
 
 	DatabaseSettings   *DatabaseSettings
 	DeploymentSettings *DeploymentSettings
+
+	DestroyOnExit bool
 }
 
 func DefaultSettings() (s *Settings) {
@@ -45,7 +47,8 @@ func DefaultSettings() (s *Settings) {
 
 		TestSettings: TestDefaults(),
 
-		LogLevel: llog.InfoLevel.String(),
+		LogLevel:      llog.InfoLevel.String(),
+		DestroyOnExit: false,
 	}
 
 	switch s.DatabaseSettings.DBType {
@@ -110,6 +113,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
 		DBType:             cluster.Postgres,
+		StatInterval:       10,
 	}
 }
 

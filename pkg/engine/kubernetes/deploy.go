@@ -70,12 +70,16 @@ func (k *Kubernetes) Deploy() (err error) {
 
 	llog.Infoln("status of stroppy pod deploy: success")
 
+	return
+}
+
+func (k *Kubernetes) OpenPortForwarding() (err error) {
 	k.portForward = k.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort)
 	if k.portForward.Err != nil {
-		return merry.Prepend(k.portForward.Err, "failed to port forward")
+		return merry.Prepend(k.portForward.Err, "cluster monitoring")
 	}
-	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
 
+	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
 	return
 }
 

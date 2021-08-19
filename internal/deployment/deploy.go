@@ -46,10 +46,11 @@ func (sh *shell) gracefulShutdown() (err error) {
 
 	sh.k.Shutdown()
 
-	if err = sh.tf.Destroy(); err != nil {
-		return merry.Prepend(err, "failed to destroy terraform")
+	if sh.settings.DestroyOnExit {
+		if err = sh.tf.Destroy(); err != nil {
+			return merry.Prepend(err, "failed to destroy terraform")
+		}
 	}
-
 	return
 }
 
@@ -106,6 +107,9 @@ func (sh *shell) prepareEngine() (err error) {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
 
+	if err = sh.k.OpenPortForwarding(); err != nil {
+		return
+	}
 	return
 }
 
@@ -142,6 +146,9 @@ func (sh *shell) deploy() (err error) {
 	}
 	if err = sh.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
+	}
+	if err = sh.k.OpenPortForwarding(); err != nil {
+		return
 	}
 
 	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes,

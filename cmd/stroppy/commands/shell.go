@@ -26,5 +26,11 @@ func newShellCommand(settings *config.Settings) (shellCmd *cobra.Command) {
 			}
 		},
 	}
+
+	shellCmd.PersistentFlags().StringVar(&settings.DeploymentSettings.Provider,
+		"cloud",
+		settings.DeploymentSettings.Provider,
+		"name of cloud provider")
+
 	return
 }

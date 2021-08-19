@@ -33,6 +33,10 @@ bandwidth along the way.`,
 		},
 	}
 
+	rootCmd.PersistentFlags().BoolVar(&settings.DestroyOnExit, "auto-destroy",
+		settings.DestroyOnExit,
+		"specify this key if you want to destroy deployed cluster when stroppy complete its own work")
+
 	rootCmd.PersistentFlags().BoolVar(&settings.UseChaos, "use-chaos",
 		settings.UseChaos,
 		"install and run chaos-mesh on target cluster")
@@ -99,7 +103,7 @@ The default value of banRangeMultipluer is 1.1.`)
 		"specify to use cloud stroppy pod instead of local generator")
 
 	rootCmd.PersistentFlags().DurationVarP(&settings.DatabaseSettings.StatInterval,
-		"statinterval", "s",
+		"stat-interval", "s",
 		settings.DatabaseSettings.StatInterval,
 		"interval by seconds for gettings db stats. Only fdb yet.")
 

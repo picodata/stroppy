@@ -159,7 +159,7 @@ func (t *Terraform) deleteTfstateFiles() {
 
 // Destroy - уничтожить кластер
 func (t *Terraform) Destroy() error {
-	var destroyCmd *exec.Cmd
+	destroyCmd := &exec.Cmd{}
 	// https://github.com/hashicorp/terraform/releases/tag/v0.15.2
 	if t.version.major == 0 {
 		if t.version.minor <= 15 {
@@ -184,8 +184,7 @@ func (t *Terraform) Destroy() error {
 
 	llog.Infoln("Terraform destroyed")
 
-	// \todo: Проработать удаление с учетом того, что приложение statefull в очень широком смысле
-	// t.deleteTfstateFiles()
+	t.deleteTfstateFiles()
 	return nil
 }
 
