@@ -1,17 +1,13 @@
 package db
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
-	"strings"
 
 	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 
-	llog "github.com/sirupsen/logrus"
-	v1 "k8s.io/api/core/v1"
-
 	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
@@ -29,7 +25,7 @@ func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, 
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, foundationDbDirectory),
+			filepath.Join(wd, dbWorkingDirectory, foundationDbDirectory),
 			foundationDbDirectory,
 			dbURL,
 		),
@@ -55,49 +51,13 @@ func (fc *foundationCluster) Deploy() (err error) {
 		return merry.Prepend(err, "deploy failed")
 	}
 
-	var pods []v1.Pod
-	if pods, err = fc.k.ListPods(kubernetes.ResourceDefaultNamespace); err != nil {
-		err = merry.Prepend(err, "list foundation pods")
+	err = fc.examineCluster("FoundationDB",
+		kubernetes.ResourceDefaultNamespace,
+		foundationClusterClientName,
+		foundationClusterName)
+	if err != nil {
 		return
 	}
-
-	printPodContainers := func(pod *v1.Pod) {
-		for _, c := range pod.Spec.Containers {
-			llog.Debugf("\tfound (%s, `%s`, '%s') container in pod '%s'",
-				c.Name, strings.Join(c.Args, " "), strings.Join(c.Command, " "), pod.Name)
-		}
-		llog.Debug("\t---------------------\n\n")
-	}
-	for i := 0; i < len(pods); i++ {
-		pPod := &pods[i]
-
-		llog.Debugf("examining pod: '%s'/'%s'", pPod.Name, pPod.GenerateName)
-		if strings.HasPrefix(pPod.Name, foundationClusterClientName) {
-			llog.Infof("foundationdb main pod is '%s'", pPod.Name)
-			printPodContainers(pPod)
-			fc.clusterSpec.MainPod = pPod
-		} else if strings.HasPrefix(pPod.Name, foundationClusterName) {
-			fc.clusterSpec.Pods = append(fc.clusterSpec.Pods, pPod)
-			printPodContainers(pPod)
-		}
-	}
-
-	if fc.clusterSpec.MainPod == nil {
-		return errors.New("foundation main pod does not exists")
-	}
-
-	if fc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
-		fc.clusterSpec.MainPod, err = fc.k.WaitPod(fc.clusterSpec.MainPod.Name,
-			kubernetes.ResourceDefaultNamespace,
-			kubernetes.PodWaitingWaitCreation,
-			kubernetes.PodWaitingTime10Minutes)
-		if err != nil {
-			return merry.Prepend(err, "foundation pod wait")
-		}
-	}
-	llog.Debugf("foundation main pod '%s' in status '%s', okay",
-		fc.clusterSpec.MainPod.Name, fc.clusterSpec.MainPod.Status.Phase)
-
 	llog.Infof("Now perform additional foundation deployment steps")
 
 	var session engineSsh.Session

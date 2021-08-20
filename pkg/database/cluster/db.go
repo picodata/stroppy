@@ -46,11 +46,14 @@ func (e DBClusterType) String() string {
 }
 
 const (
-	Foundation            = "fdb"
-	Postgres              = "postgres"
-	statJsonFileTemplate  = "status_json_%v.json"
-	reserveConnectionPool = 10
+	Foundation = "fdb"
+	Postgres   = "postgres"
+	MongoDB    = "mongodb"
 )
+
+const statJsonFileTemplate = "status_json_%v.json"
+
+const reserveConnectionPool = 10
 
 // Settings returns the test run settings
 type Settings struct {

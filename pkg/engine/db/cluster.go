@@ -15,7 +15,7 @@ import (
 
 type Status string
 
-const ExecTimeout = 20
+const dbWorkingDirectory = "databases"
 
 type ClusterSpec struct {
 	MainPod *v1.Pod
@@ -51,6 +51,9 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.Foundation:
 		_cluster = createFoundationCluster(sc, k, wd, dbConfig.DBURL)
+
+	case cluster.MongoDB:
+		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL)
 	}
 
 	return

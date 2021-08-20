@@ -25,7 +25,7 @@ func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, db
 	pc = &postgresCluster{
 		commonCluster: createCommonCluster(sc,
 			k,
-			filepath.Join(wd, cluster.Postgres),
+			filepath.Join(wd, dbWorkingDirectory, cluster.Postgres),
 			cluster.Postgres,
 			dbURL),
 	}
