@@ -18,11 +18,9 @@ require (
 	github.com/spenczar/tdigest v2.1.0+incompatible
 	github.com/spf13/cobra v1.2.1
 	github.com/tidwall/gjson v1.8.1
-	github.com/xdg/scram v1.0.3 // indirect
-	github.com/xdg/stringprep v1.0.3 // indirect
 	github.com/zalando/postgres-operator v1.6.3
 	github.com/zclconf/go-cty v1.9.0
-	go.mongodb.org/mongo-driver v1.1.2
+	go.mongodb.org/mongo-driver v1.7.1
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	gopkg.in/inf.v0 v0.9.1
 	gopkg.in/yaml.v2 v2.4.0

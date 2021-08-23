@@ -9,6 +9,8 @@ import (
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/internal/model"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"gopkg.in/inf.v0"
@@ -79,6 +81,7 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 	// задаем максимальный размер пула соединений
 	clientOptions.MaxPoolSize = &poolSize
 
+	llog.Debugln("connecting to mongodb...")
 	client, err := mongo.NewClient(options.Client().ApplyURI(dbURL))
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create mongoDB client")
@@ -119,6 +122,53 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
+	var cleanResult *mongo.DeleteResult
+	var insertResult *mongo.InsertOneResult
+	var indexName string
+	var err error
+
+	if cleanResult, err = cluster.mongoModel.accounts.DeleteMany(context.TODO(), bson.D{}); err != nil {
+		return merry.Prepend(err, "failed to clean accounts")
+	}
+	llog.Debugf("drop %v documents from accounts \n", cleanResult)
+
+	if cleanResult, err = cluster.mongoModel.transfers.DeleteMany(context.TODO(), bson.D{}); err != nil {
+		return merry.Prepend(err, "failed to clean transfers")
+	}
+	llog.Debugf("drop %v documents from transfers \n", cleanResult)
+
+	if cleanResult, err = cluster.mongoModel.settings.DeleteMany(context.TODO(), bson.D{}); err != nil {
+		return merry.Prepend(err, "failed to clean settings")
+	}
+	llog.Debugf("drop %v documents from settings \n", cleanResult)
+
+	if cleanResult, err = cluster.mongoModel.checksum.DeleteMany(context.TODO(), bson.D{}); err != nil {
+		return merry.Prepend(err, "failed to clean checksum")
+	}
+	llog.Debugf("drop %v documents from checksum \n", cleanResult)
+
+	if insertResult, err = cluster.mongoModel.settings.InsertOne(context.TODO(), bson.D{primitive.E{Key: "count", Value: count}}, &options.InsertOneOptions{}); err != nil {
+		return merry.Prepend(err, "failed to insert count value in mongodb settings")
+	}
+
+	llog.Debugf("added count in setting with id %v", insertResult)
+
+	if insertResult, err = cluster.mongoModel.settings.InsertOne(context.TODO(), bson.D{primitive.E{Key: "seed", Value: seed}}, &options.InsertOneOptions{}); err != nil {
+		return merry.Prepend(err, "failed to insert seed value in mongodb settings")
+	}
+
+	llog.Debugf("added seed in setting with id %v", insertResult)
+
+	accountIndex := mongo.IndexModel{
+		Keys:    bson.D{primitive.E{Key: "bic", Value: 1}, {Key: "ban", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("accountIndex"),
+	}
+	// добавляем индекс для обеспечения уникальности и быстрого поиска при переводах
+	if indexName, err = cluster.mongoModel.accounts.Indexes().CreateOne(context.TODO(), accountIndex); err != nil {
+		return merry.Prepend(err, "failed to create account index")
+	}
+
+	llog.Debugf("Created index %v for accounts collections", indexName)
 
 	return nil
 }
@@ -135,8 +185,27 @@ func (cluster *MongoDBCluster) FetchSettings() (Settings, error) {
 }
 
 // InsertAccount - сохранить новый счет.
-func (cluster *MongoDBCluster) InsertAccount(acc model.Account) error {
+func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
+	var insertAccountResult *mongo.InsertOneResult
+	var account mongo.InsertOneModel
 
+	// декодируем *inf.Dec в байтовый массив, чтобы сохранить точное значение, т.к. *inf.Dec в float не преобразуется.
+	// в fdb мы сериализуем вообще весь ключ, поэтому решение видится применимым.
+	balanceRaw, err := acc.Balance.GobEncode()
+	if err != nil {
+		return merry.Prepend(err, "failed to encode balance")
+	}
+
+	account.Document = bson.D{primitive.E{Key: "bic", Value: acc.Bic}, {Key: "ban", Value: acc.Ban}, {Key: "balance", Value: balanceRaw}}
+
+	if insertAccountResult, err = cluster.mongoModel.accounts.InsertOne(context.TODO(), account.Document); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return merry.Wrap(ErrDuplicateKey)
+		}
+		return merry.Prepend(err, "failed to insert account")
+	}
+
+	llog.Infof("Inserted account with id %v", insertAccountResult)
 	return nil
 }
 
