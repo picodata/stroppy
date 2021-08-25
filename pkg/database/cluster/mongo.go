@@ -180,8 +180,28 @@ func (cluster *MongoDBCluster) GetClusterType() DBClusterType {
 
 // FetchSettings - получить значения параметров настройки.
 func (cluster *MongoDBCluster) FetchSettings() (Settings, error) {
+	// добавляем явную сортировку, чтобы брать записи в порядке добавления и ходить в БД один раз
+	// также убираем из вывода поле _id
+	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.M{"_id": 0})
+	cursor, err := cluster.mongoModel.settings.Find(context.TODO(), bson.D{}, opts)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return Settings{}, ErrNoRows
+		}
+		return Settings{}, merry.Prepend(err, "failed to fetch settings")
+	}
 
-	return Settings{}, nil
+	defer cursor.Close(context.TODO())
+
+	var results []map[string]int
+	if err = cursor.All(context.TODO(), &results); err != nil {
+		return Settings{}, merry.Prepend(err, "failed to decode cursor of  settings")
+	}
+
+	return Settings{
+		Count: results[0]["count"],
+		Seed:  results[1]["seed"],
+	}, nil
 }
 
 // InsertAccount - сохранить новый счет.
@@ -211,7 +231,29 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *MongoDBCluster) FetchTotal() (*inf.Dec, error) {
-	return nil, nil
+	opts := options.Find().SetProjection(bson.M{"_id": 0})
+	cursor, err := cluster.mongoModel.checksum.Find(context.TODO(), bson.D{}, opts)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, ErrNoRows
+		}
+		return nil, merry.Prepend(err, "failed to fetch checksum")
+	}
+
+	defer cursor.Close(context.TODO())
+
+	var result []map[string][]byte
+	if err = cursor.All(context.TODO(), &result); err != nil {
+		return nil, merry.Prepend(err, "failed to decode total balance from checksum")
+	}
+
+	var totalBalance inf.Dec
+
+	if err := totalBalance.GobDecode(result[0]["total"]); err != nil {
+		llog.Errorln(err)
+	}
+
+	return &totalBalance, nil
 }
 
 // PersistTotal - сохранить значение итогового баланса в settings.
