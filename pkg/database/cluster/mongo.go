@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"gopkg.in/inf.v0"
 )
 
@@ -20,6 +21,7 @@ import (
 type MongoDBCluster struct {
 	db         *mongo.Database
 	mongoModel mongoModel
+	client     *mongo.Client
 }
 
 type mongoModel struct {
@@ -102,8 +104,10 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 
 	// создаем или открываем БД и коллекции - аналоги таблиц.
 	db := client.Database("stroppy")
-	accounts := db.Collection("accounts")
-	transfers := db.Collection("transfers")
+	wcMajority := writeconcern.New(writeconcern.WMajority(), writeconcern.WTimeout(1*time.Second))
+	wcMajorityCollectionOpts := options.Collection().SetWriteConcern(wcMajority)
+	accounts := db.Collection("accounts", wcMajorityCollectionOpts)
+	transfers := db.Collection("transfers", wcMajorityCollectionOpts)
 	settings := db.Collection("settings")
 	checksum := db.Collection("checksum")
 
@@ -115,6 +119,7 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 				settings:  settings,
 				checksum:  checksum,
 			},
+			client: client,
 		},
 		nil
 }
@@ -258,7 +263,29 @@ func (cluster *MongoDBCluster) FetchTotal() (*inf.Dec, error) {
 
 // PersistTotal - сохранить значение итогового баланса в settings.
 func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
+	var updateResult *mongo.UpdateResult
+	var totalBalanceRaw []byte
+	var err error
 
+	llog.Debugf("upsent total balance %v", total)
+	if totalBalanceRaw, err = total.GobEncode(); err != nil {
+		return merry.Prepend(err, "failed to encode total balance for checksum")
+	}
+
+	updateOpts := options.Update().SetUpsert(true)
+	filter := bson.D{}
+	update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "total", Value: totalBalanceRaw}}}}
+
+	updateResult, err = cluster.mongoModel.checksum.UpdateOne(context.TODO(), filter, update, updateOpts)
+	if err != nil {
+		return merry.Prepend(err, "failed to upsert total balance in checksum")
+	}
+
+	if updateResult.UpsertedCount == 0 && updateResult.ModifiedCount == 0 {
+		return merry.Errorf("failed to upsert total balance: updated 0 documents")
+	}
+
+	llog.Debugf("inserted total balance in checksum with id %v", updateResult)
 	return nil
 }
 
@@ -270,6 +297,119 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+	ctx := context.Background()
+	transfers := cluster.mongoModel.transfers
+	srcAccounts := cluster.mongoModel.accounts
+	destAccounts := cluster.mongoModel.accounts
+
+	transferAmount, err := transfer.Amount.GobEncode()
+	if err != nil {
+		return merry.Prepend(err, "failed to encode amount fro transfer")
+	}
+
+	if err != nil {
+		return merry.Prepend(err, "failed to insert total balance in checksum")
+	}
+
+	// Step 1: Define the callback that specifies the sequence of operations to perform inside the transaction.
+	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
+		var insertResult *mongo.InsertOneResult
+		var srcBalance inf.Dec
+		var destBalance inf.Dec
+		var results []map[string][]byte
+
+		// вставляем запись о переводе
+		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
+			{Key: "id", Value: transfer.Id},
+			{Key: "Acs", Value: transfer.Acs},
+			{Key: "LockOrder", Value: transfer.LockOrder},
+			{Key: "Amount", Value: transferAmount},
+			{Key: "State", Value: transfer.State},
+		}); err != nil {
+			return nil, merry.Prepend(err, "failed to insert transfer")
+		}
+		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
+
+		// убираем лишние поля
+		getOpts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+			{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
+		// получаем баланс счета-источника
+		srcAccount, err := srcAccounts.Find(context.TODO(),
+			bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
+				primitive.E{Key: "ban", Value: transfer.Acs[0].Ban}},
+			getOpts)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to get source account")
+		}
+
+		if err = srcAccount.All(context.TODO(), &results); err != nil {
+			return nil, merry.Prepend(err, "failed to decode cursor for source account")
+		}
+
+		if err = srcBalance.GobDecode(results[0]["balance"]); err != nil {
+			return nil, merry.Prepend(err, "failed to get source account balance")
+		}
+
+		//вычитаем сумму перевода
+		srcBalance.Sub(&srcBalance, transfer.Amount)
+		if srcBalance.UnscaledBig().Int64() < 0 {
+			return nil, ErrInsufficientFunds
+		}
+
+		newSrcBalance, err := srcBalance.GobEncode()
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to encode new source balance")
+		}
+
+		updateOpts := options.Update().SetUpsert(false)
+		filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
+		update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
+		if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+			return nil, merry.Prepend(err, "failed to update source account balance")
+		}
+
+		// получаем баланс счета-источника
+		destAccount, err := destAccounts.Find(context.TODO(),
+			bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
+				primitive.E{Key: "ban", Value: transfer.Acs[1].Ban}}, getOpts)
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to get destination account")
+		}
+
+		if err = destAccount.All(context.TODO(), &results); err != nil {
+			return nil, merry.Prepend(err, "failed to decode cursor for destination account")
+		}
+
+		if err = destBalance.GobDecode(results[0]["balance"]); err != nil {
+			return nil, merry.Prepend(err, "failed to get destination account balance")
+		}
+
+		destBalance.Add(&destBalance, transfer.Amount)
+
+		newDestBalance, err := destBalance.GobEncode()
+		if err != nil {
+			return nil, merry.Prepend(err, "failed to encode new source balance")
+		}
+
+		update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
+		if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+			return nil, merry.Prepend(err, "failed to update destination account balance")
+		}
+
+		return nil, nil
+	}
+
+	session, err := cluster.client.StartSession()
+	if err != nil {
+		return merry.Prepend(err, "failed to start session for transaction")
+	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, callback)
+	if err != nil {
+		llog.Debugf("failed to execute transaction: %v", err)
+		return merry.Wrap(err)
+	}
 
 	return nil
 }
