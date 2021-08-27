@@ -281,7 +281,31 @@ func (cluster *MongoDBCluster) FetchAccounts() ([]model.Account, error) {
 
 // FetchBalance - получить баланс счета по атрибутам ключа счета.
 func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
-	return nil, nil, nil
+	var balances, pendingAmount inf.Dec
+
+	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+		{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
+	filter := bson.D{primitive.E{Key: "bic", Value: bic}, {Key: "ban", Value: ban}}
+	cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), filter, opts)
+	if err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil, ErrNoRows
+		}
+		return nil, nil, merry.Prepend(err, "failed to fetch checksum")
+	}
+
+	defer cursor.Close(context.TODO())
+
+	var result []map[string][]byte
+	if err = cursor.All(context.TODO(), &result); err != nil {
+		return nil, nil, merry.Prepend(err, "failed to decode total balance from checksum")
+	}
+
+	if err := balances.GobDecode(result[0]["balance"]); err != nil {
+		return nil, nil, merry.Prepend(err, "failed to decode  balance for account")
+	}
+
+	return &balances, &pendingAmount, nil
 }
 
 func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
