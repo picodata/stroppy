@@ -55,6 +55,9 @@ const statJsonFileTemplate = "status_json_%v.json"
 
 const reserveConnectionPool = 10
 
+const limitRange = 100001
+const iterRange = 100000
+
 // Settings returns the test run settings
 type Settings struct {
 	Count int

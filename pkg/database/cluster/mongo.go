@@ -291,8 +291,44 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
+	totalBalance := inf.NewDec(0, 10)
+	var currentBalance inf.Dec
 
-	return nil, nil
+	settings, err := cluster.FetchSettings()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
+	}
+
+	for i := 0; i < settings.Count; i = i + iterRange {
+		opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
+			bson.D{{Key: "_id", Value: 0}, {Key: "bic", Value: 0}, {Key: "ban", Value: 0}})
+		limit := int64(limitRange)
+		opts.Limit = &limit
+		cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), bson.D{}, opts)
+		if err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, ErrNoRows
+			}
+			return nil, merry.Prepend(err, "failed to fetch settings")
+		}
+
+		defer cursor.Close(context.TODO())
+
+		var results []map[string][]byte
+		if err = cursor.All(context.TODO(), &results); err != nil {
+			return nil, merry.Prepend(err, "failed to decode cursor of  settings")
+		}
+
+		for _, balancesMap := range results {
+			if err := currentBalance.GobDecode(balancesMap["balance"]); err != nil {
+				return nil, merry.Prepend(err, "failed to decode current balance")
+			}
+			totalBalance.Add(totalBalance, &currentBalance)
+		}
+
+	}
+
+	return totalBalance, nil
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.

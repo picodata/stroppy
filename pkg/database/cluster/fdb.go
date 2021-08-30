@@ -23,9 +23,7 @@ import (
 
 const versionAPI = 620
 
-const iterRange = 100000
 
-const limitRange = 100001
 
 // FDBCluster - объявление соединения к FDB и ссылки на модель данных.
 type FDBCluster struct {
