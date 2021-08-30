@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 
 	"github.com/ansel1/merry"
+	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
@@ -33,6 +34,15 @@ type mongoCluster struct {
 }
 
 func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
+	// подключение к локально развернутому mongo без реплики
+	if mongo.DBUrl == "" {
+		mongo.DBUrl = "mongodb://127.0.0.1:30001"
+	}
+
+	cluster, err = cluster2.NewMongoDBCluster(mongo.DBUrl, 64)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to init connect to  mongo cluster")
+	}
 	return
 }
 

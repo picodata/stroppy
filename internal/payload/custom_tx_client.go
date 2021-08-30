@@ -45,7 +45,7 @@ type CustomTxTransfer interface {
 
 	LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error)
 	UnlockAccount(bic string, ban string, transferId model.TransferId) error
-	StartStatisticsCollect() error
+	StartStatisticsCollect(statInterval time.Duration) error
 }
 
 type ClientCustomTx struct {

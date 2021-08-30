@@ -230,7 +230,7 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 		return merry.Prepend(err, "failed to insert account")
 	}
 
-	llog.Infof("Inserted account with id %v", insertAccountResult)
+	llog.Tracef("Inserted account with id %v", insertAccountResult)
 	return nil
 }
 

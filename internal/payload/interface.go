@@ -78,7 +78,7 @@ func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 }
 
 func (p *BasePayload) StartStatisticsCollect(statInterval time.Duration) (err error) {
-	if err = p.Cluster.StartStatisticsCollect(); err != nil {
+	if err = p.Cluster.StartStatisticsCollect(statInterval); err != nil {
 		return merry.Errorf("failed to get statistic for %v cluster: %v", p.config.DBType, err)
 	}
 
