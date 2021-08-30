@@ -236,29 +236,24 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *MongoDBCluster) FetchTotal() (*inf.Dec, error) {
-	opts := options.Find().SetProjection(bson.M{"_id": 0})
-	cursor, err := cluster.mongoModel.checksum.Find(context.TODO(), bson.D{}, opts)
+	var balance inf.Dec
+	var result map[string][]byte
+	// добавляем явную сортировку, чтобы брать записи в порядке добавления и ходить в БД один раз
+	// также убираем из вывода поле _id
+	opts := options.FindOne().SetProjection(bson.M{"_id": 0})
+	err := cluster.mongoModel.checksum.FindOne(context.TODO(), bson.D{}, opts).Decode(&result)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, ErrNoRows
 		}
-		return nil, merry.Prepend(err, "failed to fetch checksum")
+		return nil, merry.Prepend(err, "failed to fetch total balance")
 	}
 
-	defer cursor.Close(context.TODO())
-
-	var result []map[string][]byte
-	if err = cursor.All(context.TODO(), &result); err != nil {
-		return nil, merry.Prepend(err, "failed to decode total balance from checksum")
+	if err = balance.GobDecode(result["total"]); err != nil {
+		return nil, merry.Prepend(err, "failed to decode total balance")
 	}
 
-	var totalBalance inf.Dec
-
-	if err := totalBalance.GobDecode(result[0]["total"]); err != nil {
-		llog.Errorln(err)
-	}
-
-	return &totalBalance, nil
+	return &balance, nil
 }
 
 // PersistTotal - сохранить значение итогового баланса в settings.
