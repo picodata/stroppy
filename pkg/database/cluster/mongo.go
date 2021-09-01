@@ -297,14 +297,19 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	for i := 0; i < settings.Count; i = i + iterRange {
 		opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
 			bson.D{{Key: "_id", Value: 0}, {Key: "bic", Value: 0}, {Key: "ban", Value: 0}})
-		limit := int64(limitRange)
+		limit := int64(i + iterRange)
 		opts.Limit = &limit
+		// на первой итерации в skip нет необходимости
+		if i > 0 {
+			skip := int64(i)
+			opts.Skip = &skip
+		}
 		cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), bson.D{}, opts)
 		if err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
 				return nil, ErrNoRows
 			}
-			return nil, merry.Prepend(err, "failed to fetch settings")
+			return nil, merry.Prepend(err, "failed to get accounts array")
 		}
 
 		defer cursor.Close(context.TODO())
@@ -314,12 +319,15 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 			return nil, merry.Prepend(err, "failed to decode cursor of  settings")
 		}
 
+		llog.Tracef("count of accounts in array %v", len(results))
+
 		for _, balancesMap := range results {
 			if err := currentBalance.GobDecode(balancesMap["balance"]); err != nil {
 				return nil, merry.Prepend(err, "failed to decode current balance")
 			}
 			totalBalance.Add(totalBalance, &currentBalance)
 		}
+		results = nil
 
 	}
 
@@ -335,7 +343,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 
 	transferAmount, err := transfer.Amount.GobEncode()
 	if err != nil {
-		return merry.Prepend(err, "failed to encode amount fro transfer")
+		return merry.Prepend(err, "failed to encode amount for transfer")
 	}
 
 	if err != nil {
@@ -347,7 +355,8 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		var insertResult *mongo.InsertOneResult
 		var srcBalance inf.Dec
 		var destBalance inf.Dec
-		var results []map[string][]byte
+		var srcAccount map[string][]byte
+		var destAccount map[string][]byte
 
 		// вставляем запись о переводе
 		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
@@ -362,22 +371,18 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
 
 		// убираем лишние поля
-		getOpts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
 			{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
 		// получаем баланс счета-источника
-		srcAccount, err := srcAccounts.Find(context.TODO(),
-			bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
-				primitive.E{Key: "ban", Value: transfer.Acs[0].Ban}},
-			getOpts)
-		if err != nil {
+		if err := srcAccounts.FindOne(sessCtx, bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
+			primitive.E{Key: "ban", Value: transfer.Acs[0].Ban}}, getOpts).Decode(&srcAccount); err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, ErrNoRows
+			}
 			return nil, merry.Prepend(err, "failed to get source account")
 		}
 
-		if err = srcAccount.All(context.TODO(), &results); err != nil {
-			return nil, merry.Prepend(err, "failed to decode cursor for source account")
-		}
-
-		if err = srcBalance.GobDecode(results[0]["balance"]); err != nil {
+		if err = srcBalance.GobDecode(srcAccount["balance"]); err != nil {
 			return nil, merry.Prepend(err, "failed to get source account balance")
 		}
 
@@ -400,18 +405,15 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		}
 
 		// получаем баланс счета-источника
-		destAccount, err := destAccounts.Find(context.TODO(),
-			bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
-				primitive.E{Key: "ban", Value: transfer.Acs[1].Ban}}, getOpts)
-		if err != nil {
+		if err = destAccounts.FindOne(sessCtx, bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
+			primitive.E{Key: "ban", Value: transfer.Acs[1].Ban}}, getOpts).Decode(&destAccount); err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, ErrNoRows
+			}
 			return nil, merry.Prepend(err, "failed to get destination account")
 		}
 
-		if err = destAccount.All(context.TODO(), &results); err != nil {
-			return nil, merry.Prepend(err, "failed to decode cursor for destination account")
-		}
-
-		if err = destBalance.GobDecode(results[0]["balance"]); err != nil {
+		if err = destBalance.GobDecode(destAccount["balance"]); err != nil {
 			return nil, merry.Prepend(err, "failed to get destination account balance")
 		}
 
@@ -422,6 +424,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			return nil, merry.Prepend(err, "failed to encode new source balance")
 		}
 
+		filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
 		update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
 		if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
 			return nil, merry.Prepend(err, "failed to update destination account balance")
