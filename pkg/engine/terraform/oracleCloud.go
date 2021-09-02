@@ -302,3 +302,4 @@ func (op *OracleProvider) RemoveProviderSpecificFiles() {
 	}
 	tools.RemovePathList(oracleFileToClean, op.workingDirectory)
 }
+

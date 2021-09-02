@@ -77,6 +77,7 @@ func createKubernetesObject(settings *config.Settings,
 		useLocalSession: settings.Local,
 
 		isSshKeyFileOnMaster: false,
+		Nodes:                settings.DeploymentSettings.Nodes,
 	}
 	return
 }
@@ -112,6 +113,8 @@ type Kubernetes struct {
 	provider string
 
 	StroppyPod *v1.Pod
+
+	Nodes int
 }
 
 func (k *Kubernetes) GetClientSet() (clientSet *kubernetes.Clientset, err error) {

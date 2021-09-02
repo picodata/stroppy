@@ -47,6 +47,9 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 }
 
 func (mongo *mongoCluster) Deploy() (err error) {
+	if err = mongo.k.AddPersistentVolumesClaim(); err != nil {
+		return merry.Prepend(err, "failed to add pvc for mongodb")
+	}
 	if err = mongo.deploy(); err != nil {
 		return merry.Prepend(err, "base deployment step")
 	}
