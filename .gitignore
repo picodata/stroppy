@@ -8,10 +8,9 @@ private_key.pem
 *.tfstate
 *.tfstate.backup
 
-benchmark/deploy/*.tfstate
-benchmark/deploy/*.tfstate.backup
-benchmark/deploy/terraform*.zip
-benchmark/deploy/config
+benchmark
+terraform*.zip
+config
 
 vendor
 bin

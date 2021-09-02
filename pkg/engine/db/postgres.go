@@ -7,6 +7,9 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
 
@@ -17,8 +20,7 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
 func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int, addPool int) (pc Cluster) {
@@ -69,8 +71,8 @@ func (pc *postgresCluster) Deploy() (err error) {
 		podName := fmt.Sprintf(postgresPodNameTemplate, i)
 
 		var targetPod *kuberv1.Pod
-		targetPod, err = pc.k.WaitPod(podName, kubernetes.ResourceDefaultNamespace,
-			kubernetes.PodWaitingWaitCreation, kubernetes.PodWaitingTimeTenMinutes)
+		targetPod, err = pc.k.Engine.WaitPod(podName, kubeengine.ResourceDefaultNamespace,
+			kubeengine.PodWaitingWaitCreation, kubeengine.PodWaitingTimeTenMinutes)
 
 		if err != nil {
 			err = merry.Prepend(err, "waiting")

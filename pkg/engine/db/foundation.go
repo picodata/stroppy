@@ -4,13 +4,15 @@ import (
 	"fmt"
 	"path/filepath"
 
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+
 	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
 const (
@@ -55,7 +57,7 @@ func (fc *foundationCluster) Deploy() (err error) {
 	}
 
 	err = fc.examineCluster("FoundationDB",
-		kubernetes.ResourceDefaultNamespace,
+		kubeengine.ResourceDefaultNamespace,
 		foundationClusterClientName,
 		foundationClusterName)
 	if err != nil {
@@ -82,10 +84,15 @@ func (fc *foundationCluster) Deploy() (err error) {
 	}
 
 	if fc.k.StroppyPod != nil {
-		sourceConfigPath := fmt.Sprintf("%s/%s:///var/dynamic-conf/fdb.cluster",
+		var contName string
+		if contName, err = fc.k.StroppyPod.ContainerName(0); err != nil {
+			return
+		}
+
+		sourceConfigPath := fmt.Sprintf("%s/%s://var/dynamic-conf/fdb.cluster",
 			foundationClusterClientName, fc.clusterSpec.MainPod.Name)
-		destinationConfigPath := fmt.Sprintf("stroppy-client/%s://bin", fc.k.StroppyPod.Spec.Containers[0].Name)
-		if _err := fc.k.CopyFileFromPodToPod(sourceConfigPath, destinationConfigPath); _err != nil {
+		destinationConfigPath := fmt.Sprintf("stroppy-client/%s://bin", contName)
+		if _err := fc.k.Engine.CopyFileFromPodToPod(sourceConfigPath, destinationConfigPath); _err != nil {
 			llog.Errorln(merry.Prepend(_err, "fdb.cluster file copying"))
 		}
 	}

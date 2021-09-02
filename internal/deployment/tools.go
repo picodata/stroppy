@@ -24,7 +24,7 @@ func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime,
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
-		"--kube-master-addr", sh.k.AddressMap["internal"]["master"],
+		"--kube-master-addr", sh.k.Engine.AddressMap["internal"]["master"],
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 	}
 
@@ -65,7 +65,7 @@ func (sh *shell) executePay(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
@@ -80,7 +80,7 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-		"--kube-master-addr", sh.k.AddressMap["internal"]["master"],
+		"--kube-master-addr", sh.k.Engine.AddressMap["internal"]["master"],
 		"-w", fmt.Sprintf("%v", settings.Workers),
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 	}
@@ -127,7 +127,7 @@ func (sh *shell) executePop(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.ExecuteGettingMonImages(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 

@@ -10,10 +10,10 @@ import (
 	v1 "k8s.io/api/core/v1"
 
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
-func createWorkableController(k *kubernetes.Kubernetes, wd string) (c Controller) {
+func createWorkableController(k *kubeengine.Engine, wd string) (c Controller) {
 	c = &workableController{
 		wd: filepath.Join(wd, "chaos"),
 		k:  k,
@@ -27,7 +27,7 @@ func createWorkableController(k *kubernetes.Kubernetes, wd string) (c Controller
 }
 
 type workableController struct {
-	k  *kubernetes.Kubernetes
+	k  *kubeengine.Engine
 	wd string
 
 	runningScenarios     map[string]scenario

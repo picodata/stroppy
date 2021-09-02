@@ -8,25 +8,35 @@ import (
 	"path/filepath"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"gitlab.com/picodata/stroppy/pkg/engine/db"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
 func createPayload(settings *config.Settings) (_payload payload.Payload) {
-	k, err := kubernetes.CreateShell(settings)
+	sc, err := kubeengine.CreateSystemShell(settings)
 	if err != nil {
-		llog.Fatalf("failed to construct kubernetes: %v", err)
+		llog.Fatalf("create payload: %v", err)
 	}
 
-	var sc engineSsh.Client
-	if sc, err = kubernetes.CreateSystemShell(settings); err != nil {
-		llog.Fatalf("create payload: %v", err)
+	tf := terraform.CreateTerraform(settings.DeploymentSettings, settings.WorkingDirectory, settings.WorkingDirectory)
+
+	var addressMap map[string]map[string]string
+	if addressMap, err = tf.GetAddressMap(); err != nil {
+		llog.Fatalf("failed to get address map: %v", err)
+	}
+
+	var k *kubernetes.Kubernetes
+	k, err = kubernetes.CreateKubernetes(settings, tf.Provider, addressMap, sc)
+	if err != nil {
+		llog.Fatalf("init kubernetes failed")
 	}
 
 	var _cluster db.Cluster
@@ -34,7 +44,7 @@ func createPayload(settings *config.Settings) (_payload payload.Payload) {
 		llog.Fatalf("failed to create cluster: %v", err)
 	}
 
-	_chaos := chaos.CreateController(k, settings.WorkingDirectory, settings.UseChaos)
+	_chaos := chaos.CreateController(k.Engine, settings.WorkingDirectory, settings.UseChaos)
 	if _payload, err = payload.CreatePayload(_cluster, settings, _chaos); err != nil {
 		return
 	}

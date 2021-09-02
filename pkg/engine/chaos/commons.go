@@ -1,6 +1,6 @@
 package chaos
 
-import "gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
+import "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 
 type Controller interface {
 	Deploy() error
@@ -8,7 +8,7 @@ type Controller interface {
 	Stop()
 }
 
-func CreateController(k *kubernetes.Kubernetes, wd string, isChaosEnabled bool) (c Controller) {
+func CreateController(k *kubeengine.Engine, wd string, isChaosEnabled bool) (c Controller) {
 	if isChaosEnabled {
 		c = createWorkableController(k, wd)
 	} else {

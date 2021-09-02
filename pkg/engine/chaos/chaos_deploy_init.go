@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
@@ -16,6 +16,7 @@ import (
 func (chaos *workableController) Deploy() (err error) {
 	llog.Infoln("Starting chaos-mesh deployment...")
 
+	const deployChaosMesh = "chmod +x cluster/deploy_chaos.sh && ./cluster/deploy_chaos.sh"
 	if err = chaos.k.Execute(deployChaosMesh); err != nil {
 		return merry.Prepend(err, "chaos-mesh deployment failed")
 	}
@@ -84,10 +85,10 @@ func (chaos *workableController) enumChaosParts() (err error) {
 func (chaos *workableController) establishDashboardAvailability() (err error) {
 	// прокидываем порты, что бы можно было открыть веб-интерфейс
 	var reqURL *url.URL
-	reqURL, err = chaos.k.GetResourceURL(kubernetes.ResourceService,
+	reqURL, err = chaos.k.GetResourceURL(kubeengine.ResourceService,
 		chaosNamespace,
 		chaos.dashboardPod.Name,
-		kubernetes.SubresourcePortForwarding)
+		kubeengine.SubresourcePortForwarding)
 	if err != nil {
 		return merry.Prepend(err, "failed to get url")
 	}

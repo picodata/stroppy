@@ -3,13 +3,13 @@ package db
 import (
 	"os/exec"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 
 	"github.com/ansel1/merry"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	"gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
-
 	v1 "k8s.io/api/core/v1"
 )
 

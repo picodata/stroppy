@@ -7,13 +7,15 @@ import (
 	"net/url"
 	"strings"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 )
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string, dbPool int, addPool int, sharded bool) (fc *commonCluster) {
@@ -24,6 +26,7 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		tg:                     databaseTag,
 		DBUrl:                  dbURL,
 		portForwardControlChan: make(chan struct{}),
+
 		clusterSpec: ClusterSpec{
 			Pods: make([]*v1.Pod, 0, 10),
 		},
@@ -56,7 +59,7 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("Prepare deploy of %s\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.LoadDirectory(deployConfigDirectory, "/home/ubuntu/"); err != nil {
+	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/"); err != nil {
 		return
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)
@@ -91,7 +94,7 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 	clusterMainPodName, clusterWorkerPodName string) (err error) {
 
 	var pods []v1.Pod
-	if pods, err = cc.k.ListPods(kubernetes.ResourceDefaultNamespace); err != nil {
+	if pods, err = cc.k.Engine.ListPods(kubeengine.ResourceDefaultNamespace); err != nil {
 		err = merry.Prepend(err, "list pods")
 		return
 	}
@@ -123,10 +126,10 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 	}
 
 	if cc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
-		cc.clusterSpec.MainPod, err = cc.k.WaitPod(cc.clusterSpec.MainPod.Name,
+		cc.clusterSpec.MainPod, err = cc.k.Engine.WaitPod(cc.clusterSpec.MainPod.Name,
 			targetNamespace,
-			kubernetes.PodWaitingWaitCreation,
-			kubernetes.PodWaitingTimeTenMinutes)
+			kubeengine.PodWaitingWaitCreation,
+			kubeengine.PodWaitingTimeTenMinutes)
 		if err != nil {
 			return merry.Prependf(err, "%s pod wait", tag)
 		}
@@ -138,15 +141,15 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 
 func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err error) {
 	var reqURL *url.URL
-	reqURL, err = cc.k.GetResourceURL(kubernetes.ResourcePodName,
-		kubernetes.ResourceDefaultNamespace,
+	reqURL, err = cc.k.Engine.GetResourceURL(kubeengine.ResourcePodName,
+		kubeengine.ResourceDefaultNamespace,
 		name,
-		kubernetes.SubresourcePortForwarding)
+		kubeengine.SubresourcePortForwarding)
 	if err != nil {
 		return
 	}
 
-	err = cc.k.OpenPortForward(cc.tg, portMap, reqURL,
+	err = cc.k.Engine.OpenPortForward(cc.tg, portMap, reqURL,
 		cc.portForwardControlChan)
 	if err != nil {
 		return merry.Prependf(err, "failed to started port-forward for '%s'", cc.tg)

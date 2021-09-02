@@ -4,14 +4,15 @@ import (
 	"bufio"
 	"os"
 
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
 	"gitlab.com/picodata/stroppy/pkg/engine/db"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -102,7 +103,7 @@ func (sh *shell) prepareEngine() (err error) {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
 
-	sh.k, err = kubernetes.CreateKubernetes(sh.settings, addressMap, sh.sc)
+	sh.k, err = kubernetes.CreateKubernetes(sh.settings, sh.tf.Provider, addressMap, sh.sc)
 	if err != nil {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
@@ -148,14 +149,12 @@ func (sh *shell) deploy() (err error) {
 		return
 	}
 
-	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes,
-		sh.settings.DeploymentSettings.Provider,
-		sh.k.AddressMap)
+	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes)
 	if err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}
 
-	sh.chaosMesh = chaos.CreateController(sh.k, sh.workingDirectory, sh.settings.UseChaos)
+	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
 	if err = sh.chaosMesh.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to deploy and start chaos")
 	}

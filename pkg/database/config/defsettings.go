@@ -4,6 +4,8 @@ import (
 	"runtime"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
+
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 
 	llog "github.com/sirupsen/logrus"
@@ -127,10 +129,9 @@ type DeploymentSettings struct {
 }
 
 // DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.
-// линтер требует указания всех полей структуры при присвоении переменной
 func deployDefaults() *DeploymentSettings {
 	d := DeploymentSettings{
-		Provider: "yandex",
+		Provider: provider.Yandex,
 		Flavor:   "small",
 		Nodes:    3,
 	}
