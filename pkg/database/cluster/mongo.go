@@ -297,13 +297,15 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	for i := 0; i < settings.Count; i = i + iterRange {
 		opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
 			bson.D{{Key: "_id", Value: 0}, {Key: "bic", Value: 0}, {Key: "ban", Value: 0}})
-		limit := int64(i + iterRange)
+		limit := int64(iterRange)
 		opts.Limit = &limit
 		// на первой итерации в skip нет необходимости
 		if i > 0 {
 			skip := int64(i)
 			opts.Skip = &skip
+			llog.Println(skip, limit)
 		}
+
 		cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), bson.D{}, opts)
 		if err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
