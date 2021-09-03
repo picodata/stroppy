@@ -19,8 +19,6 @@ import (
 	llog "github.com/sirupsen/logrus"
 	v1 "k8s.io/api/core/v1"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/resource"
-	corev1 "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -358,86 +356,4 @@ func (k Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 	deployK8sSecondStep = fmt.Sprintf(deployK8sSecondStepTemplate, instancesString, workersString, workersString)
 
 	return deployK8sSecondStep
-}
-
-func (k Kubernetes) AddPersistentVolumesClaim() error {
-	llog.Infoln("Starting of adding pvc for mongodb")
-
-	clientSet, err := k.GetClientSet()
-	if err != nil {
-		return merry.Prepend(err, "failed to get client set for deploy stroppy")
-	}
-
-	nodesCount := k.Nodes
-	storagesVolume := 100 //временный хардкод
-	pvcDataNameTemplate := "data-volume-mongodb-cluster"
-	pvcLognameTemplate := "logs-volume-mongodb-cluster"
-
-	// создаем "шаблон" для дальнейшего использования обоими pvc
-	pvcTemplateConfig := corev1.PersistentVolumeClaim("", ResourceDefaultNamespace)
-
-	// задаем остальные общие параметры
-	pvcTemplateConfig.Spec.WithStorageClassName(StorageClassName)
-	pvcTemplateConfig.Spec.WithAccessModes(v1.ReadWriteOnce)
-	pvcTemplateConfig.WithKind("PersistentVolumeClaim")
-	pvcTemplateConfig.WithAPIVersion("v1")
-	entries := make(map[string]string)
-	entries["app"] = "mongodb-cluster-svc"
-	pvcTemplateConfig.WithLabels(entries)
-
-	for i := 0; i < nodesCount; i++ {
-
-		pvcDataName := fmt.Sprintf("%v-%v", pvcDataNameTemplate, i)
-		pvcLogName := fmt.Sprintf("%v-%v", pvcLognameTemplate, i)
-
-		dataPvcConfig := pvcTemplateConfig.WithName(pvcDataName)
-
-		// распределяем общий объем диска: 80% - data, 20% - logs
-		storageVolumeString := fmt.Sprintf("%vG", float64(storagesVolume)*0.8)
-		diskVolume := resource.MustParse(storageVolumeString)
-		resourses := v1.ResourceList{}
-		resourses.Storage().Add(diskVolume)
-		dataPvcConfig.Spec.Resources.WithLimits(resourses)
-		dataPvcConfig.Spec.Resources.WithRequests(resourses)
-
-		_, err := clientSet.CoreV1().PersistentVolumeClaims(ResourceDefaultNamespace).Apply(context.TODO(), dataPvcConfig, metav1.ApplyOptions{})
-		if err != nil {
-			return merry.Prepend(err, "failed to apply data pvc %v for mongodb")
-		}
-
-		err = tools.Retry("apply data volume",
-			func() (err error) {
-				_, err = clientSet.CoreV1().PersistentVolumeClaims(ResourceDefaultNamespace).Apply(context.TODO(), dataPvcConfig, metav1.ApplyOptions{})
-				return err
-			},
-			tools.RetryStandardRetryCount,
-			tools.RetryStandardWaitingTime)
-
-		if err != nil {
-			return merry.Prepend(err, "failed to apply data volume")
-		}
-
-		logPvcConfig := pvcTemplateConfig.WithName(pvcLogName)
-
-		storageVolumeString = fmt.Sprintf("%vG", float64(storagesVolume)*0.2)
-		diskVolume = resource.MustParse(storageVolumeString)
-		resourses = v1.ResourceList{}
-		resourses.Storage().Add(diskVolume)
-		dataPvcConfig.Spec.Resources.WithLimits(resourses)
-		dataPvcConfig.Spec.Resources.WithRequests(resourses)
-
-		err = tools.Retry("apply log volume",
-			func() (err error) {
-				_, err = clientSet.CoreV1().PersistentVolumeClaims(ResourceDefaultNamespace).Apply(context.TODO(), logPvcConfig, metav1.ApplyOptions{})
-				return err
-			},
-			tools.RetryStandardRetryCount,
-			tools.RetryStandardWaitingTime)
-
-		if err != nil {
-			return merry.Prepend(err, "failed to apply log volume")
-		}
-	}
-
-	return nil
 }

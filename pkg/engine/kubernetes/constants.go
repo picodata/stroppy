@@ -33,7 +33,7 @@ const (
 	SubresourceExec           = "exec"
 	PodWaitingWaitCreation    = true
 	PodWaitingNotWaitCreation = false
-	StorageClassName          = "local-path"
+	VolumeStorageClassName    = "local-path"
 
 	PodWaitingTime10Minutes = 10 * time.Minute
 )
