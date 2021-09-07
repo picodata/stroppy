@@ -100,5 +100,10 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		false,
 		"run stroppy as in pod statement")
 
+	payCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.AddPool,
+		"add-pool", "a",
+		settings.DatabaseSettings.AddPool,
+		"count of additional connection in db pool. Default 0")
+
 	return payCmd
 }

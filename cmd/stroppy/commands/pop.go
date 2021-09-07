@@ -76,5 +76,10 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		settings.TestSettings.KubernetesMasterAddress,
 		"kubernetes master address")
 
+	popCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.AddPool,
+		"add-pool", "a",
+		settings.DatabaseSettings.AddPool,
+		"count of additional connection in db pool. Default 0")
+
 	return popCmd
 }

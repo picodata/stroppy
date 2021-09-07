@@ -21,13 +21,15 @@ import (
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
 
-func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string) (pc Cluster) {
+func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int, addPool int) (pc Cluster) {
 	pc = &postgresCluster{
 		commonCluster: createCommonCluster(sc,
 			k,
 			filepath.Join(wd, dbWorkingDirectory, cluster.Postgres),
 			cluster.Postgres,
-			dbURL),
+			dbURL,
+			dbPool,
+			addPool),
 	}
 	return
 }

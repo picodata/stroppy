@@ -95,6 +95,7 @@ type DatabaseSettings struct {
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
+	AddPool            int
 }
 
 // DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию
@@ -114,6 +115,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		BanRangeMultiplier: 1.1,
 		DBType:             cluster.Postgres,
 		StatInterval:       10,
+		AddPool:            0,
 	}
 }
 

@@ -78,8 +78,7 @@ func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId 
 // NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
 func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
-	// добавляем резерв соединений для перестраховки
-	poolSize += reserveConnectionPool
+
 	// задаем максимальный размер пула соединений
 	clientOptions.MaxPoolSize = &poolSize
 
@@ -101,6 +100,7 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 	}
 
 	llog.Infoln("Connected to MongoDB: success")
+	llog.Debugf("Initialized connection pool with %v connections", *clientOptions.MaxPoolSize)
 
 	// создаем или открываем БД и коллекции - аналоги таблиц.
 	db := client.Database("stroppy")

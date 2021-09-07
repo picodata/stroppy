@@ -53,8 +53,6 @@ const (
 
 const statJsonFileTemplate = "status_json_%v.json"
 
-const reserveConnectionPool = 10
-
 const limitRange = 100001
 const iterRange = 100000
 

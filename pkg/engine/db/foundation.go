@@ -28,6 +28,8 @@ func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, 
 			filepath.Join(wd, dbWorkingDirectory, foundationDbDirectory),
 			foundationDbDirectory,
 			dbURL,
+			0,
+			0,
 		),
 	}
 	return
