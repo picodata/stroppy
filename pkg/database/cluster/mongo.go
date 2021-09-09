@@ -127,30 +127,29 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
-	var cleanResult *mongo.DeleteResult
 	var insertResult *mongo.InsertOneResult
 	var indexName string
 	var err error
 
-	if cleanResult, err = cluster.mongoModel.accounts.DeleteMany(context.TODO(), bson.D{}); err != nil {
+	if err = cluster.mongoModel.accounts.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean accounts")
 	}
-	llog.Debugf("drop %v documents from accounts \n", cleanResult)
+	llog.Debugf("Cleaned collection accounts \n")
 
-	if cleanResult, err = cluster.mongoModel.transfers.DeleteMany(context.TODO(), bson.D{}); err != nil {
+	if err = cluster.mongoModel.transfers.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean transfers")
 	}
-	llog.Debugf("drop %v documents from transfers \n", cleanResult)
+	llog.Debugf("Cleaned collection transfers \n")
 
-	if cleanResult, err = cluster.mongoModel.settings.DeleteMany(context.TODO(), bson.D{}); err != nil {
+	if err = cluster.mongoModel.settings.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean settings")
 	}
-	llog.Debugf("drop %v documents from settings \n", cleanResult)
+	llog.Debugf("Cleaned collection settings \n")
 
-	if cleanResult, err = cluster.mongoModel.checksum.DeleteMany(context.TODO(), bson.D{}); err != nil {
+	if err = cluster.mongoModel.checksum.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean checksum")
 	}
-	llog.Debugf("drop %v documents from checksum \n", cleanResult)
+	llog.Debugf("Cleaned collection checksum \n")
 
 	if insertResult, err = cluster.mongoModel.settings.InsertOne(context.TODO(), bson.D{primitive.E{Key: "count", Value: count}}, &options.InsertOneOptions{}); err != nil {
 		return merry.Prepend(err, "failed to insert count value in mongodb settings")
