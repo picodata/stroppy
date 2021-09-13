@@ -124,6 +124,39 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 		nil
 }
 
+func (cluster *MongoDBCluster) addSharding() error {
+
+	enableShardingCmd := bson.D{
+		{Key: "enableSharding", Value: "stroppy"},
+	}
+
+	accountShardingCmd := bson.D{
+		{Key: "shardCollection", Value: "stroppy.accounts"},
+		{Key: "key", Value: bson.D{{Key: "bic", Value: "hashed"}, {Key: "ban", Value: "hashed"}}},
+		{Key: "unique", Value: true},
+	}
+
+	transferShardingCmd := bson.D{
+		{Key: "shardCollection", Value: "stroppy.transfers"},
+		{Key: "key", Value: bson.D{{Key: "srcBic", Value: "hashed"}, {Key: "srcBan", Value: "hashed"}}},
+		{Key: "unique", Value: false},
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), enableShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to init sharding for stroppy db")
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), accountShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to create accounts shards")
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), transferShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to create transfers shards")
+	}
+
+	return nil
+}
+
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
@@ -173,6 +206,21 @@ func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	}
 
 	llog.Debugf("Created index %v for accounts collections", indexName)
+
+	transferIndex := mongo.IndexModel{
+		Keys:    bson.D{primitive.E{Key: "srcBic", Value: 1}, {Key: "srcBan", Value: 1}},
+		Options: options.Index().SetUnique(true).SetName("transferIndex"),
+	}
+
+	if indexName, err = cluster.mongoModel.accounts.Indexes().CreateOne(context.TODO(), transferIndex); err != nil {
+		return merry.Prepend(err, "failed to create transfer index")
+	}
+
+	llog.Debugf("Created index %v for transfers collections", indexName)
+
+	if err = cluster.addSharding(); err != nil {
+		return merry.Prepend(err, "failed to enable sharding")
+	}
 
 	return nil
 }
@@ -362,7 +410,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		// вставляем запись о переводе
 		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
 			{Key: "id", Value: transfer.Id},
-			{Key: "Acs", Value: transfer.Acs},
+			{Key: "srcBic", Value: transfer.Acs[0].Bic},
+			{Key: "srcBan", Value: transfer.Acs[0].Ban},
+			{Key: "destBic", Value: transfer.Acs[0].Bic},
+			{Key: "destBan", Value: transfer.Acs[0].Ban},
 			{Key: "LockOrder", Value: transfer.LockOrder},
 			{Key: "Amount", Value: transferAmount},
 			{Key: "State", Value: transfer.State},
