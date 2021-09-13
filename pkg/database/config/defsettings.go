@@ -96,6 +96,7 @@ type DatabaseSettings struct {
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
 	AddPool            int
+	Sharded            bool
 }
 
 // DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию

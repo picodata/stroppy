@@ -24,7 +24,7 @@ const (
 	mongoClusterNamespace = "mongodbcommunity"
 )
 
-func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int, addPool int) (mongo Cluster) {
+func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int, addPool int, sharded bool) (mongo Cluster) {
 	mongo = &mongoCluster{
 		commonCluster: createCommonCluster(
 			sc,
@@ -34,6 +34,7 @@ func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL
 			dbURL,
 			dbPool,
 			addPool,
+			sharded,
 		),
 	}
 	return
@@ -50,7 +51,7 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 	}
 
 	connectionPool := uint64(mongo.commonCluster.dbPool) + uint64(mongo.commonCluster.addPool)
-	cluster, err = cluster2.NewMongoDBCluster(mongo.DBUrl, connectionPool)
+	cluster, err = cluster2.NewMongoDBCluster(mongo.DBUrl, connectionPool, mongo.commonCluster.sharded)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to  mongo cluster")
 	}

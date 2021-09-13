@@ -16,7 +16,7 @@ import (
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
 )
 
-func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string, dbPool int, addPool int) (fc *commonCluster) {
+func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string, dbPool int, addPool int, sharded bool) (fc *commonCluster) {
 	fc = &commonCluster{
 		k:                      k,
 		sc:                     sc,
@@ -29,6 +29,7 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		},
 		dbPool:  dbPool,
 		addPool: addPool,
+		sharded: sharded,
 	}
 	return
 }
@@ -47,6 +48,8 @@ type commonCluster struct {
 	dbPool int
 
 	addPool int
+
+	sharded bool
 }
 
 func (cc *commonCluster) deploy() (err error) {

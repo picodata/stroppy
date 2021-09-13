@@ -53,7 +53,7 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 		_cluster = createFoundationCluster(sc, k, wd, dbConfig.DBURL)
 
 	case cluster.MongoDB:
-		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.Workers, dbConfig.AddPool)
+		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.Workers, dbConfig.AddPool, dbConfig.Sharded)
 	}
 
 	return

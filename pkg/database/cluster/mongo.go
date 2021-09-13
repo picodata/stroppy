@@ -22,6 +22,7 @@ type MongoDBCluster struct {
 	db         *mongo.Database
 	mongoModel mongoModel
 	client     *mongo.Client
+	sharded    bool
 }
 
 type mongoModel struct {
@@ -76,9 +77,10 @@ func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId 
 }
 
 // NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
-func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
+func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
 
+	llog.Println(sharded)
 	// задаем максимальный размер пула соединений
 	clientOptions.MaxPoolSize = &poolSize
 
@@ -105,9 +107,9 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 	// создаем или открываем БД и коллекции - аналоги таблиц.
 	db := client.Database("stroppy")
 	wcMajority := writeconcern.New(writeconcern.WMajority(), writeconcern.WTimeout(1*time.Second))
-	wcMajorityCollectionOpts := options.Collection().SetWriteConcern(wcMajority)
-	accounts := db.Collection("accounts", wcMajorityCollectionOpts)
-	transfers := db.Collection("transfers", wcMajorityCollectionOpts)
+	majorityCollectionOpts := options.Collection().SetWriteConcern(wcMajority)
+	accounts := db.Collection("accounts", majorityCollectionOpts)
+	transfers := db.Collection("transfers", majorityCollectionOpts)
 	settings := db.Collection("settings")
 	checksum := db.Collection("checksum")
 
@@ -119,12 +121,14 @@ func NewMongoDBCluster(dbURL string, poolSize uint64) (*MongoDBCluster, error) {
 				settings:  settings,
 				checksum:  checksum,
 			},
-			client: client,
+			client:  client,
+			sharded: sharded,
 		},
 		nil
 }
 
 func (cluster *MongoDBCluster) addSharding() error {
+	llog.Debugln("Initialize sharding...")
 
 	enableShardingCmd := bson.D{
 		{Key: "enableSharding", Value: "stroppy"},
@@ -132,13 +136,13 @@ func (cluster *MongoDBCluster) addSharding() error {
 
 	accountShardingCmd := bson.D{
 		{Key: "shardCollection", Value: "stroppy.accounts"},
-		{Key: "key", Value: bson.D{{Key: "bic", Value: "hashed"}, {Key: "ban", Value: "hashed"}}},
+		{Key: "key", Value: bson.D{{Key: "bic", Value: 1}, {Key: "ban", Value: 1}}},
 		{Key: "unique", Value: true},
 	}
 
 	transferShardingCmd := bson.D{
 		{Key: "shardCollection", Value: "stroppy.transfers"},
-		{Key: "key", Value: bson.D{{Key: "srcBic", Value: "hashed"}, {Key: "srcBan", Value: "hashed"}}},
+		{Key: "key", Value: bson.D{{Key: "_id", Value: "hashed"}}},
 		{Key: "unique", Value: false},
 	}
 
@@ -154,6 +158,7 @@ func (cluster *MongoDBCluster) addSharding() error {
 		return merry.Prepend(singleResult.Err(), "failed to create transfers shards")
 	}
 
+	llog.Debugln("Initialized sharding: success")
 	return nil
 }
 
@@ -167,22 +172,22 @@ func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	if err = cluster.mongoModel.accounts.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean accounts")
 	}
-	llog.Debugf("Cleaned collection accounts \n")
+	llog.Debugf("Cleaned accounts collection\n")
 
 	if err = cluster.mongoModel.transfers.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean transfers")
 	}
-	llog.Debugf("Cleaned collection transfers \n")
+	llog.Debugf("Cleaned transfers collection \n")
 
 	if err = cluster.mongoModel.settings.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean settings")
 	}
-	llog.Debugf("Cleaned collection settings \n")
+	llog.Debugf("Cleaned settings collection \n")
 
 	if err = cluster.mongoModel.checksum.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean checksum")
 	}
-	llog.Debugf("Cleaned collection checksum \n")
+	llog.Debugf("Cleaned checksum collection \n")
 
 	if insertResult, err = cluster.mongoModel.settings.InsertOne(context.TODO(), bson.D{primitive.E{Key: "count", Value: count}}, &options.InsertOneOptions{}); err != nil {
 		return merry.Prepend(err, "failed to insert count value in mongodb settings")
@@ -207,19 +212,10 @@ func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 
 	llog.Debugf("Created index %v for accounts collections", indexName)
 
-	transferIndex := mongo.IndexModel{
-		Keys:    bson.D{primitive.E{Key: "srcBic", Value: 1}, {Key: "srcBan", Value: 1}},
-		Options: options.Index().SetUnique(true).SetName("transferIndex"),
-	}
-
-	if indexName, err = cluster.mongoModel.accounts.Indexes().CreateOne(context.TODO(), transferIndex); err != nil {
-		return merry.Prepend(err, "failed to create transfer index")
-	}
-
-	llog.Debugf("Created index %v for transfers collections", indexName)
-
-	if err = cluster.addSharding(); err != nil {
-		return merry.Prepend(err, "failed to enable sharding")
+	if cluster.sharded {
+		if err = cluster.addSharding(); err != nil {
+			return merry.Prepend(err, "failed to enable sharding")
+		}
 	}
 
 	return nil

@@ -29,7 +29,8 @@ func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, db
 			cluster.Postgres,
 			dbURL,
 			dbPool,
-			addPool),
+			addPool,
+			false),
 	}
 	return
 }

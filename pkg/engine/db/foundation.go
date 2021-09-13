@@ -30,6 +30,7 @@ func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, 
 			dbURL,
 			0,
 			0,
+			false,
 		),
 	}
 	return
