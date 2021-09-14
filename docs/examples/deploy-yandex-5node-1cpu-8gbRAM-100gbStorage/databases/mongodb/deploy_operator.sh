@@ -9,8 +9,7 @@ function run () {
 
 }
 
-run "kubectl apply -f deploy/clusterwide"
-run "kubectl apply -f config/crd/bases/mongodbcommunity.mongodb.com_mongodbcommunity.yaml"
-run "kubectl apply -k config/rbac --namespace mongodbcommunity"
-run "kubectl create -f config/manager/manager.yaml --namespace mongodbcommunity"
+run "kubectl apply -f bundle.yaml"
+run "kubectl apply -f cr.yaml"
+
 
