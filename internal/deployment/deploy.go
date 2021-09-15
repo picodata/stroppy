@@ -79,7 +79,7 @@ func (sh *shell) prepareTerraform() (err error) {
 	}
 
 	if ok := sh.tf.Provider.IsPrivateKeyExist(sh.tf.WorkDirectory); !ok {
-		return merry.Prepend(err, "failed to check private key exist")
+		return merry.Errorf("failed to check private key exist")
 	}
 	return
 }
