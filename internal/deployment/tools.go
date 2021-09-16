@@ -84,6 +84,11 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 		"-w", fmt.Sprintf("%v", settings.Workers),
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 	}
+
+	if settings.Sharded {
+		popTestCommand = append(popTestCommand, "sharded")
+	}
+
 	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
@@ -149,7 +154,8 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"
-
+	case cluster.MongoDB:
+		settings.DBURL = "mongodb://stroppy:stroppy@my-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return
