@@ -15,6 +15,7 @@ import (
 	"gitlab.com/picodata/stroppy/internal/model"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
+	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/inf.v0"
 )
 
@@ -78,11 +79,17 @@ func (p *BasePayload) Pop(_ string) (err error) {
 					atomic.AddUint64(&stats.errors, 1)
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 					// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
+					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
+					// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
+					// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
 					if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 						Code: 1037,
 					}) || errors.Is(err, fdb.Error{
 						Code: 1009,
-					}) {
+					}) || errors.Is(err, mongo.CommandError{
+						Code: 133,
+						// https://gitlab.com/picodata/openway/stroppy/-/issues/57
+					}) || errors.Is(err, cluster.ErrTxRollback) {
 						llog.Errorf("Retrying after request error: %v", err)
 						time.Sleep(time.Millisecond)
 					}

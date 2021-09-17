@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/inf.v0"
 
 	"gitlab.com/picodata/stroppy/pkg/database"
@@ -72,11 +73,15 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 			// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
+			// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
 			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 				Code: 1037,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1009,
-			}) {
+			}) || errors.Is(err, mongo.CommandError{
+				Code: 133,
+				// https://gitlab.com/picodata/openway/stroppy/-/issues/57
+			}) || errors.Is(err, cluster.ErrTxRollback) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
