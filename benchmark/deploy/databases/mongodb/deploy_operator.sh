@@ -10,6 +10,7 @@ function run () {
 }
 
 run "kubectl apply -f mongodb/bundle.yaml"
+run "kubectl apply -f mongodb/secrets.yaml"
 run "kubectl apply -f mongodb/cr.yaml"
 
 

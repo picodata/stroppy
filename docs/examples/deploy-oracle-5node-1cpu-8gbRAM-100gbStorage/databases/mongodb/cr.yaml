@@ -56,10 +56,10 @@ spec:
     resources:
       limits:
         cpu: "1000m"
-        memory: "4G"
+        memory: "8G"
       requests:
         cpu: "1000m"
-        memory: "4G"
+        memory: "8G"
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: local-path
@@ -94,10 +94,10 @@ spec:
     resources:
       limits:
         cpu: "1000m"
-        memory: "4G"
+        memory: "8G"
       requests:
         cpu: "1000m"
-        memory: "4G"
+        memory: "8G"
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: local-path
@@ -145,10 +145,10 @@ spec:
         worker-type: dbms-worker
       resources:
         limits:
-          cpu: "300m"
+          cpu: "1000m"
           memory: "0.5G"
         requests:
-          cpu: "300m"
+          cpu: "1000m"
           memory: "0.5G"
       expose:
         exposeType: ClusterIP
