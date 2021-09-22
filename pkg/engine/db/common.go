@@ -126,7 +126,7 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 		cc.clusterSpec.MainPod, err = cc.k.WaitPod(cc.clusterSpec.MainPod.Name,
 			targetNamespace,
 			kubernetes.PodWaitingWaitCreation,
-			kubernetes.PodWaitingTime10Minutes)
+			kubernetes.PodWaitingTimeTenMinutes)
 		if err != nil {
 			return merry.Prependf(err, "%s pod wait", tag)
 		}
@@ -152,6 +152,6 @@ func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err 
 		return merry.Prependf(err, "failed to started port-forward for '%s'", cc.tg)
 	}
 
-	llog.Infoln("Port-forwarding for postgres is started success")
+	llog.Infof("Port-forwarding for %s is started success", name)
 	return
 }

@@ -56,7 +56,7 @@ type Cookie struct {
 func statsWorker() {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
-	more := true
+	var more bool
 loop:
 	for {
 		var elapsed time.Duration

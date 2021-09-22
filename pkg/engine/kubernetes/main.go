@@ -67,7 +67,7 @@ func createKubernetesObject(settings *config.Settings,
 	sshClient engineSsh.Client) (pObj *Kubernetes) {
 
 	pObj = &Kubernetes{
-		workingDirectory:  settings.WorkingDirectory,
+		WorkingDirectory:  settings.WorkingDirectory,
 		clusterConfigFile: filepath.Join(settings.WorkingDirectory, "config"),
 
 		AddressMap: terraformAddressMap,
@@ -90,12 +90,12 @@ func CreateKubernetes(settings *config.Settings,
 	k.sshKeyFileName, k.sshKeyFilePath = k.sc.GetPrivateKeyInfo()
 
 	llog.Infof("kubernetes init success on directory '%s', with provider '%s', and ssh key file '%s'",
-		k.workingDirectory, k.provider, k.sshKeyFilePath)
+		k.WorkingDirectory, k.provider, k.sshKeyFilePath)
 	return
 }
 
 type Kubernetes struct {
-	workingDirectory  string
+	WorkingDirectory  string
 	clusterConfigFile string
 
 	AddressMap map[string]map[string]string

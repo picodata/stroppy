@@ -26,9 +26,7 @@ const (
 )
 
 var (
-	errChooseConfig   = errors.New("failed to choose configuration. Unexpected configuration cluster template")
-	errVersionParsed  = errors.New("failed to parse version")
-	errChooseProvider = errors.New("failed to choose provider. Unexpected provider's name")
+	errVersionParsed = errors.New("failed to parse version")
 )
 
 func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder string) (t *Terraform) {

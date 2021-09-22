@@ -113,19 +113,19 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 		}
 	}
 
-	metricsServerFilePath := filepath.Join(k.workingDirectory, "monitoring", "metrics-server.yaml")
+	metricsServerFilePath := filepath.Join(k.WorkingDirectory, "monitoring", "metrics-server.yaml")
 	if err = k.LoadFile(metricsServerFilePath, "/home/ubuntu/metrics-server.yaml"); err != nil {
 		return
 	}
 	llog.Infoln("copying metrics-server.yaml: success")
 
-	ingressGrafanaFilePath := filepath.Join(k.workingDirectory, "monitoring", "ingress-grafana.yaml")
+	ingressGrafanaFilePath := filepath.Join(k.WorkingDirectory, "monitoring", "ingress-grafana.yaml")
 	if err = k.LoadFile(ingressGrafanaFilePath, "/home/ubuntu/ingress-grafana.yaml"); err != nil {
 		return
 	}
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
-	grafanaDirectoryPath := filepath.Join(k.workingDirectory, "monitoring", "grafana-on-premise")
+	grafanaDirectoryPath := filepath.Join(k.WorkingDirectory, "monitoring", "grafana-on-premise")
 	if err = k.LoadDirectory(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
 		return
 	}

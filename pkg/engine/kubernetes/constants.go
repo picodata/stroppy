@@ -35,7 +35,7 @@ const (
 	PodWaitingNotWaitCreation = false
 	VolumeStorageClassName    = "local-path"
 
-	PodWaitingTime10Minutes = 10 * time.Minute
+	PodWaitingTimeTenMinutes = 10 * time.Minute
 )
 
 const (

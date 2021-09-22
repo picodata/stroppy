@@ -82,5 +82,10 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		deploySettings.Nodes,
 		"count nodes of cluster")
 
+	deployCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Sharded,
+		"sharded", "",
+		false,
+		"Use to populate accounts in sharded MongoDB cluster. Default false - populate accounts in MongoDB replicasets cluster")
+
 	return deployCmd
 }

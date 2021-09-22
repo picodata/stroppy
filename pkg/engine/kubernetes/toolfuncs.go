@@ -68,7 +68,7 @@ func (k *Kubernetes) CopyFileFromMaster(filePath string) (err error) {
 
 	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/%v", k.AddressMap["external"]["master"], filePath)
 	copyFromMasterCmd := exec.Command("scp", "-i", k.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
-	copyFromMasterCmd.Dir = k.workingDirectory
+	copyFromMasterCmd.Dir = k.WorkingDirectory
 
 	llog.Infoln(copyFromMasterCmd.String())
 	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
@@ -92,7 +92,7 @@ func (k *Kubernetes) installSshKeyFileOnMaster() (err error) {
 		"-i", k.sshKeyFileName,
 		"-o", "StrictHostKeyChecking=no",
 		k.sshKeyFileName, mastersConnectionString)
-	copyPrivateKeyCmd.Dir = k.workingDirectory
+	copyPrivateKeyCmd.Dir = k.WorkingDirectory
 
 	llog.Infof(copyPrivateKeyCmd.String())
 
@@ -252,7 +252,7 @@ func (k Kubernetes) ExecuteGettingMonImages(startTime int64, finishTime int64, m
 		workersIps += fmt.Sprintf("%v;", address)
 	}
 
-	workingDirectory := filepath.Join(k.workingDirectory, "monitoring", "grafana-on-premise")
+	workingDirectory := filepath.Join(k.WorkingDirectory, "monitoring", "grafana-on-premise")
 	getImagesCmd := exec.Command("./get_png.sh", fmt.Sprintf("%v", startTime), fmt.Sprintf("%v", finishTime), monImagesArchName, workersIps)
 	getImagesCmd.Dir = workingDirectory
 	if result, err := getImagesCmd.CombinedOutput(); err != nil {
@@ -357,3 +357,4 @@ func (k Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 
 	return deployK8sSecondStep
 }
+

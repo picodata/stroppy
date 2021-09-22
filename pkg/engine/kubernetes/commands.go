@@ -39,7 +39,7 @@ func (k *Kubernetes) ExecuteF(text string, args ...interface{}) (err error) {
 	return
 }
 
-func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
+func (k *Kubernetes) ExecuteRemoteCommand(podName string, containerName string, testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
 	var config *rest.Config
 	if config, err = k.getKubeConfig(); err != nil {
 		err = merry.Prepend(err, "failed to get config for execute remote test")
@@ -55,7 +55,7 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (be
 	// формируем запрос для API k8s
 	executeRequest := clientSet.CoreV1().RESTClient().Post().
 		Resource(ResourcePodName).
-		Name(stroppyPodName).
+		Name(podName).
 		Namespace(ResourceDefaultNamespace).
 		SubResource(SubresourceExec).Timeout(60)
 
@@ -65,7 +65,7 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (be
 		Stdout:    true,
 		Stderr:    true,
 		TTY:       true,
-		Container: "",
+		Container: containerName,
 		Command:   testCmd,
 	}
 
@@ -81,7 +81,7 @@ func (k *Kubernetes) ExecuteRemoteTest(testCmd []string, logFileName string) (be
 		return
 	}
 
-	logFilePath := filepath.Join(k.workingDirectory, logFileName)
+	logFilePath := filepath.Join(k.WorkingDirectory, logFileName)
 
 	var logFile *os.File
 	if logFile, err = os.Create(logFilePath); err != nil {

@@ -75,6 +75,7 @@ func randomSettings(count int, seed int, banRangeMultiplier float64) *RandomSett
 		if bics > rs.accounts {
 			bics = rs.accounts
 		}
+		// nolint:gosimple
 		rs.bics = make([]string, bics, bics)
 		generateBics(rs)
 		rs.bansPerBic = int(float64(rs.accounts) * banRangeMultiplier / float64(bics))

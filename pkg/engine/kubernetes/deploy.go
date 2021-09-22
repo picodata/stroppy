@@ -93,7 +93,7 @@ func (k *Kubernetes) DeployStroppy() error {
 		return merry.Prepend(err, "failed to get client set for deploy stroppy")
 	}
 
-	deployConfigStroppyPath := filepath.Join(k.workingDirectory, deployConfigStroppyFile)
+	deployConfigStroppyPath := filepath.Join(k.WorkingDirectory, deployConfigStroppyFile)
 
 	var deployConfigBytes []byte
 	if deployConfigBytes, err = ioutil.ReadFile(deployConfigStroppyPath); err != nil {
@@ -148,7 +148,7 @@ func (k *Kubernetes) DeployStroppy() error {
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
 	if k.StroppyPod.Status.Phase != v1.PodRunning {
 		k.StroppyPod, err = k.WaitPod(stroppyPodName, ResourceDefaultNamespace,
-			PodWaitingNotWaitCreation, PodWaitingTime10Minutes)
+			PodWaitingNotWaitCreation, PodWaitingTimeTenMinutes)
 		if err != nil {
 			return merry.Prepend(err, "stroppy pod running status")
 		}
@@ -256,7 +256,7 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 		commandClientType = engineSsh.LocalClient
 	}
 
-	sshClient, err := engineSsh.CreateClient(k.workingDirectory,
+	sshClient, err := engineSsh.CreateClient(k.WorkingDirectory,
 		masterExternalIP,
 		k.provider,
 		commandClientType)
@@ -305,7 +305,7 @@ func (k *Kubernetes) prepareDeployStroppy() error {
 		return merry.Prepend(err, "failed to get clientset for stroppy secret")
 	}
 
-	secretFilePath := filepath.Join(k.workingDirectory, secretStroppyFile)
+	secretFilePath := filepath.Join(k.WorkingDirectory, secretStroppyFile)
 	secretFile, err := ioutil.ReadFile(secretFilePath)
 	if err != nil {
 		return merry.Prepend(err, "failed to read config file for stroppy secret")

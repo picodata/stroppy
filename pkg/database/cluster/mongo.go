@@ -106,7 +106,7 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 
 	// создаем или открываем БД и коллекции - аналоги таблиц.
 	db := client.Database("stroppy")
-	wcMajority := writeconcern.New(writeconcern.WMajority(), writeconcern.WTimeout(1*time.Second))
+	wcMajority := writeconcern.New(writeconcern.WMajority(), writeconcern.WTimeout(10*time.Second))
 	majorityCollectionOpts := options.Collection().SetWriteConcern(wcMajority)
 	accounts := db.Collection("accounts", majorityCollectionOpts)
 	transfers := db.Collection("transfers", majorityCollectionOpts)

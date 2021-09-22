@@ -70,7 +70,7 @@ func (pc *postgresCluster) Deploy() (err error) {
 
 		var targetPod *kuberv1.Pod
 		targetPod, err = pc.k.WaitPod(podName, kubernetes.ResourceDefaultNamespace,
-			kubernetes.PodWaitingWaitCreation, kubernetes.PodWaitingTime10Minutes)
+			kubernetes.PodWaitingWaitCreation, kubernetes.PodWaitingTimeTenMinutes)
 
 		if err != nil {
 			err = merry.Prepend(err, "waiting")
