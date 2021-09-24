@@ -1,0 +1,4 @@
+/* Copyright 2021 The Stroppy Authors. All rights reserved         *
+ * Use of this source code is governed by the 3-Clause BSD License *
+ * that can be found in the LICENSE file.                          */
+
