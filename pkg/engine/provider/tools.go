@@ -46,3 +46,21 @@ func DispatchTemplate(templatesConfig *ClusterConfigurations,
 
 	return
 }
+
+func DeepCopyAddressMap(addressMap map[string]map[string]string) (copy map[string]map[string]string) {
+	if addressMap == nil {
+		return
+	}
+
+	copy = make(map[string]map[string]string, len(addressMap))
+	for key, val := range addressMap {
+		valLen := len(val)
+		valCopy := make(map[string]string, valLen)
+
+		for valKey, valVal := range val {
+			valCopy[valKey] = valVal[:]
+		}
+		copy[key] = valCopy
+	}
+	return
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
@@ -34,6 +35,7 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (op *Provide
 		templatesConfig:  templatesConfig,
 		settings:         settings,
 		workingDirectory: wd,
+		addressMapLock:   sync.Mutex{},
 	}
 
 	op = &_provider
@@ -46,8 +48,9 @@ type Provider struct {
 
 	workingDirectory string
 
-	tfStateData []byte
-	addressMap  map[string]map[string]string
+	tfStateData    []byte
+	addressMap     map[string]map[string]string
+	addressMapLock sync.Mutex
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
@@ -105,6 +108,8 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 		Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя.
 	*/
 
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
 	for k, address := range op.addressMap["external"] {
 		var newLoginCmd string
 		var updateTargetCmd string
@@ -219,28 +224,13 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 	return nil
 }
 
-func (op *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
-	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-	 * своя пара - внешний (NAT) и внутренний ip.
-	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-	 * т.к. использование encoding/json
-	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
+func (op *Provider) reparseAddressMap(nodes int) (err error) {
 
-	if op.addressMap != nil {
-		mapIPAddresses = op.addressMap
-		return
-	}
-
+	// Осторожно, внутренний метод без блокировки
 	if op.tfStateData == nil {
-		err = errors.New("tf state data empty")
+		err = errors.New("terraform state data is empty")
 		return
 	}
-
-	op.addressMap = make(map[string]map[string]string)
-	defer func() {
-		mapIPAddresses = op.addressMap
-	}()
 
 	workerKey := "worker-%v"
 	oracleInstanceValue := "value.0.%v"
@@ -276,11 +266,33 @@ func (op *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 			Get(currentInstanceValue).Str
 	}
 
+	op.addressMap = make(map[string]map[string]string)
 	op.addressMap["external"] = externalAddress
 	op.addressMap["internal"] = internalAddress
+	return
+}
 
-	llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+func (op *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
+	 * своя пара - внешний (NAT) и внутренний ip.
+	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
+	 * т.к. использование encoding/json
+	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
+	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
 
+	defer func() {
+		mapIPAddresses = provider.DeepCopyAddressMap(op.addressMap)
+		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+	}()
+
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
+
+	if op.addressMap != nil {
+		return
+	}
+
+	err = op.reparseAddressMap(nodes)
 	return
 }
 
@@ -320,6 +332,6 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	}
 
 	firstStep = fmt.Sprintf("./cluster/provider/oracle/deploy_oracle.sh %v", scriptParameters)
-	thirdStep = "./cluster/provider/oracle/deploy_thirdstep.sh"
+	thirdStep = "./cluster/provider/oracle/prepare_thirdstep.sh"
 	return
 }

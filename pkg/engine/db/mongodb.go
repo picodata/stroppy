@@ -3,15 +3,16 @@ package db
 import (
 	"fmt"
 	"io/ioutil"
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubernetes"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/provider/ssh"
+	clusterImplementation "gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -50,7 +51,7 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 	}
 
 	connectionPool := uint64(mongo.commonCluster.dbPool) + uint64(mongo.commonCluster.addPool)
-	cluster, err = cluster2.NewMongoDBCluster(mongo.DBUrl, connectionPool, mongo.commonCluster.sharded)
+	cluster, err = clusterImplementation.NewMongoDBCluster(mongo.DBUrl, connectionPool, mongo.commonCluster.sharded)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to  mongo cluster")
 	}
@@ -66,7 +67,7 @@ func (mongo *mongoCluster) Deploy() (err error) {
 	// за 5 минут укладывается развертывание кластера из трех шардов
 	time.Sleep(5 * time.Minute)
 	err = mongo.examineCluster("MongoDB",
-		kubernetes.ResourceDefaultNamespace,
+		kubeengine.ResourceDefaultNamespace,
 		mongoOperatorName,
 		mongoClusterName)
 	if err != nil {

@@ -14,6 +14,8 @@ require (
 	github.com/jackc/pgconn v1.9.0
 	github.com/jackc/pgerrcode v0.0.0-20201024163028-a0d42d470451
 	github.com/jackc/pgx/v4 v4.12.0
+	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
+	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spenczar/tdigest v2.1.0+incompatible
 	github.com/spf13/cobra v1.2.1
@@ -23,10 +25,7 @@ require (
 	go.mongodb.org/mongo-driver v1.7.1
 	golang.org/x/crypto v0.0.0-20210711020723-a769d52b0f97
 	gopkg.in/inf.v0 v0.9.1
-	gopkg.in/yaml.v2 v2.4.0
 	k8s.io/api v0.21.3
 	k8s.io/apimachinery v0.21.3
-	k8s.io/cli-runtime v0.21.3
 	k8s.io/client-go v0.21.3
-	k8s.io/kubectl v0.21.3
 )

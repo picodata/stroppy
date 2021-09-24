@@ -5,8 +5,8 @@ fdb.cluster
 *.pub 
 private_key
 private_key.pem
-*.tfstate
-*.tfstate.backup
+**.tfstate
+**.tfstate.backup
 
 benchmark
 terraform*.zip

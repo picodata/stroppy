@@ -18,9 +18,10 @@ const instanceFileName = "main_oracle-derived.tf"
 
 func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	ram int, diskString string, nodesString string) {
-	tenancyOcidBlock := instanceFileBody.AppendNewBlock("variable", []string{"tenancy_ocid"})
-	tenancyOcidBody := tenancyOcidBlock.Body()
-	tenancyOcidBody.SetAttributeValue("default",
+
+	tenancyOCIDBlock := instanceFileBody.AppendNewBlock("variable", []string{"tenancy_ocid"})
+	tenancyOCIDBody := tenancyOCIDBlock.Body()
+	tenancyOCIDBody.SetAttributeValue("default",
 		cty.StringVal("ocid1.tenancy.oc1..aaaaaaaa57fvsimy5ma5gs7e6yzmhbypafasi2v3huvbcgrv3sxmos4tvawa"))
 
 	instanceFileBody.AppendNewline()
@@ -88,6 +89,9 @@ func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 		},
 	})
 	providerOCIbody.SetAttributeTraversal("fingerprint", hcl.Traversal{
+		hcl.TraverseRoot{
+			Name: "var",
+		},
 		hcl.TraverseAttr{
 			Name: "fingerprint",
 		},
@@ -128,9 +132,9 @@ func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 
 	instanceFileBody.AppendNewline()
 
-	instanceOcpusBlock := instanceFileBody.AppendNewBlock("variable", []string{"instance_ocpus"})
-	instanceOcpusBody := instanceOcpusBlock.Body()
-	instanceOcpusBody.SetAttributeValue("default", cty.NumberIntVal(int64(cpu)))
+	instanceOCPUSBlock := instanceFileBody.AppendNewBlock("variable", []string{"instance_ocpus"})
+	instanceOCPUSBody := instanceOCPUSBlock.Body()
+	instanceOCPUSBody.SetAttributeValue("default", cty.NumberIntVal(int64(cpu)))
 
 	instanceFileBody.AppendNewline()
 

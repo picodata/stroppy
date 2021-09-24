@@ -143,7 +143,8 @@ func (t *Terraform) apply() (err error) {
 
 	var result []byte
 	if result, err = applyCMD.CombinedOutput(); err != nil {
-		return merry.Prependf(err, "terraform apply error, possible output '%s'", string(result))
+		return merry.Prependf(err, "terraform apply error, possible output \n```\n%s\n```\n",
+			string(result))
 	}
 
 	llog.Printf("Terraform applied\n")

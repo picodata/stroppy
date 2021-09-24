@@ -3,16 +3,16 @@ package yandex
 import (
 	"errors"
 	"fmt"
+	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"path/filepath"
 	"strconv"
-
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
+	"sync"
 
 	"gitlab.com/picodata/stroppy/pkg/tools"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 )
@@ -34,6 +34,7 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provide
 		templatesConfig:  templatesConfig,
 		settings:         settings,
 		workingDirectory: wd,
+		addressMapLock:   sync.Mutex{},
 	}
 
 	yp = &_provider
@@ -50,8 +51,9 @@ type Provider struct {
 	vpcSubnetBlockName     string
 	vpcInternalNetworkName string
 
-	tfStateData []byte
-	addressMap  map[string]map[string]string
+	tfStateData    []byte
+	addressMap     map[string]map[string]string
+	addressMapLock sync.Mutex
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
@@ -93,28 +95,11 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 	yp.tfStateData = data
 }
 
-func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
-	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-	 * своя пара - внешний (NAT) и внутренний ip.
-	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-	 * т.к. использование encoding/json
-	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
-
-	if yp.addressMap != nil {
-		mapIPAddresses = yp.addressMap
-		return
-	}
-
+func (yp *Provider) reparseAddressMap(nodes int) (err error) {
 	if yp.tfStateData == nil {
 		err = errors.New("tf state data empty")
 		return
 	}
-
-	yp.addressMap = make(map[string]map[string]string)
-	defer func() {
-		mapIPAddresses = yp.addressMap
-	}()
 
 	workerKey := "worker-%v"
 	yandexInstanceValue := "instances.%v"
@@ -160,11 +145,33 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 			Get("ip_address").Str
 	}
 
+	yp.addressMap = make(map[string]map[string]string)
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
+	return
+}
 
-	llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
+	 * своя пара - внешний (NAT) и внутренний ip.
+	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
+	 * т.к. использование encoding/json
+	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
+	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
 
+	defer func() {
+		mapIPAddresses = provider.DeepCopyAddressMap(yp.addressMap)
+		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
+	}()
+
+	yp.addressMapLock.Lock()
+	defer yp.addressMapLock.Lock()
+
+	if yp.addressMap != nil {
+		return
+	}
+
+	err = yp.reparseAddressMap(nodes)
 	return
 }
 
