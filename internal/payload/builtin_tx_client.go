@@ -23,7 +23,7 @@ import (
 	llog "github.com/sirupsen/logrus"
 )
 
-const maxTxRetries = 10
+const maxTxRetries = 1000
 
 var maxSleepDuration, _ = time.ParseDuration("1s")
 
@@ -78,6 +78,8 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 				Code: 1037,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1009,
+			}) || errors.Is(err, fdb.Error{
+				Code: 1007,
 			}) || errors.Is(err, mongo.CommandError{
 				Code: 133,
 				// https://gitlab.com/picodata/openway/stroppy/-/issues/57

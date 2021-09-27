@@ -91,7 +91,9 @@ func (p *BasePayload) Pop(_ string) (err error) {
 						// https://gitlab.com/picodata/openway/stroppy/-/issues/57
 					}) || errors.Is(err, cluster.ErrTxRollback) {
 						llog.Errorf("Retrying after request error: %v", err)
+						// workaround to finish populate test when account insert gets retryable error
 						time.Sleep(time.Millisecond)
+						continue
 					}
 					llog.Fatalf("Fatal error: %+v", err)
 				} else {
