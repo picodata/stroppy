@@ -407,21 +407,6 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		var srcAccount map[string][]byte
 		var destAccount map[string][]byte
 
-		// вставляем запись о переводе
-		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
-			{Key: "id", Value: transfer.Id},
-			{Key: "srcBic", Value: transfer.Acs[0].Bic},
-			{Key: "srcBan", Value: transfer.Acs[0].Ban},
-			{Key: "destBic", Value: transfer.Acs[0].Bic},
-			{Key: "destBan", Value: transfer.Acs[0].Ban},
-			{Key: "LockOrder", Value: transfer.LockOrder},
-			{Key: "Amount", Value: transferAmount},
-			{Key: "State", Value: transfer.State},
-		}); err != nil {
-			return nil, merry.Prepend(err, "failed to insert transfer")
-		}
-		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
-
 		// убираем лишние поля
 		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
 			primitive.E{Key: "_id", Value: 0},
@@ -454,13 +439,6 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			return nil, merry.Prepend(err, "failed to encode new source balance")
 		}
 
-		updateOpts := options.Update().SetUpsert(false)
-		filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
-		update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
-		if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
-			return nil, merry.Prepend(err, "failed to update source account balance")
-		}
-
 		// получаем баланс счета-источника
 		if err = destAccounts.FindOne(sessCtx, bson.D{
 			primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
@@ -483,11 +461,51 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			return nil, merry.Prepend(err, "failed to encode new source balance")
 		}
 
-		filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
-		update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
-		if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
-			return nil, merry.Prepend(err, "failed to update destination account balance")
+		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
+
+			updateOpts := options.Update().SetUpsert(false)
+			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
+			update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
+			if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+				return nil, merry.Prepend(err, "failed to update source account balance")
+			}
+
+			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
+			update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
+			if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+				return nil, merry.Prepend(err, "failed to update destination account balance")
+			}
+
+		} else {
+			updateOpts := options.Update().SetUpsert(false)
+			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
+			update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
+			if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+				return nil, merry.Prepend(err, "failed to update destination account balance")
+			}
+
+			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
+			update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
+			if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+				return nil, merry.Prepend(err, "failed to update source account balance")
+			}
+
 		}
+
+		// вставляем запись о переводе
+		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
+			{Key: "id", Value: transfer.Id},
+			{Key: "srcBic", Value: transfer.Acs[0].Bic},
+			{Key: "srcBan", Value: transfer.Acs[0].Ban},
+			{Key: "destBic", Value: transfer.Acs[0].Bic},
+			{Key: "destBan", Value: transfer.Acs[0].Ban},
+			{Key: "LockOrder", Value: transfer.LockOrder},
+			{Key: "Amount", Value: transferAmount},
+			{Key: "State", Value: transfer.State},
+		}); err != nil {
+			return nil, merry.Prepend(err, "failed to insert transfer")
+		}
+		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
 
 		return nil, nil
 	}
