@@ -462,6 +462,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
+
 		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
@@ -495,8 +496,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			{Key: "Amount", Value: transfer.Amount.UnscaledBig().Int64()},
 			{Key: "State", Value: transfer.State},
 		}
+
 		// вставляем запись о переводе
 		if insertResult, err = transfers.InsertOne(sessCtx, docs); err != nil {
+
 			return nil, merry.Prepend(err, "failed to insert transfer")
 		}
 		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
