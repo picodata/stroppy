@@ -261,14 +261,7 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 	var insertAccountResult *mongo.InsertOneResult
 	var account mongo.InsertOneModel
 
-	// декодируем *inf.Dec в байтовый массив, чтобы сохранить точное значение, т.к. *inf.Dec в float не преобразуется.
-	// в fdb мы сериализуем вообще весь ключ, поэтому решение видится применимым.
-	balanceRaw, err := acc.Balance.GobEncode()
-	if err != nil {
-		return merry.Prepend(err, "failed to encode balance")
-	}
-
-	account.Document = bson.D{primitive.E{Key: "bic", Value: acc.Bic}, {Key: "ban", Value: acc.Ban}, {Key: "balance", Value: balanceRaw}}
+	account.Document = bson.D{primitive.E{Key: "bic", Value: acc.Bic}, {Key: "ban", Value: acc.Ban}, {Key: "balance", Value: acc.Balance.UnscaledBig().Int64()}}
 
 	if insertAccountResult, err = cluster.mongoModel.accounts.InsertOne(context.TODO(), account.Document); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
@@ -333,54 +326,33 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
-	totalBalance := inf.NewDec(0, 10)
-	var currentBalance inf.Dec
 
-	settings, err := cluster.FetchSettings()
+	pipe := []bson.M{
+		{"$group": bson.M{
+			"_id": "",
+			"sum": bson.M{"$sum": "$balance"},
+		}},
+	}
+
+	cursor, err := cluster.mongoModel.accounts.Aggregate(context.TODO(), pipe)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
+		return nil, err
 	}
 
-	for i := 0; i < settings.Count; i = i + iterRange {
-		opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
-			bson.D{{Key: "_id", Value: 0}, {Key: "bic", Value: 0}, {Key: "ban", Value: 0}})
-		limit := int64(iterRange)
-		opts.Limit = &limit
-		// на первой итерации в skip нет необходимости
-		if i > 0 {
-			skip := int64(i)
-			opts.Skip = &skip
-			llog.Println(skip, limit)
-		}
+	type Result struct {
+		ID      string `bson:"_id"`
+		Balance int64  `bson:"sum"`
+	}
 
-		cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), bson.D{}, opts)
+	var res Result
+	for cursor.Next(context.TODO()) {
+		err := cursor.Decode(&res)
 		if err != nil {
-			if errors.Is(err, mongo.ErrNoDocuments) {
-				return nil, ErrNoRows
-			}
-			return nil, merry.Prepend(err, "failed to get accounts array")
+			return nil, err
 		}
-
-		defer cursor.Close(context.TODO())
-
-		var results []map[string][]byte
-		if err = cursor.All(context.TODO(), &results); err != nil {
-			return nil, merry.Prepend(err, "failed to decode cursor of  settings")
-		}
-
-		llog.Tracef("count of accounts in array %v", len(results))
-
-		for _, balancesMap := range results {
-			if err := currentBalance.GobDecode(balancesMap["balance"]); err != nil {
-				return nil, merry.Prepend(err, "failed to decode current balance")
-			}
-			totalBalance.Add(totalBalance, &currentBalance)
-		}
-		results = nil
-
 	}
 
-	return totalBalance, nil
+	return inf.NewDec(res.Balance, 0), nil
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
@@ -402,98 +374,62 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 	// Step 1: Define the callback that specifies the sequence of operations to perform inside the transaction.
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
-		var srcBalance inf.Dec
-		var destBalance inf.Dec
-		var srcAccount map[string][]byte
-		var destAccount map[string][]byte
-
-		// убираем лишние поля
-		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
-			primitive.E{Key: "_id", Value: 0},
-			{Key: "ban", Value: 0},
-			{Key: "bic", Value: 0},
-		})
-		// получаем баланс счета-источника
-		if err := srcAccounts.FindOne(sessCtx, bson.D{
-			primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
-			primitive.E{Key: "ban", Value: transfer.Acs[0].Ban},
-		}, getOpts).Decode(&srcAccount); err != nil {
-			if errors.Is(err, mongo.ErrNoDocuments) {
-				return nil, ErrNoRows
-			}
-			return nil, merry.Prepend(err, "failed to get source account")
-		}
-
-		if err = srcBalance.GobDecode(srcAccount["balance"]); err != nil {
-			return nil, merry.Prepend(err, "failed to get source account balance")
-		}
-
-		// вычитаем сумму перевода
-		srcBalance.Sub(&srcBalance, transfer.Amount)
-		if srcBalance.UnscaledBig().Int64() < 0 {
-			return nil, ErrInsufficientFunds
-		}
-
-		newSrcBalance, err := srcBalance.GobEncode()
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to encode new source balance")
-		}
-
-		// получаем баланс счета-источника
-		if err = destAccounts.FindOne(sessCtx, bson.D{
-			primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
-			primitive.E{Key: "ban", Value: transfer.Acs[1].Ban},
-		}, getOpts).Decode(&destAccount); err != nil {
-			if errors.Is(err, mongo.ErrNoDocuments) {
-				return nil, ErrNoRows
-			}
-			return nil, merry.Prepend(err, "failed to get destination account")
-		}
-
-		if err = destBalance.GobDecode(destAccount["balance"]); err != nil {
-			return nil, merry.Prepend(err, "failed to get destination account balance")
-		}
-
-		destBalance.Add(&destBalance, transfer.Amount)
-
-		newDestBalance, err := destBalance.GobEncode()
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to encode new source balance")
-		}
+		var updatedDocument map[string]int64
 
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
-			updateOpts := options.Update().SetUpsert(false)
+			updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+				{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
 			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
-			update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
-			if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+			update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -transfer.Amount.UnscaledBig().Int64()}}}}
+			if err = srcAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, ErrNoRows
+				}
 				return nil, merry.Prepend(err, "failed to update source account balance")
 			}
 
+			if updatedDocument["balance"]-transfer.Amount.UnscaledBig().Int64() < 0 {
+				return nil, ErrInsufficientFunds
+			}
+
 			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
-			update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
-			if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+			update = bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: transfer.Amount.UnscaledBig().Int64()}}}}
+			if err = destAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, ErrNoRows
+				}
 				return nil, merry.Prepend(err, "failed to update destination account balance")
 			}
 
 		} else {
-			updateOpts := options.Update().SetUpsert(false)
-			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
-			update := bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newDestBalance}}}}
-			if _, err := destAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
+			updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+				{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
+			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
+			update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: transfer.Amount.UnscaledBig().Int64()}}}}
+			if err = destAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, ErrNoRows
+				}
+				return nil, merry.Prepend(err, "failed to update source account balance")
+			}
+
+			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
+			update = bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -transfer.Amount.UnscaledBig().Int64()}}}}
+			if err = srcAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, ErrNoRows
+				}
 				return nil, merry.Prepend(err, "failed to update destination account balance")
 			}
 
-			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
-			update = bson.D{primitive.E{Key: "$set", Value: bson.D{{Key: "balance", Value: newSrcBalance}}}}
-			if _, err := srcAccounts.UpdateOne(sessCtx, filter, update, updateOpts); err != nil {
-				return nil, merry.Prepend(err, "failed to update source account balance")
+			if updatedDocument["balance"]-transfer.Amount.UnscaledBig().Int64() < 0 {
+				return nil, ErrInsufficientFunds
 			}
 
 		}
 
-		// вставляем запись о переводе
-		if insertResult, err = transfers.InsertOne(sessCtx, bson.D{
+		docs := bson.D{
 			{Key: "id", Value: transfer.Id},
 			{Key: "srcBic", Value: transfer.Acs[0].Bic},
 			{Key: "srcBan", Value: transfer.Acs[0].Ban},
@@ -502,7 +438,9 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			{Key: "LockOrder", Value: transfer.LockOrder},
 			{Key: "Amount", Value: transferAmount},
 			{Key: "State", Value: transfer.State},
-		}); err != nil {
+		}
+		// вставляем запись о переводе
+		if insertResult, err = transfers.InsertOne(sessCtx, docs); err != nil {
 			return nil, merry.Prepend(err, "failed to insert transfer")
 		}
 		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
