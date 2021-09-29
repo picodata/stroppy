@@ -3,8 +3,6 @@ package deployment
 const (
 	configFileName = "test_config.json"
 
-	stroppyPodName = "stroppy-client"
-
 	interactiveUsageHelpTemplate = `
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
 To access Grafana use address localhost:%d.

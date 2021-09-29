@@ -88,7 +88,6 @@ func (mongo *mongoCluster) Deploy() (err error) {
 				portForwardPodName = mongo.clusterSpec.Pods[i]
 			}
 		}
-
 	}
 
 	if portForwardPodName == nil {
@@ -140,7 +139,7 @@ db.createUser({user: "stroppy",pwd: "stroppy",roles: [ {role:"readWriteAnyDataba
 			llog.Errorln(merry.Errorf("failed to add stroppy user to mongo: %v, try %v", err, i))
 
 			// читаем файл с результатом выполнения, чтобы проверить ошибку внутри mongo shell
-			resultFilePath := filepath.Join(mongo.k.WorkingDirectory, "addStroppyUser.log")
+			resultFilePath := filepath.Join(mongo.k.Engine.WorkingDirectory, "addStroppyUser.log")
 			result, err := ioutil.ReadFile(resultFilePath)
 			if err != nil {
 				return merry.Prepend(err, "failed to analyze add stroppy user error")

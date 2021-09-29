@@ -12,7 +12,7 @@ const (
 	PodWaitingWaitCreation    = true
 	PodWaitingNotWaitCreation = false
 
-	PodWaitingTime10Minutes = 10 * time.Minute
+	PodWaitingTimeTenMinutes = 10 * time.Minute
 
 	SshEntity  = "kubernetes"
 	ConfigPath = ".kube/config"

@@ -2,6 +2,7 @@ package deployment
 
 import (
 	"fmt"
+	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 	"io/ioutil"
 	"path/filepath"
 	"time"
@@ -32,7 +33,9 @@ func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime,
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	if beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppyPodName, "", payTestCommand, logFileName); err != nil {
+	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "",
+		payTestCommand, logFileName)
+	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote transfer test")
 	}
 	return
@@ -93,7 +96,8 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	if beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppyPodName, "", popTestCommand, logFileName); err != nil {
+	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "", popTestCommand, logFileName)
+	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote populate test")
 	}
 	return

@@ -90,7 +90,7 @@ func (pod *Pod) Deploy() (err error) {
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
 	if pod.internalPod.Status.Phase != v1.PodRunning {
 		pod.internalPod, err = pod.e.WaitPod(PodName, engine.ResourceDefaultNamespace,
-			engine.PodWaitingNotWaitCreation, engine.PodWaitingTime10Minutes)
+			engine.PodWaitingNotWaitCreation, engine.PodWaitingTimeTenMinutes)
 		if err != nil {
 			retryErr := tools.Retry("stroppy pod recreation",
 				func() (err error) {

@@ -13,5 +13,5 @@ echo -e "now prepend each '*.$TARGET_EXT' source code file with license header f
 while IFS= read -r -d '' file
 do
   echo -e "now patching file '$file'"
-  cat < "$LICFILE" | cat - todo.txt > temp && mv temp "$file"
+  cat < "$LICFILE" | cat - "$file" > temp && mv temp "$file"
 done <   <(find . -name "*.$TARGET_EXT" -not -path "./vendor/*" -print0)
