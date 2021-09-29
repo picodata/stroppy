@@ -23,8 +23,6 @@ import (
 
 const versionAPI = 620
 
-
-
 // FDBCluster - объявление соединения к FDB и ссылки на модель данных.
 type FDBCluster struct {
 	pool  fdb.Database

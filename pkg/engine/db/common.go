@@ -1,9 +1,7 @@
 package db
 
 import (
-	"bufio"
 	"fmt"
-	"io"
 	"net/url"
 	"strings"
 
@@ -14,11 +12,12 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 )
 
-func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string, dbPool int, addPool int, sharded bool) (fc *commonCluster) {
+func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
+	dbPool int, addPool int, sharded bool) (fc *commonCluster) {
+
 	fc = &commonCluster{
 		k:                      k,
 		sc:                     sc,
@@ -48,8 +47,7 @@ type commonCluster struct {
 
 	DBUrl string
 
-	dbPool int
-
+	dbPool  int
 	addPool int
 
 	sharded bool
@@ -64,26 +62,10 @@ func (cc *commonCluster) deploy() (err error) {
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
-	var sshSession engineSsh.Session
-	if sshSession, err = cc.sc.GetNewSession(); err != nil {
-		return merry.Prependf(err, "failed to open ssh connection for deploy of %s", cc.tg)
-	}
-
-	// \todo: вынести в gracefulShutdown, если вообще в этом требуется необходимость, поскольку runtime при выходе закроет сам
-	// defer sshSession.Close()
-
 	llog.Infof("%s deploy started\n", cc.tg)
 	deployCmd := fmt.Sprintf("chmod +x %s/deploy_operator.sh && ./%s/deploy_operator.sh", cc.tg, cc.tg)
-
-	var stdout io.Reader
-	if stdout, err = sshSession.StdoutPipe(); err != nil {
-		return merry.Prepend(err, "failed creating command stdoutpipe")
-	}
-	go engine.HandleReader(bufio.NewReader(stdout))
-
-	var textb []byte
-	if textb, err = sshSession.CombinedOutput(deployCmd); err != nil {
-		return merry.Prependf(err, "command execution failed, return text `%s`", string(textb))
+	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
+		return
 	}
 
 	llog.Infof("%s deploy finished", cc.tg)

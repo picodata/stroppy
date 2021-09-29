@@ -97,7 +97,6 @@ The default value of banRangeMultipluer is 1.1.`)
 		settings.DatabaseSettings.Workers,
 		"Number of workers, 4 * NumCPU if not set.")
 
-
 	rootCmd.PersistentFlags().BoolVarP(&settings.TestSettings.UseCloudStroppy,
 		"use-cloud-pod", "",
 		false,

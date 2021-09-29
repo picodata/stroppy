@@ -60,11 +60,23 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	}
 	llog.Infoln("copying grafana-on-premise: success")
 
+	commonShFilePath := filepath.Join(k.Engine.WorkingDirectory, "common.sh")
+	if err = k.Engine.LoadFile(commonShFilePath, "/home/ubuntu/common.sh"); err != nil {
+		return
+	}
+	llog.Infoln("copying common.sh: success")
+
+	clusterDeploymentDirectoryPath := filepath.Join(k.Engine.WorkingDirectory, "cluster")
+	if err = k.Engine.LoadDirectory(clusterDeploymentDirectoryPath, "/home/ubuntu"); err != nil {
+		return
+	}
+	llog.Infoln("cluster directory copied successfully")
+
 	return
 }
 
-// getHostsFileAttributes - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
-func (k *Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
+// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
+func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string) {
 	var workersAddressString string
 	var masterAddressString string
 	var workersString string
@@ -91,7 +103,6 @@ func (k *Kubernetes) getHostsFileAttributes() (deployK8sSecondStep string) {
 
 	instancesString := masterAddressString + workersAddressString
 
-	deployK8sSecondStep = fmt.Sprintf(deployK8sSecondStepTemplate, instancesString, workersString, workersString)
-
-	return deployK8sSecondStep
+	deployK8sSecondStep = fmt.Sprintf(clusterHostsIniTemplate, instancesString, workersString, workersString)
+	return
 }

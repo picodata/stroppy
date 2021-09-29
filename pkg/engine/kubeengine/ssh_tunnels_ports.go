@@ -85,7 +85,7 @@ func (e *Engine) GetSessionObject() (stdout io.Reader, session ssh.Session, err 
 	if stdout, err = session.StdoutPipe(); err != nil {
 		err = merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
 
-		if err = session.Close(); err != nil {
+		if err := session.Close(); err != nil {
 			llog.Warnf("GetSessionObject: k8s ssh session can not closed: %v", err)
 		}
 	}

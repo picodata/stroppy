@@ -12,7 +12,7 @@ const (
 )
 
 const (
-	deployK8sSecondStepTemplate = `echo \
+	clusterHostsIniTemplate = `echo \
 "tee inventory/local/hosts.ini<<EOF
 [all]
 %v

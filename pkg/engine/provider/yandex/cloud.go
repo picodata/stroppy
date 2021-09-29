@@ -3,11 +3,12 @@ package yandex
 import (
 	"errors"
 	"fmt"
-	"github.com/tidwall/gjson"
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"path/filepath"
 	"strconv"
 	"sync"
+
+	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 
 	"gitlab.com/picodata/stroppy/pkg/tools"
 

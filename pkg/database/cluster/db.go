@@ -53,8 +53,10 @@ const (
 
 const statJsonFileTemplate = "status_json_%v.json"
 
-const limitRange = 100001
-const iterRange = 100000
+const (
+	limitRange = 100001
+	iterRange  = 100000
+)
 
 // Settings returns the test run settings
 type Settings struct {

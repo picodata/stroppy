@@ -1,8 +1,6 @@
 package kubernetes
 
 import (
-	"bufio"
-	"io"
 	"strings"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
@@ -12,7 +10,6 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/engine"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -94,44 +91,22 @@ func (k *Kubernetes) deploy() (err error) {
 		return
 	}
 
-	providerSpecificStepFirst, providerSpecificStepThird := k.provider.GetDeploymentCommands()
-	if err = k.Engine.ExecuteCommand(providerSpecificStepFirst); err != nil {
-		return merry.Prepend(err, "first step deployment failed")
+	providerSpecificFirstStep, providerSpecificThirdStep := k.provider.GetDeploymentCommands()
+	if err = k.Engine.ExecuteCommand(providerSpecificFirstStep); err != nil {
+		return merry.Prepend(err, "first step failed")
 	}
 	llog.Printf("First step deploy k8s: success")
 
-	secondStepCommandText := k.getHostsFileAttributes()
-
-	if err = k.Engine.ExecuteCommand(secondStepCommandText); err != nil {
-		return merry.Prepend(err, "failed second step deploy k8s")
+	secondStepCommandText := k.craftClusterDeploymentScript()
+	if err = k.Engine.DebugCommand(secondStepCommandText, false); err != nil {
+		return merry.Prepend(err, "second step failed")
 	}
 	llog.Printf("Second cluster deployment step: success")
 
-	if err = k.Engine.ExecuteCommand(providerSpecificStepThird); err != nil {
-		return merry.Prepend(err, "failed third step deploy k8s")
+	if err = k.Engine.DebugCommand(providerSpecificThirdStep, false); err != nil {
+		return merry.Prepend(err, "third step")
 	}
 	llog.Printf("Third cluster deployment step: success")
-
-	const fooStepCommand = "chmod +x deploy_kubernetes.sh && ./deploy_kubernetes.sh -y"
-
-	var (
-		fooSession engineSsh.Session
-		fooStdout  io.Reader
-	)
-	if fooStdout, fooSession, err = k.Engine.GetSessionObject(); err != nil {
-		return merry.Prepend(err, "failed foo step deploy k8s")
-	}
-	go engine.HandleReader(bufio.NewReader(fooStdout))
-	llog.Infof("Waiting for deploying about 20 minutes...")
-
-	var fooSessionResult []byte
-	if fooSessionResult, err = fooSession.CombinedOutput(fooStepCommand); err != nil {
-		llog.Infoln(string(fooSessionResult))
-		return merry.Prepend(err, "failed foo step deploy k8s waiting")
-	}
-
-	llog.Printf("Foo step deploy k8s: success")
-	_ = fooSession.Close()
 
 	return
 }

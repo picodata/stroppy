@@ -2,6 +2,8 @@ package engine
 
 import (
 	"bufio"
+	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -40,19 +42,33 @@ func IsRemotePortOpen(hostname string, port int) bool {
 	return true
 }
 
-// HandleReader
-// вывести буфер стандартного вывода в отдельном потоке
-func HandleReader(reader *bufio.Reader) {
-	printOutput := llog.GetLevel() == llog.DebugLevel
-	for {
-		str, err := reader.ReadString('\n')
-		if err != nil {
-			break
-		}
-		if printOutput {
-			llog.Debugln(str)
-		}
+// FilterPipe вывводит буфер стандартного вывода в отдельном потоке
+func FilterPipe(reader io.Reader, expectedWaitChan bool) (waitChannel chan struct{}) {
+	if expectedWaitChan {
+		waitChannel = make(chan struct{})
 	}
+
+	bufReader := bufio.NewReader(reader)
+	go func() {
+		printOutput := llog.GetLevel() == llog.DebugLevel
+		for {
+			str, err := bufReader.ReadString('\n')
+			if err != nil {
+				break
+			}
+			if printOutput {
+				llog.Debugln(str)
+			}
+		}
+
+		if expectedWaitChan {
+			fmt.Printf("\n\n\n\nYeah, baby! chan id is %v\n\n\n\n\n", waitChannel)
+			waitChannel <- struct{}{}
+			close(waitChannel)
+		}
+	}()
+
+	return
 }
 
 func IsFileExists(workingDirectory string, file string) bool {

@@ -225,7 +225,6 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 }
 
 func (op *Provider) reparseAddressMap(nodes int) (err error) {
-
 	// Осторожно, внутренний метод без блокировки
 	if op.tfStateData == nil {
 		err = errors.New("terraform state data is empty")
@@ -328,10 +327,10 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	scriptParameters := "--pod-addresses "
 	internalAddressMap := op.addressMap["internal"]
 	for _, podAddress := range internalAddressMap {
-		scriptParameters += fmt.Sprintf("%s, ", podAddress)
+		scriptParameters += fmt.Sprintf("%s,", podAddress)
 	}
 
-	firstStep = fmt.Sprintf("./cluster/provider/oracle/deploy_oracle.sh %v", scriptParameters)
-	thirdStep = "./cluster/provider/oracle/prepare_thirdstep.sh"
+	firstStep = fmt.Sprintf("./cluster/provider/oracle/prepare_oracle.sh %v", scriptParameters)
+	thirdStep = "./cluster/provider/oracle/deploy_3rdparties.sh"
 	return
 }

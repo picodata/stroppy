@@ -419,11 +419,16 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
 
 		// убираем лишние поля
-		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-			{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
+		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
+			primitive.E{Key: "_id", Value: 0},
+			{Key: "ban", Value: 0},
+			{Key: "bic", Value: 0},
+		})
 		// получаем баланс счета-источника
-		if err := srcAccounts.FindOne(sessCtx, bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
-			primitive.E{Key: "ban", Value: transfer.Acs[0].Ban}}, getOpts).Decode(&srcAccount); err != nil {
+		if err := srcAccounts.FindOne(sessCtx, bson.D{
+			primitive.E{Key: "bic", Value: transfer.Acs[0].Bic},
+			primitive.E{Key: "ban", Value: transfer.Acs[0].Ban},
+		}, getOpts).Decode(&srcAccount); err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
 				return nil, ErrNoRows
 			}
@@ -434,7 +439,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			return nil, merry.Prepend(err, "failed to get source account balance")
 		}
 
-		//вычитаем сумму перевода
+		// вычитаем сумму перевода
 		srcBalance.Sub(&srcBalance, transfer.Amount)
 		if srcBalance.UnscaledBig().Int64() < 0 {
 			return nil, ErrInsufficientFunds
@@ -453,8 +458,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		}
 
 		// получаем баланс счета-источника
-		if err = destAccounts.FindOne(sessCtx, bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
-			primitive.E{Key: "ban", Value: transfer.Acs[1].Ban}}, getOpts).Decode(&destAccount); err != nil {
+		if err = destAccounts.FindOne(sessCtx, bson.D{
+			primitive.E{Key: "bic", Value: transfer.Acs[1].Bic},
+			primitive.E{Key: "ban", Value: transfer.Acs[1].Ban},
+		}, getOpts).Decode(&destAccount); err != nil {
 			if errors.Is(err, mongo.ErrNoDocuments) {
 				return nil, ErrNoRows
 			}
@@ -505,8 +512,11 @@ func (cluster *MongoDBCluster) FetchAccounts() ([]model.Account, error) {
 func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
 	var balances, pendingAmount inf.Dec
 
-	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
+	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 0},
+		{Key: "ban", Value: 0},
+		{Key: "bic", Value: 0},
+	})
 	filter := bson.D{primitive.E{Key: "bic", Value: bic}, {Key: "ban", Value: ban}}
 	cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), filter, opts)
 	if err != nil {
@@ -531,6 +541,5 @@ func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *
 }
 
 func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
-
 	return nil
 }

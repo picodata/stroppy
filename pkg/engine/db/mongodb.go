@@ -3,10 +3,11 @@ package db
 import (
 	"fmt"
 	"io/ioutil"
-	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"

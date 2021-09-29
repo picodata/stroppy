@@ -17,7 +17,7 @@ func (chaos *workableController) Deploy() (err error) {
 	llog.Infoln("Starting chaos-mesh deployment...")
 
 	const deployChaosMesh = "chmod +x cluster/deploy_chaos.sh && ./cluster/deploy_chaos.sh"
-	if err = chaos.k.Execute(deployChaosMesh); err != nil {
+	if err = chaos.k.ExecuteCommand(deployChaosMesh); err != nil {
 		return merry.Prepend(err, "chaos-mesh deployment failed")
 	}
 	llog.Debugln("chaos-mesh prepared successfully")
