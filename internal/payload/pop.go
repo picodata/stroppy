@@ -97,6 +97,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 						Code: 133,
 						// https://gitlab.com/picodata/openway/stroppy/-/issues/57
 					}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
+
 						// временная мера до стабилизации mongo
 						mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||
 						errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) || errors.Is(err, mongo.WriteError{}) {
