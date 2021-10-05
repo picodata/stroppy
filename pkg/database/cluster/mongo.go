@@ -140,13 +140,13 @@ func (cluster *MongoDBCluster) addSharding() error {
 
 	accountShardingCmd := bson.D{
 		{Key: "shardCollection", Value: "stroppy.accounts"},
-		{Key: "key", Value: bson.D{{Key: "bic", Value: 1}, {Key: "ban", Value: 1}}},
-		{Key: "unique", Value: true},
+		{Key: "key", Value: bson.D{{Key: "bic", Value: 1}}},
+		{Key: "unique", Value: false},
 	}
 
 	transferShardingCmd := bson.D{
 		{Key: "shardCollection", Value: "stroppy.transfers"},
-		{Key: "key", Value: bson.D{{Key: "_id", Value: "hashed"}}},
+		{Key: "key", Value: bson.D{{Key: "srcBic", Value: 1}}},
 		{Key: "unique", Value: false},
 	}
 

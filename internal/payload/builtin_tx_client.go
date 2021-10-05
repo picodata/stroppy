@@ -7,6 +7,7 @@ package payload
 import (
 	"errors"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -87,7 +88,10 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 			}) || errors.Is(err, mongo.CommandError{
 				Code: 133,
 				// https://gitlab.com/picodata/openway/stroppy/-/issues/57
-			}) || errors.Is(err, cluster.ErrTxRollback) {
+			}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
+				// временная мера до стабилизации mongo
+				mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||
+				errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
