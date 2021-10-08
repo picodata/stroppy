@@ -5,7 +5,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$SCRIPT_DIR/../../../common.sh"
 
 
-export DEBIAN_FRONTEND=noninteractive
+export DEBIAN_FRONTEND='noninteractive'
+run "installing ca-certs" sudo apt install ca-certificates
 
 run "update system package cache state" sudo apt-get update -y
 
@@ -13,7 +14,7 @@ run "installing required system components" \
 sudo apt-get install -y sshpass python3-pip git htop sysstat
 
 run "adding baltocdn encryption key to system package manager" \
-curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
+curl https://baltocdn.com/helm/signing.asc \| sudo apt-key add -
 
 run "installing apt-transport-https" sudo apt-get install apt-transport-https --yes
 

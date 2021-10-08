@@ -4,6 +4,10 @@
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$SCRIPT_DIR/../../../common.sh"
 
+run "run deploy_kubernetes.sh file" sh deploy_kubernetes.sh
+
+run "change dir to kubespray" cd kubespray
+
 run "enable ingress nginx setting in k8s cluster addons.yml file" \
 sudo sed -i \'s/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g\' inventory/local/group_vars/k8s_cluster/addons.yml
 
@@ -24,8 +28,10 @@ sudo sed -i \'s/download_run_once: false/download_run_once: true/g\' extra_playb
 run "applying ansible playbook" \
 ansible-playbook -b -e ignore_assert_errors=yes -i inventory/local/hosts.ini cluster.yml
 
+run "make $HOME/.kube directory" mkdir -p $HOME/.kube
+
 run "copying kube config file to it's home directory" \
-mkdir -p $HOME/.kube && sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
 
 run "setting kube config file access rights" \
 sudo chown $(id -u):$(id -g) $HOME/.kube/config && chmod 600 $HOME/.kube/config
@@ -45,28 +51,30 @@ run "installing grafana stack" \
 helm install grafana-stack prometheus-community/kube-prometheus-stack \
                             --set grafana.enables=false \
                             --set prometheus.prometheusSpec.retention=180d \
-                            --namespace monitoring \
-                            --version 16.8.0
+                            --namespace monitoring # \
+                            # --version 16.8.0
+
 
 # grafana-on-premise
-run "installing cloud alchemy" cd && ansible-galaxy install cloudalchemy.grafana
+run "change directory back to '$HOME'" cd
+run "installing cloudalchemy" ansible-galaxy install cloudalchemy.grafana
 
-run "installing grafana community" "ansible-galaxy collection install community.grafana"
+run "installing grafana community" ansible-galaxy collection install community.grafana
 
 run "cd grafana-on-premise" cd grafana-on-premise
 
-run "applying grafana on premise yaml" \
-prometheus_cluster_ip=\$\(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }'\) && \
-sed -i \"s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/\$prometheus_cluster_ip:9090/g\" grafana-on-premise.yml && \
-ansible-playbook grafana-on-premise.yml
+export prometheus_cluster_ip=$(kubectl get svc -n monitoring | grep grafana-stack-kube-prometh-prometheus | awk '{ print$ 3 }')
+
+run "configure grafana-on-premise prometheus_cluster_ip option" \
+sed -i "'s/      ds_url: http:\/\/localhost:9090/      ds_url: http:\/\/$prometheus_cluster_ip:9090/g'" grafana-on-premise.yml
+
+run "applying grafana on premise yaml" ansible-playbook grafana-on-premise.yml
 
 #деплой секрета для успешного получения stroppy из приватной репы
-run "register user as docker user" "/bin/bash -c \"sudo usermod -aG docker \"${USER}\"\""
+run "register user as docker user" sudo usermod -aG docker "${USER}"
 
-run "Adding new user into docker group" '/bin/bash -c \"newgrp docker\"'
+run "change current user group id to docker group id" newgrp docker
 
-run "restarting docker service" '/bin/bash -c \"sudo service docker restart\"'
+run "restarting docker service" sudo service docker restart
 
-run "Restarted docker service" "sudo chown ubuntu:docker /var/run/docker.sock"
-
-echo 'change owner for /var/run/docker.sock'
+run "change docker.sock file owner" sudo chown ubuntu:docker /var/run/docker.sock

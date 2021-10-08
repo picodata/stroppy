@@ -46,8 +46,9 @@ run "installing grafana stack" \
 helm install grafana-stack prometheus-community/kube-prometheus-stack \
                             --set grafana.enables=false \
                             --set prometheus.prometheusSpec.retention=180d \
-                            --namespace monitoring \
-                            --version 16.8.0
+                            --namespace monitoring # \
+                            # --version 16.8.0
+
 
 # monitoring: grafana-on-premise
 run "change directory to home" cd

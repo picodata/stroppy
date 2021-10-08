@@ -42,7 +42,9 @@ run "installing some system packages" \
 sudo apt-get install -y sshpass python3-pip git htop sysstat
 
 ### /Oracle.Cloud
-run "applying custom secure key" curl https://baltocdn.com/helm/signing.asc | sudo apt-key add -
+run "installing ca-certs" sudo apt install ca-certificates
+
+run "applying custom secure key" curl https://baltocdn.com/helm/signing.asc \| sudo apt-key add -
 run "installing apt-transport-https package" sudo apt-get install apt-transport-https --yes
 
 

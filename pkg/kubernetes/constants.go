@@ -17,7 +17,7 @@ const (
 
 const (
 	clusterHostsIniTemplate = `echo \
-"tee inventory/local/hosts.ini<<EOF
+"tee kubespray/inventory/local/hosts.ini<<EOF
 [all]
 %v
 	
