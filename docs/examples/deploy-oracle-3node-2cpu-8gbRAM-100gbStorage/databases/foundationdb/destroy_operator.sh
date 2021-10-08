@@ -4,7 +4,6 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$SCRIPT_DIR/../../common.sh"
 
 
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 run "deleting custom cluster definitions" kubectl delete -f "$SCRIPT_DIR/cluster_with_client.yaml"
 
 run "deleting foundation cluster definitions" \
