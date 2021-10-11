@@ -7,6 +7,7 @@ package cluster
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ansel1/merry/v2"
@@ -140,7 +141,7 @@ func (cluster *MongoDBCluster) addSharding() error {
 
 	accountShardingCmd := bson.D{
 		{Key: "shardCollection", Value: "stroppy.accounts"},
-		{Key: "key", Value: bson.D{{Key: "bic", Value: 1}}},
+		{Key: "key", Value: bson.D{{Key: "bicBan", Value: 1}}},
 		{Key: "unique", Value: false},
 	}
 
@@ -206,7 +207,7 @@ func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Debugf("added seed in setting with id %v", insertResult)
 
 	accountIndex := mongo.IndexModel{
-		Keys:    bson.D{primitive.E{Key: "bic", Value: 1}, {Key: "ban", Value: 1}},
+		Keys:    bson.D{primitive.E{Key: "bicBan", Value: 1}},
 		Options: options.Index().SetUnique(true).SetName("accountIndex"),
 	}
 	// добавляем индекс для обеспечения уникальности и быстрого поиска при переводах
@@ -261,7 +262,7 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 	var insertAccountResult *mongo.InsertOneResult
 	var account mongo.InsertOneModel
 
-	account.Document = bson.D{primitive.E{Key: "bic", Value: acc.Bic}, {Key: "ban", Value: acc.Ban}, {Key: "balance", Value: acc.Balance.UnscaledBig().Int64()}}
+	account.Document = bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}, {Key: "balance", Value: acc.Balance.UnscaledBig().Int64()}}
 
 	if insertAccountResult, err = cluster.mongoModel.accounts.InsertOne(context.TODO(), account.Document); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
@@ -334,7 +335,11 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 		}},
 	}
 
-	cursor, err := cluster.mongoModel.accounts.Aggregate(context.TODO(), pipe)
+	opts := options.Aggregate()
+
+	opts.SetAllowDiskUse(true)
+
+	cursor, err := cluster.mongoModel.accounts.Aggregate(context.TODO(), pipe, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -355,6 +360,42 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(res.Balance, 0), nil
 }
 
+func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
+	var updatedDocument map[string]int64
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0}})
+	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
+	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: amount}}}}
+	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrNoRows
+		}
+		return merry.Prepend(err, "failed to update destination account balance")
+	}
+
+	if updatedDocument["balance"]-amount < 0 {
+		return ErrInsufficientFunds
+	}
+
+	return nil
+}
+
+func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
+	var updatedDocument map[string]int64
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0}})
+	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
+	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -amount}}}}
+	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return ErrNoRows
+		}
+		return merry.Prepend(err, "failed to update destination account balance")
+	}
+
+	return nil
+}
+
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx := context.Background()
@@ -371,60 +412,28 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		return merry.Prepend(err, "failed to insert total balance in checksum")
 	}
 
-	// Step 1: Define the callback that specifies the sequence of operations to perform inside the transaction.
+	
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
-		var updatedDocument map[string]int64
-
+		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks 
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
-			updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-				{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
-			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
-			update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -transfer.Amount.UnscaledBig().Int64()}}}}
-			if err = srcAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrNoRows
-				}
-				return nil, merry.Prepend(err, "failed to update source account balance")
+			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
+				return nil, merry.Prepend(err, "failed to to withdraw money")
 			}
 
-			if updatedDocument["balance"]-transfer.Amount.UnscaledBig().Int64() < 0 {
-				return nil, ErrInsufficientFunds
-			}
-
-			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
-			update = bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: transfer.Amount.UnscaledBig().Int64()}}}}
-			if err = destAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrNoRows
-				}
-				return nil, merry.Prepend(err, "failed to update destination account balance")
+			if err = cluster.TopUpMoney(sessCtx, transfer.Acs[1], transfer.Amount.UnscaledBig().Int64(), destAccounts); err != nil {
+				return nil, merry.Prepend(err, "failed to top up money")
 			}
 
 		} else {
-			updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-				{Key: "ban", Value: 0}, {Key: "bic", Value: 0}})
-			filter := bson.D{primitive.E{Key: "bic", Value: transfer.Acs[0].Bic}, {Key: "ban", Value: transfer.Acs[1].Ban}}
-			update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: transfer.Amount.UnscaledBig().Int64()}}}}
-			if err = destAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrNoRows
-				}
-				return nil, merry.Prepend(err, "failed to update source account balance")
+
+			if err = cluster.TopUpMoney(sessCtx, transfer.Acs[1], transfer.Amount.UnscaledBig().Int64(), destAccounts); err != nil {
+				return nil, merry.Prepend(err, "failed to top up money")
 			}
 
-			filter = bson.D{primitive.E{Key: "bic", Value: transfer.Acs[1].Bic}, {Key: "ban", Value: transfer.Acs[0].Ban}}
-			update = bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -transfer.Amount.UnscaledBig().Int64()}}}}
-			if err = srcAccounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-				if errors.Is(err, mongo.ErrNoDocuments) {
-					return nil, ErrNoRows
-				}
-				return nil, merry.Prepend(err, "failed to update destination account balance")
-			}
-
-			if updatedDocument["balance"]-transfer.Amount.UnscaledBig().Int64() < 0 {
-				return nil, ErrInsufficientFunds
+			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
+				return nil, merry.Prepend(err, "failed to to withdraw money")
 			}
 
 		}

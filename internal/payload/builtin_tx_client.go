@@ -79,6 +79,8 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 			// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
 			// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
+			// description of mongo.error with code 64 - waiting for replication timed out
+			//  description of mongo.error with code 11602 - InterruptedDueToReplStateChange
 			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 				Code: 1037,
 			}) || errors.Is(err, fdb.Error{
