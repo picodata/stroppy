@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -86,6 +87,8 @@ func (p *BasePayload) Pop(_ string) (err error) {
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 					// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
 					// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
+					// description of mongo.error with code 64 - waiting for replication timed out
+					//  description of mongo.error with code 11602 - InterruptedDueToReplStateChange
 					if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 						Code: 1037,
 					}) || errors.Is(err, fdb.Error{
@@ -93,7 +96,10 @@ func (p *BasePayload) Pop(_ string) (err error) {
 					}) || errors.Is(err, mongo.CommandError{
 						Code: 133,
 						// https://gitlab.com/picodata/openway/stroppy/-/issues/57
-					}) || errors.Is(err, cluster.ErrTxRollback) {
+					}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
+						// временная мера до стабилизации mongo
+						mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||
+						errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) || errors.Is(err, mongo.WriteError{} ){
 						llog.Errorf("Retrying after request error: %v", err)
 						// workaround to finish populate test when account insert gets retryable error
 						time.Sleep(time.Millisecond)
