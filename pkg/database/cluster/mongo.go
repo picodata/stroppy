@@ -327,7 +327,6 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
-
 	pipe := []bson.M{
 		{"$group": bson.M{
 			"_id": "",
@@ -362,8 +361,10 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0},
+	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: amount}}}}
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
@@ -382,8 +383,10 @@ func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc mode
 
 func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0},
+	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -amount}}}}
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
@@ -412,10 +415,9 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		return merry.Prepend(err, "failed to insert total balance in checksum")
 	}
 
-	
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
-		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks 
+		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
 			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
