@@ -85,12 +85,13 @@ func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId 
 func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
 
-	llog.Println(sharded)
+	llog.Debugln("sharded state:", sharded)
 	// задаем максимальный размер пула соединений
-	clientOptions.MaxPoolSize = &poolSize
-
+	clientOptions.SetMaxPoolSize(poolSize)
+	clientOptions.SetMinPoolSize(poolSize - 10)
+	clientOptions.ApplyURI(dbURL)
 	llog.Debugln("connecting to mongodb...")
-	client, err := mongo.NewClient(options.Client().ApplyURI(dbURL))
+	client, err := mongo.NewClient(&clientOptions)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create mongoDB client")
 	}
@@ -327,6 +328,19 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
+	var totalBalance int64
+
+	type AggregateResult struct {
+		ID      string `bson:"_id"`
+		Balance int64  `bson:"sum"`
+	}
+
+	var result AggregateResult
+
+	settings, err := cluster.FetchSettings()
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch settings for fetch accounts")
+	}
 
 	pipe := []bson.M{
 		{"$group": bson.M{
@@ -341,23 +355,53 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 
 	cursor, err := cluster.mongoModel.accounts.Aggregate(context.TODO(), pipe, opts)
 	if err != nil {
-		return nil, err
+		llog.Errorf("Getting error by mongo aggreration: %v, recalculating again by internal loop", err)
+		for i := 0; i < settings.Count; i = i + iterRange {
+			opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
+				bson.D{{Key: "_id", Value: 0}, {Key: "bicBan", Value: 0}})
+			limit := int64(iterRange)
+			opts.Limit = &limit
+			// на первой итерации в skip нет необходимости
+			if i > 0 {
+				skip := int64(i)
+				opts.Skip = &skip
+				llog.Println(skip, limit)
+			}
+
+			cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), bson.D{}, opts)
+			if err != nil {
+				if errors.Is(err, mongo.ErrNoDocuments) {
+					return nil, ErrNoRows
+				}
+				return nil, merry.Prepend(err, "failed to get accounts array")
+			}
+
+			defer cursor.Close(context.TODO())
+
+			var results []map[string]int64
+			if err = cursor.All(context.TODO(), &results); err != nil {
+				return nil, merry.Prepend(err, "failed to decode cursor of  settings")
+			}
+
+			llog.Tracef("count of accounts in array %v", len(results))
+
+			for _, balancesMap := range results {
+				totalBalance += balancesMap["balance"]
+			}
+			results = nil
+
+		}
+		return inf.NewDec(totalBalance, 0), nil
 	}
 
-	type Result struct {
-		ID      string `bson:"_id"`
-		Balance int64  `bson:"sum"`
-	}
-
-	var res Result
 	for cursor.Next(context.TODO()) {
-		err := cursor.Decode(&res)
+		err := cursor.Decode(&result)
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return inf.NewDec(res.Balance, 0), nil
+	return inf.NewDec(result.Balance, 0), nil
 }
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
@@ -412,10 +456,9 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 		return merry.Prepend(err, "failed to insert total balance in checksum")
 	}
 
-	
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
-		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks 
+		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
 			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
