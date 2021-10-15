@@ -410,6 +410,7 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	}
 
 	return inf.NewDec(result.Balance, 0), nil
+
 }
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
@@ -450,43 +451,9 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 	}
 
 	return nil
+
 }
 
-func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
-	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
-	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
-	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: amount}}}}
-	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return ErrNoRows
-		}
-		return merry.Prepend(err, "failed to update destination account balance")
-	}
-
-	if updatedDocument["balance"]-amount < 0 {
-		return ErrInsufficientFunds
-	}
-
-	return nil
-}
-
-func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
-	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
-	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
-	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -amount}}}}
-	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			return ErrNoRows
-		}
-		return merry.Prepend(err, "failed to update destination account balance")
-	}
-
-	return nil
-}
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
