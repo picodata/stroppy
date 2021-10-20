@@ -90,6 +90,11 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 	clientOptions.SetMaxPoolSize(poolSize)
 	clientOptions.SetMinPoolSize(poolSize - 10)
 	clientOptions.ApplyURI(dbURL)
+	// This parameters was increased for garantee of success test finish and calculating of total balance
+	clientOptions.SetMaxConnIdleTime(maxConnIdleTimeout)
+	clientOptions.SetHeartbeatInterval(heartBeatInterval)
+	clientOptions.SetSocketTimeout(socketTimeout)
+
 	llog.Debugln("connecting to mongodb...")
 	client, err := mongo.NewClient(&clientOptions)
 	if err != nil {
