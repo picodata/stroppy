@@ -269,6 +269,7 @@ const cockroachTimeoutSettings = 50 * time.Second
 
 func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, err error) {
 	ctx, cancel := context.WithTimeout(cockroach.ctxt, cockroachTimeoutSettings)
+
 	defer cancel()
 
 	var rows pgx.Rows
@@ -494,5 +495,4 @@ func (cockroach *CockroachDatabase) StartStatisticsCollect(_ time.Duration) (_ e
 	llog.Warnln("stat metrics is not suppoerted now for cockroach")
 
 	return
-
 }

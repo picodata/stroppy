@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gopkg.in/inf.v0"
 )
 
