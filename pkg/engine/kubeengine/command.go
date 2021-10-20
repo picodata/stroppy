@@ -21,7 +21,7 @@ func (e *Engine) ExecuteCommand(text string) (err error) {
 		return merry.Prepend(err, "failed to open ssh connection")
 	}
 
-	llog.Debugf("launch command `%s", text)
+	llog.Debugf("launch command `%s`", text)
 	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
 		return merry.Prependf(err, "command exec failed with output `%s`", string(result))
 	}
