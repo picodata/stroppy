@@ -38,7 +38,7 @@ type cockroachCluster struct {
 }
 
 func (cc *cockroachCluster) Connect() (cluster interface{}, err error) {
-	cluster, err = cluster2.NewCocroachCluster(cc.DBUrl)
+	cluster, err = cluster2.NewCockroachCluster(cc.DBUrl)
 	return
 }
 
