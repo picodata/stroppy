@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"errors"
+	"time"
 )
 
 var (
@@ -60,8 +61,11 @@ const (
 const statJsonFileTemplate = "status_json_%v.json"
 
 const (
-	limitRange = 100001
-	iterRange  = 100000
+	limitRange         = 100001
+	iterRange          = 100000
+	maxConnIdleTimeout = 120 * time.Second
+	heartBeatInterval  = 30 * time.Second
+	socketTimeout      = 180 * time.Second
 )
 
 // Settings returns the test run settings
