@@ -24,6 +24,7 @@ spec:
   dataStore:
     pvc:
       spec:
+
         storageClassName: local-path
         accessModes:
           - ReadWriteOnce
@@ -41,6 +42,7 @@ spec:
       memory: 8Gi
   tlsEnabled: true
 # You can set either a version of the db or a specific image name
+
 #  cockroachDBVersion: v21.1.11
   image:
     name: cockroachdb/cockroach:v21.1.11
@@ -68,3 +70,4 @@ spec:
 # nodeSelectors used to match against
   nodeSelector:
     worker-type: dbms-worker
+

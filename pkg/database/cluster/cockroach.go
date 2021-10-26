@@ -494,4 +494,5 @@ func (cockroach *CockroachDatabase) StartStatisticsCollect(_ time.Duration) (_ e
 	llog.Warnln("stat metrics is not suppoerted now for cockroach")
 
 	return
+
 }

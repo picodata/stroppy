@@ -29,3 +29,4 @@ kubectl label svc cockroachdb prometheus=cockroachdb
 
 run "applying cockroachdb prometheus config" \
 kubectl apply -f "$SCRIPT_DIR/monitoring/prometheus.yaml"
+
