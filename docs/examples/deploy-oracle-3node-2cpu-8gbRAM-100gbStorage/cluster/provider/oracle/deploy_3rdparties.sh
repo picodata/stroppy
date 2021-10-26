@@ -49,12 +49,12 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 
 run "update repo data" helm repo update
 
-run "installing grafana stack" \
+errorless_run "installing grafana stack" \
 helm install grafana-stack prometheus-community/kube-prometheus-stack \
                             --set grafana.enables=false \
                             --set prometheus.prometheusSpec.retention=180d \
-                            --namespace monitoring \
-                            --version 16.8.0
+                            --namespace monitoring # \
+                            # --version 16.8.0
 
 
 # grafana-on-premise

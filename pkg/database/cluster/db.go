@@ -38,6 +38,7 @@ const (
 	PostgresClusterType DBClusterType = iota
 	FDBClusterType
 	MongoDBClusterType
+	CockroachClusterType
 )
 
 func (e DBClusterType) String() string {
@@ -54,6 +55,7 @@ const (
 	Foundation = "fdb"
 	Postgres   = "postgres"
 	MongoDB    = "mongodb"
+	Cockroach  = "cockroach"
 )
 
 const statJsonFileTemplate = "status_json_%v.json"

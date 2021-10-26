@@ -58,7 +58,7 @@ type commonCluster struct {
 }
 
 func (cc *commonCluster) deploy() (err error) {
-	llog.Infof("Prepare deploy of %s\n", cc.tg)
+	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
 	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/"); err != nil {

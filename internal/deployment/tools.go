@@ -6,10 +6,11 @@ package deployment
 
 import (
 	"fmt"
-	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 	"io/ioutil"
 	"path/filepath"
 	"time"
+
+	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"

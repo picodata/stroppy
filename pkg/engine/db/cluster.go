@@ -58,6 +58,9 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.MongoDB:
 		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.Workers, dbConfig.AddPool, dbConfig.Sharded)
+
+	case cluster.Cockroach:
+		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL)
 	}
 
 	return

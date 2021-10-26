@@ -125,12 +125,12 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 
 		llog.Infof("Adding network storage to %v %v", k, address)
 
-		llog.Infoln("checking additional storage mount ...")
-		providerName := provider.Yandex
+		llog.Infoln("checking additional storage mount...")
+		providerName := provider.Oracle
 		ok, err := engineSsh.IsExistEntity(address, checkAddedDiskCmd,
 			"block special", op.workingDirectory, providerName)
 		if err != nil {
-			return merry.Prepend(err, "failed to check additional storage mount ")
+			return merry.Prepend(err, "failed to check additional storage mount")
 		}
 
 		if !ok {

@@ -411,8 +411,10 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0},
+	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: amount}}}}
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
@@ -431,8 +433,10 @@ func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc mode
 
 func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
-	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0},
-		{Key: "bicBan", Value: 0}})
+	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
+		primitive.E{Key: "_id", Value: 0},
+		{Key: "bicBan", Value: 0},
+	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -amount}}}}
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
