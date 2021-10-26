@@ -125,9 +125,9 @@ func (sh *shell) preparePayload() (err error) {
 		if sh.settings.DatabaseSettings.DBType != cluster.Foundation {
 			return merry.Prepend(err, "failed to init payload")
 		}
-		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 
 		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
+		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 		err = nil
 	}
 	return
