@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gopkg.in/inf.v0"
 )
 
@@ -103,6 +104,11 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		"run-as-pod", "",
 		false,
 		"run stroppy as in pod statement")
+
+	payCmd.PersistentFlags().StringVarP(&settings.DeploymentSettings.Provider,
+		"provider", "",
+		provider.Yandex,
+		"hint about which provider is used")
 
 	payCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.AddPool,
 		"add-pool", "a",

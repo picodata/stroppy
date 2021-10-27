@@ -34,6 +34,9 @@ func createPayload(settings *config.Settings) (_payload payload.Payload) {
 	if err = tf.InitProvider(); err != nil {
 		llog.Fatalf("provider init failed: %v", err)
 	}
+	if err = tf.LoadState(); err != nil {
+		llog.Fatalf("failed to load state from disk: %v", err)
+	}
 
 	var addressMap map[string]map[string]string
 	if addressMap, err = tf.GetAddressMap(); err != nil {

@@ -63,6 +63,15 @@ func (t *Terraform) InitProvider() (err error) {
 	return
 }
 
+func (t *Terraform) LoadState() (err error) {
+	if t.data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
+		err = merry.Prepend(err, "failed to read file terraform.tfstate")
+	}
+
+	t.Provider.SetTerraformStatusData(t.data)
+	return
+}
+
 // GetAddressMap - получить структуру с адресами кластера
 func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
 	return t.Provider.GetAddressMap(t.settings.Nodes)
@@ -84,11 +93,7 @@ func (t *Terraform) Run() (err error) {
 		return merry.Prepend(err, "failed to apply terraform")
 	}
 
-	if t.data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
-		err = merry.Prepend(err, "failed to read file terraform.tfstate")
-	}
-
-	t.Provider.SetTerraformStatusData(t.data)
+	err = t.LoadState()
 	return
 }
 
