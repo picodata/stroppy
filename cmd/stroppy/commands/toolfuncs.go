@@ -77,7 +77,7 @@ func initLogFacility(settings *config.Settings) (err error) {
 	llog.SetLevel(l)
 
 	if len(os.Args) < 2 {
-		err = fmt.Errorf("not enought arguments")
+		err = fmt.Errorf("not enough arguments")
 		return
 	}
 

@@ -58,8 +58,6 @@ const (
 	Cockroach  = "cockroach"
 )
 
-const statJsonFileTemplate = "status_json_%v.json"
-
 const (
 	limitRange         = 100001
 	iterRange          = 100000

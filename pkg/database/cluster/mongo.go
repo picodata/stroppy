@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/ansel1/merry/v2"
@@ -21,6 +23,8 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"gopkg.in/inf.v0"
 )
+
+const mongoStatJsonFileTemplate = "serverStatus_%v.json"
 
 // MongoDBCluster - объявление соединения к FDB и ссылки на модель данных.
 type MongoDBCluster struct {
@@ -424,10 +428,6 @@ func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc mode
 		return merry.Prepend(err, "failed to update destination account balance")
 	}
 
-	if updatedDocument["balance"]-amount < 0 {
-		return ErrInsufficientFunds
-	}
-
 	return nil
 }
 
@@ -446,6 +446,10 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 		return merry.Prepend(err, "failed to update destination account balance")
 	}
 
+	if updatedDocument["balance"]-amount < 0 {
+		return ErrInsufficientFunds
+	}
+
 	return nil
 }
 
@@ -455,15 +459,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 	transfers := cluster.mongoModel.transfers
 	srcAccounts := cluster.mongoModel.accounts
 	destAccounts := cluster.mongoModel.accounts
-
-	transferAmount, err := transfer.Amount.GobEncode()
-	if err != nil {
-		return merry.Prepend(err, "failed to encode amount for transfer")
-	}
-
-	if err != nil {
-		return merry.Prepend(err, "failed to insert total balance in checksum")
-	}
+	var err error
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
@@ -494,10 +490,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			{Key: "id", Value: transfer.Id},
 			{Key: "srcBic", Value: transfer.Acs[0].Bic},
 			{Key: "srcBan", Value: transfer.Acs[0].Ban},
-			{Key: "destBic", Value: transfer.Acs[0].Bic},
-			{Key: "destBan", Value: transfer.Acs[0].Ban},
+			{Key: "destBic", Value: transfer.Acs[1].Bic},
+			{Key: "destBan", Value: transfer.Acs[1].Ban},
 			{Key: "LockOrder", Value: transfer.LockOrder},
-			{Key: "Amount", Value: transferAmount},
+			{Key: "Amount", Value: transfer.Amount.UnscaledBig().Int64()},
 			{Key: "State", Value: transfer.State},
 		}
 		// вставляем запись о переводе
@@ -562,5 +558,68 @@ func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *
 }
 
 func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
+
+	errChan := make(chan error)
+
+	llog.Debugln("starting of statistic goroutine...")
+	go cluster.getStatistics(statInterval, errChan)
+
+	errorCheck := <-errChan
+
+	if errorCheck != nil {
+		return merry.Prepend(errorCheck, "failed to get statistic")
+	}
+
 	return nil
+}
+
+func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan chan error) {
+
+	var once sync.Once
+	var commandResult bson.M
+	var serverStatus []byte
+
+	const dateFormat = "02-01-2006_15:04:05"
+
+	statFileName := fmt.Sprintf(mongoStatJsonFileTemplate, time.Now().Format(dateFormat))
+	llog.Debugln("Opening statistic file...")
+	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		errChan <- merry.Prepend(err, "failed to open statistic file")
+	}
+
+	defer statFile.Close()
+
+	llog.Debugln("Opening statistic file: success")
+
+	command := bson.D{primitive.E{Key: "serverStatus", Value: 1}}
+
+	err = cluster.client.Database("admin").RunCommand(
+		context.TODO(),
+		command,
+	).Decode(&commandResult)
+
+	if err != nil {
+		errChan <- merry.Prepend(err, "failed to get db.serverStatus() from mongodb")
+	}
+
+	if serverStatus, err = bson.Marshal(commandResult); err != nil {
+		errChan <- merry.Prepend(err, "failed to unmarchal status json")
+	}
+
+	separateString := fmt.Sprintf("\n %v \n", time.Now().Format(dateFormat))
+	if _, err = statFile.Write([]byte(separateString)); err != nil {
+		errChan <- merry.Prepend(err, "failed to write separate string to statistic file")
+	}
+
+	if _, err = statFile.Write(serverStatus); err != nil {
+		errChan <- merry.Prepend(err, "failed to write data to statistic file")
+	}
+
+	// если ошибки нет, то отправляем nil, чтобы продолжить работу
+	once.Do(func() {
+		errChan <- nil
+	})
+
+	time.Sleep(statInterval * time.Second)
 }
