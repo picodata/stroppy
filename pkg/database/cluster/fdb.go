@@ -647,7 +647,7 @@ func (cluster *FDBCluster) getStatistics(statInterval time.Duration, errChan cha
 
 	const dateFormat = "02-01-2006_15:04:05"
 
-	statFileName := fmt.Sprintf(statJsonFileTemplate, time.Now().Format(dateFormat))
+	statFileName := fmt.Sprintf(fdbStatJsonFileTemplate, time.Now().Format(dateFormat))
 	llog.Debugln("Opening statistic file...")
 	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {

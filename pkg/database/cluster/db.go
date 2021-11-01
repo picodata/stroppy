@@ -58,7 +58,10 @@ const (
 	Cockroach  = "cockroach"
 )
 
-const statJsonFileTemplate = "status_json_%v.json"
+const (
+	fdbStatJsonFileTemplate   = "status_json_%v.json"
+	mongoStatJsonFileTemplate = "serverStatus_%v.json"
+)
 
 const (
 	limitRange         = 100001
