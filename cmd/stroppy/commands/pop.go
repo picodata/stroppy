@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gopkg.in/inf.v0"
 )
 
@@ -36,7 +35,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 			if settings.TestSettings.UseCloudStroppy {
 				sh, err := deployment.LoadState(settings)
 				if err != nil {
-					llog.Fatalf("shell load state failed: %v", err)
+					llog.Fatalf("deployment load state failed: %v", err)
 				}
 				if err = sh.RunRemotePopTest(); err != nil {
 					llog.Fatalf("test failed with error %v", err)
@@ -85,11 +84,6 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		"add-pool", "a",
 		settings.DatabaseSettings.AddPool,
 		"count of additional connection in db pool. Default 0")
-
-	popCmd.PersistentFlags().StringVarP(&settings.DeploymentSettings.Provider,
-		"provider", "",
-		provider.Yandex,
-		"hint about which provider is used")
 
 	popCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Sharded,
 		"sharded", "",

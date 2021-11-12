@@ -135,7 +135,7 @@ type DeploymentSettings struct {
 // DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.
 func deployDefaults() *DeploymentSettings {
 	d := DeploymentSettings{
-		Provider: provider.Yandex,
+		Provider: provider.Neutral,
 		Flavor:   "small",
 		Nodes:    3,
 	}
