@@ -58,6 +58,12 @@ func (t *Terraform) InitProvider() (err error) {
 		if err != nil {
 			return merry.Prepend(err, "failed to initialized oracle provider")
 		}
+
+	case provider.Neutral:
+		t.Provider = createNeutralProvider()
+
+	default:
+		err = fmt.Errorf("unknown provider '%s'", t.settings.Provider)
 	}
 
 	return

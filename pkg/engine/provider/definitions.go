@@ -7,8 +7,9 @@ package provider
 import "errors"
 
 const (
-	Oracle = "oracle"
-	Yandex = "yandex"
+	Oracle  = "oracle"
+	Yandex  = "yandex"
+	Neutral = "neutral"
 
 	ClusterTemplateFileName = "templates.yaml"
 )
