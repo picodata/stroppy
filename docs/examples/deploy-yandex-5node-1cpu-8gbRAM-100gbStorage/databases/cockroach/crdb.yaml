@@ -24,6 +24,7 @@ spec:
   dataStore:
     pvc:
       spec:
+        storageClassName: local-path
         accessModes:
           - ReadWriteOnce
         resources:
