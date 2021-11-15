@@ -49,7 +49,7 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	}
 	defer func() {
 		if err := sourceFile.Close(); err != nil {
-			llog.Warnf("failed to close local descriptor for '%s' file: %v",
+			llog.Warnf("failed to close local '%s' descriptor: %v",
 				sourceFilePath, err)
 		}
 	}()
@@ -63,6 +63,10 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 }
 
 func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
+	if err = e.ExecuteF(`mkdir -p "%s"`, destinationPath); err != nil {
+		err = fmt.Errorf("path creation failed: %v", err)
+		return
+	}
 	destinationPath = fmt.Sprintf("ubuntu@%s:%s", e.AddressMap["external"]["master"], destinationPath)
 
 	copyDirectoryCmd := exec.Command("scp", "-r", "-i", e.sshKeyFilePath, "-o", "StrictHostKeyChecking=no",
