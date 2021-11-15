@@ -24,8 +24,6 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
-const txTimeout = 5 * time.Second
-
 type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
@@ -182,13 +180,6 @@ func (self *PostgresCluster) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
-// Client id has to be updated separately to let it expire
-const insertTransfer = `
-INSERT INTO transfer
-  (transfer_id, src_bic, src_ban, dst_bic, dst_ban, amount, state)
-  VALUES ($1, $2, $3, $4, $5, $6, 'complete')
-`
-
 func (self *PostgresCluster) InsertTransfer(transfer *model.Transfer) error {
 	res, err := self.pool.Exec(
 		context.Background(),
@@ -210,13 +201,6 @@ func (self *PostgresCluster) InsertTransfer(transfer *model.Transfer) error {
 	return nil
 }
 
-const setTransferState = `
-UPDATE transfer
-  SET state = $1
-  WHERE transfer_id = $2
-  AND amount IS NOT NULL AND client_id = $3 AND client_timestamp > now() - interval'30 second'
-`
-
 func (self *PostgresCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
 	if err != nil {
@@ -229,13 +213,6 @@ func (self *PostgresCluster) SetTransferState(state string, transferId model.Tra
 	return nil
 }
 
-const setTransferClient = `
-UPDATE transfer
-  SET client_id = $1, client_timestamp = now()
-  WHERE transfer_id = $2
-  AND amount IS NOT NULL
-`
-
 func (self *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
 	res, err := self.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
 	if err != nil {
@@ -247,13 +224,6 @@ func (self *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId mo
 
 	return nil
 }
-
-const clearTransferClient = `
-UPDATE transfer
-  SET client_id = NULL
-  WHERE transfer_id = $1
-  AND amount IS NOT NULL AND client_id = $2
-`
 
 func (self *PostgresCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
@@ -269,12 +239,6 @@ func (self *PostgresCluster) ClearTransferClient(transferId model.TransferId, cl
 	return nil
 }
 
-const deleteTransfer = `
-DELETE FROM transfer
-  WHERE transfer_id = $1
-  AND client_id = $2 AND client_timestamp > now() - interval '30 second'
-`
-
 func (self *PostgresCluster) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
 	res, err := self.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
 	if err != nil {
@@ -289,12 +253,6 @@ func (self *PostgresCluster) DeleteTransfer(transferId model.TransferId, clientI
 
 	return nil
 }
-
-const fetchTransfer = `
-SELECT src_bic, src_ban, dst_bic, dst_ban, amount, state
-  FROM transfer
-  WHERE transfer_id = $1
-`
 
 func (self *PostgresCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
 	t := new(model.Transfer)
@@ -313,12 +271,6 @@ func (self *PostgresCluster) FetchTransfer(transferId model.TransferId) (*model.
 	return t, nil
 }
 
-const fetchTransferClient = `
-SELECT client_id
-  FROM transfer
-  WHERE transfer_id = $1
-`
-
 func (self *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
 	row := self.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
 
@@ -333,17 +285,6 @@ func (self *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*
 
 	return &clientId, nil
 }
-
-const lockAccount = `
-UPDATE account
-  SET pending_transfer = CASE WHEN (pending_transfer IS NULL) THEN ($1)
-	ELSE (pending_transfer)
-  END, pending_amount = CASE WHEN (pending_amount = 0) THEN $2
-	ELSE (pending_amount)
-  END
-  WHERE bic = $3 AND ban = $4 AND balance IS NOT NULL
-  RETURNING *
-`
 
 func (self *PostgresCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
@@ -367,13 +308,6 @@ func (self *PostgresCluster) LockAccount(transferId model.TransferId, pendingAmo
 	return &acc, nil
 }
 
-const unlockAccount = `
-UPDATE account
-  SET pending_transfer = NULL, pending_amount = 0
-  WHERE bic = $1 AND ban = $2
-  AND balance IS NOT NULL AND pending_transfer = $3
-`
-
 func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
@@ -391,13 +325,6 @@ func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId mo
 	return nil
 }
 
-const updateBalance = `
-UPDATE account
-  SET pending_amount = 0, balance = $1
-  WHERE bic = $2 AND ban = $3
-  AND balance IS NOT NULL AND pending_transfer = $4
-`
-
 func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
 	res, err := self.pool.Exec(context.Background(), updateBalance, balance.UnscaledBig().Int64(), bic, ban, transferId)
 	if err != nil {
@@ -410,12 +337,6 @@ func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban str
 	return nil
 }
 
-const fetchBalance = `
-SELECT balance, pending_amount
-  FROM account
-  WHERE bic = $1 AND ban = $2
-`
-
 func (self *PostgresCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
 	row := self.pool.QueryRow(context.Background(), fetchBalance, bic, ban)
 	var balance, pendingAmount inf.Dec
@@ -425,10 +346,6 @@ func (self *PostgresCluster) FetchBalance(bic string, ban string) (*inf.Dec, *in
 	}
 	return &balance, &pendingAmount, nil
 }
-
-const fetchDeadTransfers = `
-SELECT transfer_id FROM transfer
-`
 
 func (self *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
 	rows, err := self.pool.Query(context.Background(), fetchDeadTransfers)
