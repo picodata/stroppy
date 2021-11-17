@@ -67,7 +67,7 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
 	llog.Infof("%s deploy started\n", cc.tg)
-	deployCmd := fmt.Sprintf("chmod +x %s/deploy_operator.sh && ./%s/deploy_operator.sh", cc.tg, cc.tg)
+	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}

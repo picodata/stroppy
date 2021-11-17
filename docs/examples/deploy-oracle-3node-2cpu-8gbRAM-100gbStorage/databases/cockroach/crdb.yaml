@@ -24,11 +24,12 @@ spec:
   dataStore:
     pvc:
       spec:
+        storageClassName: local-path
         accessModes:
           - ReadWriteOnce
         resources:
           requests:
-            storage: "60Gi"
+            storage: "100Gi"
         volumeMode: Filesystem
   resources:
     requests:
@@ -40,9 +41,9 @@ spec:
       memory: 8Gi
   tlsEnabled: true
 # You can set either a version of the db or a specific image name
-# cockroachDBVersion: v21.1.9
+#  cockroachDBVersion: v21.1.11
   image:
-    name: cockroachdb/cockroach:v21.1.9
+    name: cockroachdb/cockroach:v21.1.11
   # nodes refers to the number of crdb pods that are created
   # via the statefulset
   nodes: 3
@@ -52,15 +53,18 @@ spec:
   # disabled by default.  To enable please see the operator.yaml file.
 
   # The affinity field will accept any podSpec affinity rule.
-  affinity:
-    podAntiAffinity:
-       preferredDuringSchedulingIgnoredDuringExecution:
-       - weight: 100
-         podAffinityTerm:
-           labelSelector:
-             matchExpressions:
-             - key: app.kubernetes.io/instance
-               operator: In
-               values:
-               - cockroachdb
-           topologyKey: kubernetes.io/hostname
+  #affinity:
+  #  podAntiAffinity:
+  #     preferredDuringSchedulingIgnoredDuringExecution:
+  #     - weight: 100
+  #       podAffinityTerm:
+  #         labelSelector:
+  #           matchExpressions:
+  #           - key: app.kubernetes.io/instance
+  #             operator: In
+  #             values:
+  #             - cockroachdb
+  #         topologyKey: kubernetes.io/hostname
+# nodeSelectors used to match against
+#  nodeSelector:
+#    worker-type: dbms-worker
