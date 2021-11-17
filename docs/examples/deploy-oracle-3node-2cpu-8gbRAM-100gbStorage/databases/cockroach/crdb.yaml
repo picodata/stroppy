@@ -24,7 +24,10 @@ spec:
   dataStore:
     pvc:
       spec:
+<<<<<<< HEAD
 
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
         storageClassName: local-path
         accessModes:
           - ReadWriteOnce
@@ -42,7 +45,10 @@ spec:
       memory: 8Gi
   tlsEnabled: true
 # You can set either a version of the db or a specific image name
+<<<<<<< HEAD
 
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
 #  cockroachDBVersion: v21.1.11
   image:
     name: cockroachdb/cockroach:v21.1.11
@@ -68,6 +74,11 @@ spec:
   #             - cockroachdb
   #         topologyKey: kubernetes.io/hostname
 # nodeSelectors used to match against
+<<<<<<< HEAD
   nodeSelector:
     worker-type: dbms-worker
 
+=======
+#  nodeSelector:
+#    worker-type: dbms-worker
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),

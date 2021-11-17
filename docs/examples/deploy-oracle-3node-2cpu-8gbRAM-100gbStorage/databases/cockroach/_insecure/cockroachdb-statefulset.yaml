@@ -6,6 +6,7 @@ metadata:
   name: cockroachdb-public
   labels:
     worker-type: dbms-worker
+    app: cockroachdb
 spec:
   ports:
   # The main port, served by gRPC, serves Postgres-flavor SQL, internode
@@ -19,6 +20,7 @@ spec:
     name: http
   selector:
     worker-type: dbms-worker
+    app: cockroachdb
 ---
 apiVersion: v1
 kind: Service
@@ -30,6 +32,7 @@ metadata:
   name: cockroachdb
   labels:
     worker-type: dbms-worker
+    app: cockroachdb
   annotations:
     # Use this annotation in addition to the actual publishNotReadyAddresses
     # field below because the annotation will stop being respected soon but the
@@ -54,18 +57,30 @@ spec:
   publishNotReadyAddresses: true
   clusterIP: None
   selector:
+<<<<<<< HEAD
     worker-type: dbms-worker
+=======
+    app: cockroachdb
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
 ---
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   name: cockroachdb-budget
   labels:
+<<<<<<< HEAD
     worker-type: dbms-worker
 spec:
   selector:
     matchLabels:
       worker-type: dbms-worker
+=======
+    app: cockroachdb
+spec:
+  selector:
+    matchLabels:
+      app: cockroachdb
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
   maxUnavailable: 1
 ---
 apiVersion: apps/v1
@@ -77,11 +92,19 @@ spec:
   replicas: 3
   selector:
     matchLabels:
+<<<<<<< HEAD
       worker-type: dbms-worker
   template:
     metadata:
       labels:
         worker-type: dbms-worker
+=======
+      app: cockroachdb
+  template:
+    metadata:
+      labels:
+        app: cockroachdb
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
     spec:
       affinity:
         podAntiAffinity:
@@ -109,7 +132,11 @@ spec:
             memory: "8Gi"
           limits:
             cpu: "2"
+<<<<<<< HEAD
             memory: "8Gi"
+=======
+            memory: "8Gi" 
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
         ports:
         - containerPort: 26257
           name: grpc
@@ -157,7 +184,10 @@ spec:
             --insecure
             --advertise-host $(hostname -f)
             --http-addr 0.0.0.0
+<<<<<<< HEAD
             # --sql-addr=:26257
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
             --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
             --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
@@ -177,7 +207,10 @@ spec:
     spec:
       accessModes:
         - "ReadWriteOnce"
+<<<<<<< HEAD
       storageClassName: local-path
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
       resources:
         requests:
           storage: 100Gi

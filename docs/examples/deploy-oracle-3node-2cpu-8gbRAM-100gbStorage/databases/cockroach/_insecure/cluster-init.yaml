@@ -4,6 +4,7 @@ metadata:
   name: cluster-init
   labels:
     worker-type: dbms-worker
+    app: cockroachdb
 spec:
   template:
     spec:
