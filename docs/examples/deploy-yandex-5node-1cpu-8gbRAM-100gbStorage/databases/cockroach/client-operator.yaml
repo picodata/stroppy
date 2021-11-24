@@ -22,19 +22,19 @@ metadata:
 spec:
   serviceAccountName: cockroach-operator-sa
   containers:
-  - name: cockroachdb-client-secure
-    image: cockroachdb/cockroach:v21.1.9
-    imagePullPolicy: IfNotPresent
-    volumeMounts:
-    - name: client-certs
-      mountPath: /cockroach/cockroach-certs/
-    command:
-    - sleep
-    - "2147483648" # 2^31
+    - name: cockroachdb-client-secure
+      image: cockroachdb/cockroach:v21.1.9
+      imagePullPolicy: IfNotPresent
+      volumeMounts:
+        - name: client-certs
+          mountPath: /cockroach/cockroach-certs/
+      command:
+        - sleep
+        - "2147483648" # 2^31
   terminationGracePeriodSeconds: 0
   volumes:
-  - name: client-certs
-    projected:
+    - name: client-certs
+      projected:
         sources:
           - secret:
               name: cockroachdb-node

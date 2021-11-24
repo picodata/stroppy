@@ -66,5 +66,5 @@ spec:
   #             - cockroachdb
   #         topologyKey: kubernetes.io/hostname
 # nodeSelectors used to match against
-#  nodeSelector:
-#    worker-type: dbms-worker
+  nodeSelector:
+    worker-type: dbms-worker

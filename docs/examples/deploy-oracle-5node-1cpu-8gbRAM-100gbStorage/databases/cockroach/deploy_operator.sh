@@ -1,9 +1,6 @@
 #!/bin/bash
 
 
-exit 0
-
-
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 source "$SCRIPT_DIR/../../common.sh"
 
@@ -13,12 +10,10 @@ kubectl create clusterrolebinding ubuntu-cluster-admin-binding --clusterrole=clu
 
 run "applying crd for the operator" \
 kubectl apply -f "$SCRIPT_DIR/operator/crds.yaml"
-
 sleep 10
 
 run "installing operator" \
 kubectl apply -f "$SCRIPT_DIR/operator/operator.yaml"
-
 sleep 10
 
 
