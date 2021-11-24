@@ -212,4 +212,4 @@ spec:
           # size and the IOPS provisioned to the disk. Change this as necessary
           # to suit your needs, but be aware that smaller disks will typically
           # mean worse performance.
-          storage: 1024Gi
+          storage: 100Gi
