@@ -68,5 +68,3 @@ spec:
 # nodeSelectors used to match against
   nodeSelector:
     worker-type: dbms-worker
-
-
