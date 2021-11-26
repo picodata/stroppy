@@ -31,6 +31,6 @@ type Kubernetes struct {
 
 	StroppyPod *stroppy.Pod
 
-	sshTunnel   *ssh.Result
-	portForward *ssh.Result
+	KubernetesPort *ssh.Result
+	MonitoringPort *ssh.Result
 }

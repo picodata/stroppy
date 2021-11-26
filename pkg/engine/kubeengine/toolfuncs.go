@@ -147,7 +147,7 @@ func (e *Engine) parseKubernetesFilePath(path string) (podName, containerName, i
 
 // ExecuteGetingMonImages собирает данные мониторинга.
 // Осуществляется запуском скрипта get_png.sh, результат работы которого - архив с набором png-файлов
-func (e Engine) StartCollectMonitoringData(startTime int64, finishTime int64, monImagesArchName string) error {
+func (e Engine) CollectMonitoringData(startTime int64, finishTime int64, monitoringPort int, monImagesArchName string) error {
 	llog.Infoln("Starting to get monitoring images...")
 
 	llog.Debugln("start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())
@@ -160,7 +160,7 @@ func (e Engine) StartCollectMonitoringData(startTime int64, finishTime int64, mo
 	}
 
 	workingDirectory := filepath.Join(e.WorkingDirectory, "monitoring", "grafana-on-premise")
-	getImagesCmd := exec.Command("./get_png.sh", fmt.Sprintf("%v", startTime), fmt.Sprintf("%v", finishTime), monImagesArchName, workersIps)
+	getImagesCmd := exec.Command("./get_png.sh", fmt.Sprintf("%v", startTime), fmt.Sprintf("%v", finishTime), fmt.Sprintf("%v", monitoringPort), monImagesArchName, workersIps)
 	getImagesCmd.Dir = workingDirectory
 	if result, err := getImagesCmd.CombinedOutput(); err != nil {
 		llog.Errorln(string(result))

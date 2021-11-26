@@ -41,9 +41,9 @@ func (k *Kubernetes) Deploy() (err error) {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
 
-	k.sshTunnel = k.Engine.OpenSecureShellTunnel(kubeengine.SshEntity, clusterK8sPort)
-	if k.sshTunnel.Err != nil {
-		err = merry.Prepend(k.sshTunnel.Err, "failed to create ssh tunnel")
+	k.KubernetesPort = k.Engine.OpenSecureShellTunnel(kubeengine.SshEntity, clusterK8sPort)
+	if k.KubernetesPort.Err != nil {
+		err = merry.Prepend(k.KubernetesPort.Err, "failed to create ssh tunnel")
 		return
 	}
 	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
@@ -63,9 +63,9 @@ func (k *Kubernetes) Deploy() (err error) {
 }
 
 func (k *Kubernetes) OpenPortForwarding() (err error) {
-	k.portForward = k.Engine.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort)
-	if k.portForward.Err != nil {
-		return merry.Prepend(k.portForward.Err, "cluster monitoring")
+	k.MonitoringPort = k.Engine.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort)
+	if k.MonitoringPort.Err != nil {
+		return merry.Prepend(k.MonitoringPort.Err, "cluster monitoring")
 	}
 
 	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
@@ -73,7 +73,7 @@ func (k *Kubernetes) OpenPortForwarding() (err error) {
 }
 
 func (k *Kubernetes) Shutdown() {
-	k.portForward.Tunnel.Close()
+	k.MonitoringPort.Tunnel.Close()
 }
 
 // deploy - развернуть k8s внутри кластера в cloud
@@ -116,7 +116,7 @@ func (k *Kubernetes) deploy() (err error) {
 }
 
 func (k *Kubernetes) Stop() {
-	defer k.sshTunnel.Tunnel.Close()
+	defer k.KubernetesPort.Tunnel.Close()
 	llog.Infoln("status of ssh tunnel close: success")
 }
 
@@ -165,10 +165,4 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 
 	_ = checkSession.Close()
 	return true, nil
-}
-
-func (k *Kubernetes) GetInfraPorts() (grafanaPort, kubernetesMasterPort int) {
-	grafanaPort = k.portForward.Port
-	kubernetesMasterPort = k.sshTunnel.Port
-	return
 }
