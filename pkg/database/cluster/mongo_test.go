@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
@@ -16,37 +15,19 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-var mongoCluster *MongoDBCluster
 
-type testSettings struct {
-	Count int
-	Seed  int
-}
-
-var receivedAccount bson.M
-var receivedTransfer bson.M
-var receivedAccounts []model.Account
-var rand fixed_random_source.FixedRandomSource
-
-const (
-	poolSize                  = 128
-	dbUrl                     = "mongodb://127.0.0.1:30001,127.0.0.1:30002,127.0.0.1:30003/stroppy"
-	expectedCount             = 10000
-	defaultBanRangeMultiplier = 1.1
-)
-
-func TestNewMongoDBCluster(t *testing.T) {
+func NewTestMongoDBCluster(t *testing.T) {
 	var err error
 	// пока оставляем так, чтобы потом заменить на конкретный адрес
 	sharded := false
-	mongoCluster, err = NewMongoDBCluster(dbUrl, uint64(poolSize), sharded)
+	mongoCluster, err = NewMongoDBCluster(mongoDBUrl, uint64(poolSize), sharded)
 	if err != nil {
 		t.Errorf("TestNewMongoDBCluster() received internal error  %s, but expected nil", err)
 	}
 
 }
 
-func TestBootstrapDB(t *testing.T) {
+func MongoBootstrapDB(t *testing.T) {
 	var err error
 	var collNames []string
 	// используем значения по умолчанию
@@ -66,6 +47,7 @@ func TestBootstrapDB(t *testing.T) {
 			t.Error("checksum collection found after drop. Expected collection not found")
 		}
 	}
+
 	// проверяем, что коллекция счетов есть, но пустая
 	count, err := mongoCluster.mongoModel.accounts.CountDocuments(context.TODO(), bson.D{{}})
 	if count != 0 {
@@ -117,7 +99,7 @@ func TestBootstrapDB(t *testing.T) {
 	}
 }
 
-func TestInsertAccount(t *testing.T) {
+func MongoInsertAccount(t *testing.T) {
 	for i := 0; i < 2; i++ {
 
 		rand.Init(expectedCount, int(time.Now().UnixNano()), defaultBanRangeMultiplier)
@@ -171,7 +153,7 @@ func TestInsertAccount(t *testing.T) {
 	}
 }
 
-func TestMakeAtomicTransfer(t *testing.T) {
+func MongoMakeAtomicTransfer(t *testing.T) {
 
 	expectedTransfer := model.Transfer{
 		Id:        model.NewTransferId(),
