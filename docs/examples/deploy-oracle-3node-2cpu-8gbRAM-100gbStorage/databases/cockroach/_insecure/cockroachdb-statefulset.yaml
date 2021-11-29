@@ -57,30 +57,18 @@ spec:
   publishNotReadyAddresses: true
   clusterIP: None
   selector:
-<<<<<<< HEAD
     worker-type: dbms-worker
-=======
-    app: cockroachdb
->>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
 ---
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   name: cockroachdb-budget
   labels:
-<<<<<<< HEAD
     worker-type: dbms-worker
 spec:
   selector:
     matchLabels:
       worker-type: dbms-worker
-=======
-    app: cockroachdb
-spec:
-  selector:
-    matchLabels:
-      app: cockroachdb
->>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
   maxUnavailable: 1
 ---
 apiVersion: apps/v1
@@ -92,19 +80,11 @@ spec:
   replicas: 3
   selector:
     matchLabels:
-<<<<<<< HEAD
       worker-type: dbms-worker
   template:
     metadata:
       labels:
         worker-type: dbms-worker
-=======
-      app: cockroachdb
-  template:
-    metadata:
-      labels:
-        app: cockroachdb
->>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
     spec:
       affinity:
         podAntiAffinity:
@@ -133,10 +113,14 @@ spec:
           limits:
             cpu: "2"
 <<<<<<< HEAD
+<<<<<<< HEAD
             memory: "8Gi"
 =======
             memory: "8Gi" 
 >>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+            memory: "8Gi"
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
         ports:
         - containerPort: 26257
           name: grpc
@@ -185,12 +169,16 @@ spec:
             --advertise-host $(hostname -f)
             --http-addr 0.0.0.0
 <<<<<<< HEAD
+<<<<<<< HEAD
             # --sql-addr=:26257
 =======
 >>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+            # --sql-addr=:26257
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
-            --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
-            --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            # --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            # --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
       # No pre-stop hook is required, a SIGTERM plus some time is all that's
       # needed for graceful shutdown of a node.
       terminationGracePeriodSeconds: 60
@@ -206,11 +194,18 @@ spec:
       name: datadir
     spec:
       accessModes:
+<<<<<<< HEAD
         - "ReadWriteOnce"
 <<<<<<< HEAD
       storageClassName: local-path
 =======
 >>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+        - ReadWriteOnce
+      storageClassName: local-path
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
       resources:
         requests:
           storage: 100Gi
+  nodeSelector:
+    worker-type: dbms-worker

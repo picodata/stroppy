@@ -269,7 +269,10 @@ const cockroachTimeoutSettings = 50 * time.Second
 
 func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, err error) {
 	ctx, cancel := context.WithTimeout(cockroach.ctxt, cockroachTimeoutSettings)
+<<<<<<< HEAD
 
+=======
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
 	defer cancel()
 
 	var rows pgx.Rows
@@ -366,8 +369,12 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
+<<<<<<< HEAD
 
 const cockroachTxTimeout = 45 * time.Second
+=======
+const cockroachTxTimeout = 15 * time.Second
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
 
 func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
@@ -394,10 +401,11 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	sourceAccount := transfer.Acs[0]
 	destAccount := transfer.Acs[1]
 
+	insertTransferCmd := `INSERT INTO transfer (transfer_id, src_bic, src_ban, dst_bic, dst_ban, amount, state)
+	VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, 'complete');`
 	_, err = tx.Exec(
 		ctx,
-		insertTransfer,
-		transfer.Id,
+		insertTransferCmd,
 		sourceAccount.Bic,
 		sourceAccount.Ban,
 		destAccount.Bic,
@@ -432,6 +440,10 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	// 	5.											--- txB commits
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
+<<<<<<< HEAD
+=======
+	var sourceHistoryItem, destHistoryItem *model.HistoryItem
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
