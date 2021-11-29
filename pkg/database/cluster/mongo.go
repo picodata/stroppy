@@ -41,6 +41,11 @@ type mongoModel struct {
 	checksum  *mongo.Collection
 }
 
+type AggregateResult struct {
+	ID      string `bson:"_id"`
+	Balance int64  `bson:"sum"`
+}
+
 func (cluster *MongoDBCluster) InsertTransfer(_ *model.Transfer) error {
 	return errors.New("implement me")
 }
@@ -338,11 +343,6 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	var totalBalance int64
-
-	type AggregateResult struct {
-		ID      string `bson:"_id"`
-		Balance int64  `bson:"sum"`
-	}
 
 	var result AggregateResult
 
