@@ -109,7 +109,7 @@ spec:
             memory: "8Gi"
           limits:
             cpu: "2"
-            memory: "8Gi" 
+            memory: "8Gi"
         ports:
         - containerPort: 26257
           name: grpc
@@ -157,9 +157,10 @@ spec:
             --insecure
             --advertise-host $(hostname -f)
             --http-addr 0.0.0.0
+            # --sql-addr=:26257
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
-            --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
-            --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            # --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            # --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
       # No pre-stop hook is required, a SIGTERM plus some time is all that's
       # needed for graceful shutdown of a node.
       terminationGracePeriodSeconds: 60
@@ -175,7 +176,10 @@ spec:
       name: datadir
     spec:
       accessModes:
-        - "ReadWriteOnce"
+        - ReadWriteOnce
+      storageClassName: local-path
       resources:
         requests:
           storage: 100Gi
+  nodeSelector:
+    worker-type: dbms-worker

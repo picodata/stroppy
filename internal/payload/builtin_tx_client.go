@@ -70,7 +70,6 @@ func (c *ClientBasicTx) Init(cluster BasicTxTransfer, oracle *database.Oracle, p
 	c.payStats = payStats
 }
 
-//nolint:gosec
 func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
@@ -166,7 +165,6 @@ func payWorkerBuiltinTx(
 }
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
-//nolint:unparam
 func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup

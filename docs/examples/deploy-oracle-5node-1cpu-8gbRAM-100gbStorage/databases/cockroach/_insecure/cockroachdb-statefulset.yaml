@@ -66,7 +66,7 @@ spec:
   selector:
     matchLabels:
       app: cockroachdb
-  maxUnavailable: 1
+  maxUnavailable: 2
 ---
 apiVersion: apps/v1
 kind: StatefulSet
@@ -74,7 +74,7 @@ metadata:
   name: cockroachdb
 spec:
   serviceName: "cockroachdb"
-  replicas: 3
+  replicas: 5
   selector:
     matchLabels:
       app: cockroachdb
@@ -105,10 +105,10 @@ spec:
         # Note that requests and limits should have identical values.
         resources:
           requests:
-            cpu: "2"
+            cpu: "1"
             memory: "8Gi"
           limits:
-            cpu: "2"
+            cpu: "1"
             memory: "8Gi" 
         ports:
         - containerPort: 26257
@@ -157,8 +157,9 @@ spec:
             --insecure
             --advertise-host $(hostname -f)
             --http-addr 0.0.0.0
-            --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
-            --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdd,cockroachdb-3.cockroachdb,cockroachdb-4.cockroachdb
+            --cache=25%
+            # --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
             --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
       # No pre-stop hook is required, a SIGTERM plus some time is all that's
       # needed for graceful shutdown of a node.
@@ -175,7 +176,10 @@ spec:
       name: datadir
     spec:
       accessModes:
-        - "ReadWriteOnce"
+        - ReadWriteOnce
+      storageClassName: local-path
       resources:
         requests:
           storage: 100Gi
+  nodeSelector:
+    worker-type: dbms-worker

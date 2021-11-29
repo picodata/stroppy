@@ -3,13 +3,13 @@ small:
   platform: "standard-v2"
   cpu: 2
   ram: 12
-  disk: 1000
+  disk: 100
 standard:
   description: "Standard configuration: 8 CPU VM.Standard.E3.Flex, 8 Gb RAM, 50 Gb disk"
   platform: "standard-v2"
-  cpu: 8
-  ram: 8
-  disk: 50
+  cpu: 1
+  ram: 12
+  disk: 100
 large:
   description: "Large configuration: 16 CPU VM.Standard.E3.Flex, 16 Gb RAM, 200 Gb disk"
   platform: "standard-v2"

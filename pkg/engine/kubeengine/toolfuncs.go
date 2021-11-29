@@ -160,8 +160,13 @@ func (e Engine) CollectMonitoringData(startTime int64, finishTime int64, monitor
 	}
 
 	workingDirectory := filepath.Join(e.WorkingDirectory, "monitoring", "grafana-on-premise")
-	getImagesCmd := exec.Command("./get_png.sh", fmt.Sprintf("%v", startTime), fmt.Sprintf("%v", finishTime), fmt.Sprintf("%v", monitoringPort), monImagesArchName, workersIps)
+	getImagesCmd := exec.Command("./get_png.sh",
+		fmt.Sprintf("%v", startTime),
+		fmt.Sprintf("%v", finishTime),
+		fmt.Sprintf("%v", monitoringPort),
+		monImagesArchName, workersIps)
 	getImagesCmd.Dir = workingDirectory
+
 	if result, err := getImagesCmd.CombinedOutput(); err != nil {
 		llog.Errorln(string(result))
 		return merry.Prepend(err, "failed to get monitoring images")

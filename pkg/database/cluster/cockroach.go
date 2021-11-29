@@ -258,8 +258,10 @@ func (cockroach *CockroachDatabase) GetClusterType() DBClusterType {
 	return CockroachClusterType
 }
 
+const cockroachTimeoutSettings = 50 * time.Second
+
 func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, err error) {
-	ctx, cancel := context.WithTimeout(cockroach.ctxt, timeOutSettings*time.Second)
+	ctx, cancel := context.WithTimeout(cockroach.ctxt, cockroachTimeoutSettings)
 	defer cancel()
 
 	var rows pgx.Rows
@@ -356,11 +358,13 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
+const cockroachTxTimeout = 15 * time.Second
+
 func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
-	ctx, cancel := context.WithTimeout(context.Background(), txTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
 	defer cancel()
 
-	// RepeateableRead is sufficient to provide consistent balance update even though
+	// RepeatableRead is sufficient to provide consistent balance update even though
 	// serialization anomalies are allowed that should not affect us (no dependable transaction, except obviously blocked rows)
 	tx, err := cockroach.pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel: pgx.RepeatableRead,
@@ -381,10 +385,11 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	sourceAccount := transfer.Acs[0]
 	destAccount := transfer.Acs[1]
 
+	insertTransferCmd := `INSERT INTO transfer (transfer_id, src_bic, src_ban, dst_bic, dst_ban, amount, state)
+	VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, 'complete');`
 	_, err = tx.Exec(
 		ctx,
-		insertTransfer,
-		transfer.Id,
+		insertTransferCmd,
 		sourceAccount.Bic,
 		sourceAccount.Ban,
 		destAccount.Bic,
@@ -420,7 +425,6 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
 	var sourceHistoryItem, destHistoryItem *model.HistoryItem
-	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
