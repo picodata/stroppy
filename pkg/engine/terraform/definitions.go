@@ -23,9 +23,8 @@ var errVersionParsed = errors.New("failed to parse version")
 type Terraform struct {
 	settings *config.DeploymentSettings
 
-	exePath           string
-	templatesFilePath string
-	stateFilePath     string
+	exePath       string
+	stateFilePath string
 
 	addressMap map[string]map[string]string
 	isInit     bool

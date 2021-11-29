@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	llog "github.com/sirupsen/logrus"
+
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 
 	"github.com/ansel1/merry"
@@ -65,6 +67,7 @@ func (sh *shell) executePay(_ string) (err error) {
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+	llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -127,6 +130,7 @@ func (sh *shell) executePop(_ string) (err error) {
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+	llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -161,8 +165,13 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"
+
 	case cluster.MongoDB:
 		settings.DBURL = "mongodb://stroppy:stroppy@sample-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
+
+	case cluster.Cockroach:
+		settings.DBURL = "postgres://stroppy:stroppy@/stroppy?sslmode=disable"
+
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return

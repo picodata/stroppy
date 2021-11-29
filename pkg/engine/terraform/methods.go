@@ -30,12 +30,11 @@ func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder s
 	addressMap := make(map[string]map[string]string)
 
 	t = &Terraform{
-		settings:          settings,
-		exePath:           filepath.Join(exeFolder, "terraform"),
-		templatesFilePath: filepath.Join(cfgFolder, "cluster", provider.ClusterTemplateFileName),
-		addressMap:        addressMap,
-		isInit:            false,
-		WorkDirectory:     cfgFolder,
+		settings:      settings,
+		exePath:       filepath.Join(exeFolder, "terraform"),
+		addressMap:    addressMap,
+		isInit:        false,
+		WorkDirectory: cfgFolder,
 	}
 	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 

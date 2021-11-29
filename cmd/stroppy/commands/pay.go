@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"time"
+
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
@@ -58,9 +60,12 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 
 				llog.Infof("Initial balance: %v", sum)
 
+				beginTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 				if err = p.Pay(""); err != nil {
 					llog.Fatalf("%v", err)
 				}
+				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+				llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				if settings.DatabaseSettings.Check {
 					balance, err := p.Check(sum)

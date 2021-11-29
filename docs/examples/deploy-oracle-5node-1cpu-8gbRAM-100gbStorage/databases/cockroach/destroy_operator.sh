@@ -5,7 +5,7 @@ source "$SCRIPT_DIR/../../common.sh"
 
 
 run "removing cockroachdb monitoring facility" \
-run kubectl delete -f "$SCRIPT_DIR/monitoring/prometheus.yaml"
+kubectl delete -f "$SCRIPT_DIR/monitoring/prometheus.yaml"
 
 run "deleting cockroachdb cluster" \
 kubectl delete -f "$SCRIPT_DIR/crdb.yaml"
