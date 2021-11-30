@@ -385,11 +385,10 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	sourceAccount := transfer.Acs[0]
 	destAccount := transfer.Acs[1]
 
-	insertTransferCmd := `INSERT INTO transfer (transfer_id, src_bic, src_ban, dst_bic, dst_ban, amount, state)
-	VALUES (uuid_generate_v4(), $1, $2, $3, $4, $5, 'complete');`
 	_, err = tx.Exec(
 		ctx,
-		insertTransferCmd,
+		insertTransfer,
+		transfer.Id,
 		sourceAccount.Bic,
 		sourceAccount.Ban,
 		destAccount.Bic,
