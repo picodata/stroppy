@@ -10,7 +10,7 @@ spec:
 #  pause: true
 #  unmanaged: false
   crVersion: 1.10.0
-  image: percona/percona-server-mongodb:4.4.6-8
+  image: percona/percona-server-mongodb:4.4.8-9
   imagePullPolicy: Always
 #  imagePullSecrets:
 #    - name: private-registry-credentials
@@ -55,11 +55,11 @@ spec:
         antiAffinityTopologyKey: "kubernetes.io/hostname"
     resources:
       limits:
-        cpu: "1000m"
-        memory: "8G"
+        cpu: "8000m"
+        memory: "16G"
       requests:
-        cpu: "1000m"
-        memory: "8G"
+        cpu: "8000m"
+        memory: "16G"
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: local-path
@@ -68,7 +68,7 @@ spec:
           requests:
             storage: 100Gi
 
-  - name: rs1
+  - name: rs0
     size: 3
     storage:
       engine: wiredTiger
@@ -89,15 +89,85 @@ spec:
       size: 1
       affinity:
         antiAffinityTopologyKey: "kubernetes.io/hostname"
-      nodeSelector: 
-        worker-type: stroppy-worker
     resources:
       limits:
-        cpu: "1000m"
-        memory: "8G"
+        cpu: "8000m"
+        memory: "16G"
       requests:
-        cpu: "1000m"
-        memory: "8G"
+        cpu: "8000m"
+        memory: "16G"
+    volumeSpec:
+      persistentVolumeClaim:
+        storageClassName: local-path
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 100Gi
+
+  - name: rs2
+    size: 3
+    storage:
+      engine: wiredTiger
+    affinity:
+      antiAffinityTopologyKey: "kubernetes.io/hostname"
+    nodeSelector:
+      worker-type: dbms-worker
+    expose:
+      enabled: false
+      exposeType: ClusterIP
+    nonvoting:
+      enabled: false
+      size: 1
+      affinity:
+        antiAffinityTopologyKey: "kubernetes.io/hostname"
+    arbiter:
+      enabled: false
+      size: 1
+      affinity:
+        antiAffinityTopologyKey: "kubernetes.io/hostname"
+    resources:
+      limits:
+        cpu: "8000m"
+        memory: "16G"
+      requests:
+        cpu: "8000m"
+        memory: "16G"
+    volumeSpec:
+      persistentVolumeClaim:
+        storageClassName: local-path
+        accessModes: [ "ReadWriteOnce" ]
+        resources:
+          requests:
+            storage: 100Gi  
+
+  - name: rs3
+    size: 3
+    storage:
+      engine: wiredTiger
+    affinity:
+      antiAffinityTopologyKey: "kubernetes.io/hostname"
+    nodeSelector:
+      worker-type: dbms-worker
+    expose:
+      enabled: false
+      exposeType: ClusterIP
+    nonvoting:
+      enabled: false
+      size: 1
+      affinity:
+        antiAffinityTopologyKey: "kubernetes.io/hostname"
+    arbiter:
+      enabled: false
+      size: 1
+      affinity:
+        antiAffinityTopologyKey: "kubernetes.io/hostname"
+    resources:
+      limits:
+        cpu: "8000m"
+        memory: "16G"
+      requests:
+        cpu: "8000m"
+        memory: "16G"
     volumeSpec:
       persistentVolumeClaim:
         storageClassName: local-path
@@ -124,11 +194,11 @@ spec:
         exposeType: ClusterIP
       resources:
         limits:
-          cpu: "300m"
-          memory: "0.5G"
+          cpu: "1000m"
+          memory: "2G"
         requests:
-          cpu: "300m"
-          memory: "0.5G"
+          cpu: "1000m"
+          memory: "2G"
       volumeSpec:
         persistentVolumeClaim:
           storageClassName: local-path
@@ -145,10 +215,10 @@ spec:
         worker-type: dbms-worker
       resources:
         limits:
-          cpu: "1000m"
+          cpu: "2000m"
           memory: "0.5G"
         requests:
-          cpu: "1000m"
+          cpu: "2000m"
           memory: "0.5G"
       expose:
         exposeType: ClusterIP
