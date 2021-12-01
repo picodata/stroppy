@@ -6,7 +6,6 @@ package cluster
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -386,9 +385,9 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	// Rollback is safe to call even if the tx is already closed, so if
 	// the tx commits successfully, this is a no-op
 	defer func() {
-		err := tx.Rollback(context.Background())
-		if err != nil && err != pgx.ErrTxClosed {
-			panic(merry.WithCause(ErrConsistencyViolation, fmt.Errorf("failed to rollback transaction: %s", err)))
+		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
+			llog.Errorf("failed to rollback transaction: '%v'", err)
+			panic(ErrConsistencyViolation)
 		}
 	}()
 
