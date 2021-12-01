@@ -104,7 +104,6 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 				if sleepDuration > maxSleepDuration {
 					sleepDuration = maxSleepDuration
 				}
-
 				continue
 			}
 			if errors.Is(err, cluster.ErrInsufficientFunds) {
