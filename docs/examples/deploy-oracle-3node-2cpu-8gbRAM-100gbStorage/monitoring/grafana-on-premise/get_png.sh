@@ -1,15 +1,23 @@
 #!/bin/bash
-# Usage: 
-# ./get_png.sh 1622733157321 1622744447611
-# where $1 start in nuix time, $2 end in nuix time
-# vars
+# Example usage: 
+# ./get_png.sh 1637859362000 1637895618000 3000 mongo_100mln_pay_6cpu_16GB_without_operator_with_arb.tar.gz "10.1.20.171;10.1.20.73;10.1.20.210;10.1.20.90;10.1.20.138"
+# where 
+#$1 -  start in unix time, 
+#$2 - end in unix time
+#$3 - port of grafana
+#$4 - name of archive with dashboard images
+#$5 - string with internal cluster machines ip addresses
+#
+#
+#
 rm -rf png
 
 start=$1
 end=$2
-arch_name=$3
-ip_string=$4
-base_url="http://admin:admin@localhost:3000/render/d-solo"
+port=$3
+arch_name=$4
+ip_string=$5
+base_url="http://admin:admin@localhost:$port/render/d-solo"
 tz="tz=Europe%2FMoscow"
 
 ip_array=($(echo $ip_string | tr ";" "\n"))

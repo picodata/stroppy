@@ -72,7 +72,7 @@ func (sh *shell) executePay(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
@@ -134,7 +134,7 @@ func (sh *shell) executePop(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
@@ -162,7 +162,7 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"
 	case cluster.MongoDB:
-		settings.DBURL = "mongodb://stroppy:stroppy@my-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
+		settings.DBURL = "mongodb://stroppy:stroppy@sample-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return

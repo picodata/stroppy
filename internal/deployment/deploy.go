@@ -180,7 +180,6 @@ func (sh *shell) deploy() (err error) {
 
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
 
-	grafanaPort, kubernetesMasterPort := sh.k.GetInfraPorts()
-	llog.Infof(interactiveUsageHelpTemplate, grafanaPort, kubernetesMasterPort)
+	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 	return
 }

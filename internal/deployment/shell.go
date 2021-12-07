@@ -129,7 +129,7 @@ func (sh *shell) RunRemotePayTest() (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		err = merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
@@ -153,7 +153,7 @@ func (sh *shell) RunRemotePopTest() (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		err = merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
