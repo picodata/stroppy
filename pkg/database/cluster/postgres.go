@@ -535,25 +535,25 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 	// 	5.											--- txB commits
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
-	var sourceHistoryItem, destHistoryItem *model.HistoryItem
+
 	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
-		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	} else {
-		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
@@ -569,43 +569,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error 
 		return merry.Prepend(err, "failed to commit tx")
 	}
 
-	_, err = self.pool.Exec(
-		ctx,
-		`
-		INSERT INTO history (
-			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
-		) VALUES ($1, $2, $3, $4, $5, $6, $7);
-		`,
-		sourceHistoryItem.ID,
-		sourceHistoryItem.TransferID,
-		sourceHistoryItem.AccountBic,
-		sourceHistoryItem.AccountBan,
-		sourceHistoryItem.OldBalance.UnscaledBig().Uint64(),
-		sourceHistoryItem.NewBalance.UnscaledBig().Uint64(),
-		sourceHistoryItem.OperationTime,
-	)
-	if err != nil {
-		return merry.Prepend(err, "failed to insert new history item")
-	}
-
-	_, err = self.pool.Exec(
-		ctx,
-		`
-		INSERT INTO history (
-			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
-		) VALUES ($1, $2, $3, $4, $5, $6, $7);
-		`,
-		destHistoryItem.ID,
-		destHistoryItem.TransferID,
-		destHistoryItem.AccountBic,
-		destHistoryItem.AccountBan,
-		destHistoryItem.OldBalance.UnscaledBig().Uint64(),
-		destHistoryItem.NewBalance.UnscaledBig().Uint64(),
-		destHistoryItem.OperationTime,
-	)
-	if err != nil {
-		return merry.Prepend(err, "failed to insert new history item")
-	}
+	merry.Prepend(err, "failed to insert new history item")
 
 	return nil
 }
