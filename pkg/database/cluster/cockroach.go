@@ -358,7 +358,7 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
-const cockroachTxTimeout = 15 * time.Second
+const cockroachTxTimeout = 45 * time.Second
 
 func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
@@ -423,75 +423,35 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	// 	5.											--- txB commits
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
-	var sourceHistoryItem, destHistoryItem *model.HistoryItem
 	if sourceAccount.AccountID() > destAccount.AccountID() {
-		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	} else {
-		destHistoryItem, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		sourceHistoryItem, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return ErrTxRollback
 			}
 		}
 		return merry.Prepend(err, "failed to commit tx")
-	}
-
-	_, err = cockroach.pool.Exec(
-		ctx,
-		`
-		INSERT INTO history (
-			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
-		) VALUES ($1, $2, $3, $4, $5, $6, $7);
-		`,
-		sourceHistoryItem.ID,
-		sourceHistoryItem.TransferID,
-		sourceHistoryItem.AccountBic,
-		sourceHistoryItem.AccountBan,
-		sourceHistoryItem.OldBalance.UnscaledBig().Uint64(),
-		sourceHistoryItem.NewBalance.UnscaledBig().Uint64(),
-		sourceHistoryItem.OperationTime,
-	)
-	if err != nil {
-		return merry.Prepend(err, "failed to insert new history item")
-	}
-
-	_, err = cockroach.pool.Exec(
-		ctx,
-		`
-		INSERT INTO history (
-			id, transfer_id, account_bic, account_ban, old_balance, new_balance, operation_time
-		) VALUES ($1, $2, $3, $4, $5, $6, $7);
-		`,
-		destHistoryItem.ID,
-		destHistoryItem.TransferID,
-		destHistoryItem.AccountBic,
-		destHistoryItem.AccountBan,
-		destHistoryItem.OldBalance.UnscaledBig().Uint64(),
-		destHistoryItem.NewBalance.UnscaledBig().Uint64(),
-		destHistoryItem.OperationTime,
-	)
-	if err != nil {
-		return merry.Prepend(err, "failed to insert new history item")
 	}
 
 	return nil

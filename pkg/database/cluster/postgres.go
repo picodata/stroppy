@@ -391,7 +391,6 @@ func WithdrawMoney(
 	var newBalance int64
 	var operationTime time.Time
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
-		//nolint:errorlint
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return nil, ErrTxRollback
@@ -443,7 +442,6 @@ func TopUpMoney(
 	var newBalance int64
 	var operationTime time.Time
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
-		//nolint:errorlint
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return nil, ErrTxRollback
