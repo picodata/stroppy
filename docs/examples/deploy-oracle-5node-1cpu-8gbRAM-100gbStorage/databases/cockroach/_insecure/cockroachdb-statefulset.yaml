@@ -5,7 +5,7 @@ metadata:
   # automatically load balance connections to the different database pods.
   name: cockroachdb-public
   labels:
-    app: cockroachdb
+    worker-type: dbms-worker
 spec:
   ports:
   # The main port, served by gRPC, serves Postgres-flavor SQL, internode
@@ -18,7 +18,7 @@ spec:
     targetPort: 8080
     name: http
   selector:
-    app: cockroachdb
+    worker-type: dbms-worker
 ---
 apiVersion: v1
 kind: Service
@@ -29,7 +29,7 @@ metadata:
   # in most circumstances.
   name: cockroachdb
   labels:
-    app: cockroachdb
+    worker-type: dbms-worker
   annotations:
     # Use this annotation in addition to the actual publishNotReadyAddresses
     # field below because the annotation will stop being respected soon but the
@@ -54,18 +54,18 @@ spec:
   publishNotReadyAddresses: true
   clusterIP: None
   selector:
-    app: cockroachdb
+    worker-type: dbms-worker
 ---
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget
 metadata:
   name: cockroachdb-budget
   labels:
-    app: cockroachdb
+    worker-type: dbms-worker
 spec:
   selector:
     matchLabels:
-      app: cockroachdb
+      worker-type: dbms-worker
   maxUnavailable: 2
 ---
 apiVersion: apps/v1
@@ -77,11 +77,11 @@ spec:
   replicas: 5
   selector:
     matchLabels:
-      app: cockroachdb
+      worker-type: dbms-worker
   template:
     metadata:
       labels:
-        app: cockroachdb
+        worker-type: dbms-worker
     spec:
       affinity:
         podAntiAffinity:
@@ -159,7 +159,6 @@ spec:
             --http-addr 0.0.0.0
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb,cockroachdb-3.cockroachdb,cockroachdb-4.cockroachdb
             --cache=25%
-            # --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
             --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
       # No pre-stop hook is required, a SIGTERM plus some time is all that's
       # needed for graceful shutdown of a node.
@@ -176,10 +175,8 @@ spec:
       name: datadir
     spec:
       accessModes:
-        - ReadWriteOnce
+        - "ReadWriteOnce"
       storageClassName: local-path
       resources:
         requests:
           storage: 100Gi
-  nodeSelector:
-    worker-type: dbms-worker

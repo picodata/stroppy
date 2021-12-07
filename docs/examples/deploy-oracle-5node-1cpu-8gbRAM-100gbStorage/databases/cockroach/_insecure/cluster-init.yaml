@@ -3,7 +3,7 @@ kind: Job
 metadata:
   name: cluster-init
   labels:
-    app: cockroachdb
+    worker-type: dbms-worker
 spec:
   template:
     spec:

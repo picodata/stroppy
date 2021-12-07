@@ -73,6 +73,10 @@ func (c *ClientBasicTx) Init(cluster BasicTxTransfer, oracle *database.Oracle, p
 func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
+
+	errCockroachTxClosed := errors.New("tx is closed")
+	errCockroachUnexpectedEOF := errors.New("unexpected EOF")
+
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
@@ -86,7 +90,7 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 				Code: 1009,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1007,
-			}) || errors.Is(err, mongo.CommandError{
+			}) || errors.Is(err, errCockroachTxClosed) || errors.Is(err, errCockroachUnexpectedEOF) || errors.Is(err, mongo.CommandError{
 				Code: 133,
 				// https://gitlab.com/picodata/openway/stroppy/-/issues/57
 			}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
