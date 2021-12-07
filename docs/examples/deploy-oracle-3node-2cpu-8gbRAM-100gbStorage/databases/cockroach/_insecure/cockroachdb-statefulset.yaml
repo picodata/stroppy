@@ -6,7 +6,6 @@ metadata:
   name: cockroachdb-public
   labels:
     worker-type: dbms-worker
-    app: cockroachdb
 spec:
   ports:
   # The main port, served by gRPC, serves Postgres-flavor SQL, internode
@@ -20,7 +19,6 @@ spec:
     name: http
   selector:
     worker-type: dbms-worker
-    app: cockroachdb
 ---
 apiVersion: v1
 kind: Service
@@ -32,7 +30,10 @@ metadata:
   name: cockroachdb
   labels:
     worker-type: dbms-worker
+<<<<<<< HEAD
     app: cockroachdb
+=======
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
   annotations:
     # Use this annotation in addition to the actual publishNotReadyAddresses
     # field below because the annotation will stop being respected soon but the
@@ -177,8 +178,8 @@ spec:
             # --sql-addr=:26257
 >>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
-            # --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
-            # --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
+            --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
       # No pre-stop hook is required, a SIGTERM plus some time is all that's
       # needed for graceful shutdown of a node.
       terminationGracePeriodSeconds: 60
@@ -195,6 +196,7 @@ spec:
     spec:
       accessModes:
 <<<<<<< HEAD
+<<<<<<< HEAD
         - "ReadWriteOnce"
 <<<<<<< HEAD
       storageClassName: local-path
@@ -202,10 +204,11 @@ spec:
 >>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
 =======
         - ReadWriteOnce
+=======
+        - "ReadWriteOnce"
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
       storageClassName: local-path
 >>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
       resources:
         requests:
           storage: 100Gi
-  nodeSelector:
-    worker-type: dbms-worker

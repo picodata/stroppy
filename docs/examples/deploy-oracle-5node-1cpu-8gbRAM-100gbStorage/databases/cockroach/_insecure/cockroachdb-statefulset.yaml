@@ -184,5 +184,3 @@ spec:
       resources:
         requests:
           storage: 100Gi
-  nodeSelector:
-    worker-type: dbms-worker

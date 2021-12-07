@@ -3,11 +3,7 @@ kind: Job
 metadata:
   name: cluster-init
   labels:
-<<<<<<< HEAD
     worker-type: dbms-worker
-=======
-    app: cockroachdb
->>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
 spec:
   template:
     spec:

@@ -370,11 +370,15 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
 
 const cockroachTxTimeout = 45 * time.Second
 =======
 const cockroachTxTimeout = 15 * time.Second
 >>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
+=======
+const cockroachTxTimeout = 45 * time.Second
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 
 func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
@@ -440,9 +444,12 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
 	var sourceHistoryItem, destHistoryItem *model.HistoryItem
 >>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
+=======
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
@@ -458,6 +465,10 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
+<<<<<<< HEAD
+=======
+
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
