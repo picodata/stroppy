@@ -74,9 +74,6 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
 
-	errCockroachTxClosed := errors.New("tx is closed")
-	errCockroachUnexpectedEOF := errors.New("unexpected EOF")
-
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
