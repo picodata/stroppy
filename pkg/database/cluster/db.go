@@ -28,6 +28,9 @@ var (
 
 	// ErrDuplicateKey is returned then there already such unique key
 	ErrDuplicateKey = errors.New("cluster: duplicate unique key")
+
+	ErrCockroachTxClosed      = errors.New("tx is closed")
+	ErrCockroachUnexpectedEOF = errors.New("unexpected EOF")
 )
 
 // DBClusterType is type for choose ClusterType.
