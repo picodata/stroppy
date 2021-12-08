@@ -267,6 +267,9 @@ func (op *Provider) reparseAddressMap(nodes int) (err error) {
 			Get(currentInstanceValue).Str
 	}
 
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
+
 	op.addressMap = make(map[string]map[string]string)
 	op.addressMap["external"] = externalAddress
 	op.addressMap["internal"] = internalAddress
@@ -326,6 +329,9 @@ func (op *Provider) Name() string {
 }
 
 func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
+
 	scriptParameters := "--pod-addresses "
 	internalAddressMap := op.addressMap["internal"]
 	for _, podAddress := range internalAddressMap {
