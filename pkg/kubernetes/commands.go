@@ -5,6 +5,7 @@
 package kubernetes
 
 import (
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -21,7 +22,9 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string, testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
+func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string,
+	testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
+
 	var config *rest.Config
 	if config, err = k.Engine.GetKubeConfig(); err != nil {
 		err = merry.Prepend(err, "failed to get config for execute remote test")
@@ -58,7 +61,7 @@ func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string, testCmd []str
 
 	// подключаемся к API-серверу
 	var _exec remotecommand.Executor
-	if _exec, err = remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL()); err != nil {
+	if _exec, err = remotecommand.NewSPDYExecutor(config, http.MethodPost, executeRequest.URL()); err != nil {
 		err = merry.Prepend(err, "failed to execute remote test")
 		return
 	}

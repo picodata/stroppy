@@ -10,11 +10,6 @@ import (
 
 var mongoCluster *MongoDBCluster
 
-type testSettings struct {
-	Count int
-	Seed  int
-}
-
 var (
 	receivedAccount  bson.M
 	receivedTransfer bson.M
@@ -24,7 +19,7 @@ var (
 
 const (
 	poolSize                  = 128
-	mongoDBUrl                     = "mongodb://127.0.0.1:30001,127.0.0.1:30002,127.0.0.1:30003/stroppy"
+	mongoDBUrl                = "mongodb://127.0.0.1:30001,127.0.0.1:30002,127.0.0.1:30003/stroppy"
 	expectedCount             = 10000
 	defaultBanRangeMultiplier = 1.1
 )

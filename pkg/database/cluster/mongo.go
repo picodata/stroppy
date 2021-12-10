@@ -557,7 +557,6 @@ func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *
 }
 
 func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
-
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")
@@ -573,7 +572,6 @@ func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration
 }
 
 func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan chan error) {
-
 	var once sync.Once
 	var commandResult bson.M
 	var serverStatus []byte

@@ -10,20 +10,21 @@ import (
 )
 
 const (
-	cockroachWorkDir = "cockroach"
+	cockroachWorkingDir = "cockroach"
 
 	cockroachClusterName       = "cockroachdb"
-	cockroachClientName        = "cockroachdb-client-secure"
+	cockroachClientName        = ""
 	cockroachPublicServiceName = "service/cockroachdb-public"
 )
 
 func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (fc Cluster) {
+
 	fc = &cockroachCluster{
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, dbWorkingDirectory, cockroachWorkDir),
-			cockroachWorkDir,
+			filepath.Join(wd, dbWorkingDirectory, cockroachWorkingDir),
+			cockroachWorkingDir,
 			dbURL,
 			connectionPoolSize,
 			false,

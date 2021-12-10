@@ -79,7 +79,7 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 	clusterMainPodName, clusterWorkerPodName string) (err error) {
 
 	var pods []v1.Pod
-	if pods, err = cc.k.Engine.ListPods(kubeengine.ResourceDefaultNamespace); err != nil {
+	if pods, err = cc.k.Engine.ListPods(targetNamespace); err != nil {
 		err = merry.Prepend(err, "list pods")
 		return
 	}
@@ -96,21 +96,23 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 		pPod := &pods[i]
 
 		llog.Debugf("examining pod: '%s'/'%s'", pPod.Name, pPod.GenerateName)
-		if strings.HasPrefix(pPod.Name, clusterMainPodName) {
+		if clusterMainPodName != "" && strings.HasPrefix(pPod.Name, clusterMainPodName) {
 			llog.Infof("%s main pod is '%s'", tag, pPod.Name)
 			printPodContainers(pPod)
 			cc.clusterSpec.MainPod = pPod
-		} else if strings.HasPrefix(pPod.Name, clusterWorkerPodName) {
+		} else if clusterWorkerPodName != "" && strings.HasPrefix(pPod.Name, clusterWorkerPodName) {
 			cc.clusterSpec.Pods = append(cc.clusterSpec.Pods, pPod)
 			printPodContainers(pPod)
+		} else {
+			llog.Debugf("skipping pod: '%s'/'%s'", pPod.Name, pPod.GenerateName)
 		}
 	}
 
-	if cc.clusterSpec.MainPod == nil {
+	if clusterMainPodName != "" && cc.clusterSpec.MainPod == nil {
 		return fmt.Errorf("%s main pod does not exists", tag)
 	}
 
-	if cc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
+	if cc.clusterSpec.MainPod != nil && cc.clusterSpec.MainPod.Status.Phase != v1.PodRunning {
 		cc.clusterSpec.MainPod, err = cc.k.Engine.WaitPod(cc.clusterSpec.MainPod.Name,
 			targetNamespace,
 			kubeengine.PodWaitingWaitCreation,
@@ -118,9 +120,10 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 		if err != nil {
 			return merry.Prependf(err, "%s pod wait", tag)
 		}
+		llog.Debugf("%s main pod '%s' in status '%s', okay",
+			tag, cc.clusterSpec.MainPod.Name, cc.clusterSpec.MainPod.Status.Phase)
 	}
-	llog.Debugf("%s main pod '%s' in status '%s', okay",
-		tag, cc.clusterSpec.MainPod.Name, cc.clusterSpec.MainPod.Status.Phase)
+
 	return
 }
 

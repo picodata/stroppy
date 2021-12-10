@@ -543,7 +543,6 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
 
-	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
@@ -566,8 +565,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 		}
 	}
 
-	err = tx.Commit(ctx)
-	if err != nil {
+	if err = tx.Commit(ctx); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
 				return ErrTxRollback
@@ -575,8 +573,6 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 		}
 		return merry.Prepend(err, "failed to commit tx")
 	}
-
-	merry.Prepend(err, "failed to insert new history item")
 
 	return nil
 }

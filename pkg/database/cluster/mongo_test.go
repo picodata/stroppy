@@ -16,7 +16,6 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-
 func NewTestMongoDBCluster(t *testing.T) {
 	var err error
 	// пока оставляем так, чтобы потом заменить на конкретный адрес
@@ -25,7 +24,6 @@ func NewTestMongoDBCluster(t *testing.T) {
 	if err != nil {
 		t.Errorf("TestNewMongoDBCluster() received internal error  %s, but expected nil", err)
 	}
-
 }
 
 func MongoBootstrapDB(t *testing.T) {
@@ -155,7 +153,6 @@ func MongoInsertAccount(t *testing.T) {
 }
 
 func MongoMakeAtomicTransfer(t *testing.T) {
-
 	expectedTransfer := model.Transfer{
 		Id:        model.NewTransferId(),
 		Acs:       receivedAccounts,

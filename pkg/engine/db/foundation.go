@@ -68,16 +68,9 @@ func (fc *foundationCluster) Deploy() (err error) {
 	}
 	llog.Infof("Now perform additional foundation deployment steps")
 
-	var session engineSsh.Session
-	if session, err = fc.sc.GetNewSession(); err != nil {
-		return merry.Prepend(err, "fix_client_version session")
-	}
-
 	const fdbFixCommand = "chmod +x foundationdb/fix_client_version.sh && ./foundationdb/fix_client_version.sh"
-
-	var textb []byte
-	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
-		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
+	if err = fc.k.Engine.ExecuteCommand(fdbFixCommand); err != nil {
+		return
 	}
 	llog.Debugf("fix_client_version.sh applyed successfully")
 

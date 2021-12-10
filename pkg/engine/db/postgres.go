@@ -75,15 +75,15 @@ func (pc *postgresCluster) Deploy() (err error) {
 
 		var targetPod *kuberv1.Pod
 		targetPod, err = pc.k.Engine.WaitPod(podName, kubeengine.ResourceDefaultNamespace,
-			kubeengine.PodWaitingWaitCreation, kubeengine.PodWaitingTimeTenMinutes)
-
+			kubeengine.PodWaitingWaitCreation,
+			kubeengine.PodWaitingTimeTenMinutes)
 		if err != nil {
 			err = merry.Prepend(err, "waiting")
 			return
 		}
-
 		pc.clusterSpec.Pods = append(pc.clusterSpec.Pods, targetPod)
 		llog.Infof("'%s/%s' pod registered", targetPod.Namespace, targetPod.Name)
+
 		if i == 0 {
 			pc.clusterSpec.MainPod = targetPod
 			llog.Debugln("... and this pod is main")
