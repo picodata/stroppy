@@ -19,7 +19,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 )
 
-func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
+func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string, dOpts string,
 	ConnectionPoolSize int, sharded bool) (fc *commonCluster) {
 
 	fc = &commonCluster{
@@ -33,8 +33,8 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		clusterSpec: ClusterSpec{
 			Pods: make([]*v1.Pod, 0, 10),
 		},
-		connectionPoolSize:  ConnectionPoolSize,
-		sharded: sharded,
+		connectionPoolSize: ConnectionPoolSize,
+		sharded:            sharded,
 	}
 	return
 }
@@ -45,13 +45,15 @@ type commonCluster struct {
 	wd string
 	tg string
 
+	dOpts string
+
 	clusterSpec            ClusterSpec
 	portForwardControlChan chan struct{}
 
 	DBUrl string
 
-	connectionPoolSize  int
-	addPool int
+	connectionPoolSize int
+	addPool            int
 
 	sharded bool
 }
@@ -66,7 +68,7 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
 	llog.Infof("%s deploy started\n", cc.tg)
-	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
+	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh %s", cc.tg, cc.tg, cc.dOpts)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}

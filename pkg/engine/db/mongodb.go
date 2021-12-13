@@ -37,6 +37,7 @@ func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL
 			filepath.Join(wd, dbWorkingDirectory, mongoDirectory),
 			mongoDirectory,
 			dbURL,
+			"",
 			connectionPoolSize,
 			sharded,
 		),

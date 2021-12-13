@@ -24,6 +24,7 @@ func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 			filepath.Join(wd, dbWorkingDirectory, cartridgeDirectory),
 			cartridgeDirectory,
 			dbURL,
+			"",
 			connectionPoolSize,
 			false,
 		),

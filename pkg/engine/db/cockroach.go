@@ -19,6 +19,7 @@ const (
 
 func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (fc Cluster) {
 
+	const operatorDeploymentParameters = "--insecure"
 	fc = &cockroachCluster{
 		commonCluster: createCommonCluster(
 			sc,
@@ -26,6 +27,7 @@ func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 			filepath.Join(wd, dbWorkingDirectory, cockroachWorkingDir),
 			cockroachWorkingDir,
 			dbURL,
+			operatorDeploymentParameters,
 			connectionPoolSize,
 			false,
 		),

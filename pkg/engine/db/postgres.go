@@ -34,6 +34,7 @@ func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, db
 			filepath.Join(wd, dbWorkingDirectory, cluster.Postgres),
 			cluster.Postgres,
 			dbURL,
+			"",
 			connectionPoolSize,
 			false),
 	}
