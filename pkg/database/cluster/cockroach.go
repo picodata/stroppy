@@ -269,10 +269,6 @@ const cockroachTimeoutSettings = 50 * time.Second
 
 func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, err error) {
 	ctx, cancel := context.WithTimeout(cockroach.ctxt, cockroachTimeoutSettings)
-<<<<<<< HEAD
-
-=======
->>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
 	defer cancel()
 
 	var rows pgx.Rows
@@ -369,16 +365,7 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-
 const cockroachTxTimeout = 45 * time.Second
-=======
-const cockroachTxTimeout = 15 * time.Second
->>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
-=======
-const cockroachTxTimeout = 45 * time.Second
->>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 
 func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
@@ -443,13 +430,6 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 	// 	5.											--- txB commits
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
-	var sourceHistoryItem, destHistoryItem *model.HistoryItem
->>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
-=======
->>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
@@ -465,10 +445,6 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
-<<<<<<< HEAD
-=======
-
->>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
 		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
