@@ -12,6 +12,8 @@ import (
 
 func Execute() {
 	settings := config.DefaultSettings()
+	dbSettings := settings.DatabaseSettings
+	statistics.StatsSetTotal(dbSettings.Count)
 
 	rootCmd := &cobra.Command{
 		Use:   "stroppy [pop|pay|deploy|shell]",
@@ -27,12 +29,10 @@ bandwidth along the way.`,
 				return
 			}
 
-			dbSettings := settings.DatabaseSettings
 			if dbSettings.Workers > dbSettings.Count && dbSettings.Count > 0 {
 				dbSettings.Workers = dbSettings.Count
 			}
 
-			statistics.StatsSetTotal(dbSettings.Count)
 			return
 		},
 	}
