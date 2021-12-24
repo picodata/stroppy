@@ -17,7 +17,7 @@ const (
 	cockroachPublicServiceName = "service/cockroachdb-public"
 )
 
-func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string) (fc Cluster) {
+func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int) (fc Cluster) {
 	fc = &cockroachCluster{
 		commonCluster: createCommonCluster(
 			sc,
@@ -25,8 +25,7 @@ func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 			filepath.Join(wd, dbWorkingDirectory, cockroachWorkDir),
 			cockroachWorkDir,
 			dbURL,
-			0,
-			0,
+			dbPool,
 			false,
 		),
 	}
@@ -38,7 +37,7 @@ type cockroachCluster struct {
 }
 
 func (cc *cockroachCluster) Connect() (cluster interface{}, err error) {
-	cluster, err = cluster2.NewCockroachCluster(cc.DBUrl)
+	cluster, err = cluster2.NewCockroachCluster(cc.DBUrl, cc.dbPool)
 	return
 }
 

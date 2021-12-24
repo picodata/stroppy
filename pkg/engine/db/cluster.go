@@ -51,16 +51,16 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 		err = merry.Errorf("unknown database type '%s'", dbConfig.DBType)
 
 	case cluster.Postgres:
-		_cluster = createPostgresCluster(sc, k, wd, dbConfig.DBURL, dbConfig.Workers, dbConfig.AddPool)
+		_cluster = createPostgresCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolCount)
 
 	case cluster.Foundation:
 		_cluster = createFoundationCluster(sc, k, wd, dbConfig.DBURL)
 
 	case cluster.MongoDB:
-		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.Workers, dbConfig.AddPool, dbConfig.Sharded)
+		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolCount, dbConfig.Sharded)
 
 	case cluster.Cockroach:
-		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL)
+		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolCount)
 	}
 
 	return

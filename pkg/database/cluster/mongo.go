@@ -95,9 +95,8 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 	var clientOptions options.ClientOptions
 
 	llog.Debugln("sharded state:", sharded)
-	// задаем максимальный размер пула соединений
+	// задаем максимальный размер пула соединений равный переданному пулу или кол-ву воркеров (по умолчанию)
 	clientOptions.SetMaxPoolSize(poolSize)
-	clientOptions.SetMinPoolSize(poolSize - 10)
 	clientOptions.ApplyURI(dbURL)
 	// This parameters was increased for garantee of success test finish and calculating of total balance
 	clientOptions.SetMaxConnIdleTime(maxConnIdleTimeout)

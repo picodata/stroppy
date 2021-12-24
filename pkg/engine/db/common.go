@@ -20,7 +20,7 @@ import (
 )
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
-	dbPool int, addPool int, sharded bool) (fc *commonCluster) {
+	dbPool int, sharded bool) (fc *commonCluster) {
 
 	fc = &commonCluster{
 		k:                      k,
@@ -34,7 +34,6 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 			Pods: make([]*v1.Pod, 0, 10),
 		},
 		dbPool:  dbPool,
-		addPool: addPool,
 		sharded: sharded,
 	}
 	return
