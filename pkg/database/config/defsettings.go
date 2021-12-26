@@ -122,7 +122,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
 		StatInterval:       10,
-		ConnectPoolCount:   DatabaseDefaults().Workers,
+		ConnectPoolCount:   0,
 		Sharded:            false,
 	}
 }

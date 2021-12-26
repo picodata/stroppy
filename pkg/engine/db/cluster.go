@@ -46,6 +46,11 @@ type ClusterTunnel struct {
 func CreateCluster(dbConfig *config.DatabaseSettings,
 	sc ssh.Client, k *kubernetes.Kubernetes, wd string) (_cluster Cluster, err error) {
 
+	// если кол-во соединений не задано, приравниваем к кол-ву воркеров
+	if dbConfig.ConnectPoolCount == 0{
+		dbConfig.ConnectPoolCount = dbConfig.Workers
+	}
+
 	switch dbConfig.DBType {
 	default:
 		err = merry.Errorf("unknown database type '%s'", dbConfig.DBType)

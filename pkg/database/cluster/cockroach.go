@@ -220,7 +220,7 @@ func NewCockroachCluster(dbURL string, dbPool int) (cluster *CockroachDatabase, 
 		return
 	}
 
-	if !strings.Contains(dbURL, "pool_max_conns") && dbPool != 0 {
+	if !strings.Contains(dbURL, "pool_max_conns") {
 		poolConfig.MaxConns = int32(dbPool)
 	}
 

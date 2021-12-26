@@ -38,9 +38,11 @@ func NewPostgresCluster(dbURL string, dbPool int) (*PostgresCluster, error) {
 		return nil, merry.Wrap(err)
 	}
 
-	if !strings.Contains(dbURL, "pool_max_conns") && dbPool != 0 {
+	if !strings.Contains(dbURL, "pool_max_conns") {
 		poolConfig.MaxConns = int32(dbPool)
 	}
+
+	llog.Infoln("размер пула", poolConfig.MaxConns)
 
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {
