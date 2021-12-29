@@ -30,7 +30,7 @@ type PostgresCluster struct {
 
 const defaultMaxConns = 4
 
-func NewPostgresCluster(dbURL string, dbPool int) (*PostgresCluster, error) {
+func NewPostgresCluster(dbURL string, connectionPoolCount int) (*PostgresCluster, error) {
 	llog.Infof("Establishing connection to pg on %v", dbURL)
 
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
@@ -39,10 +39,10 @@ func NewPostgresCluster(dbURL string, dbPool int) (*PostgresCluster, error) {
 	}
 
 	if !strings.Contains(dbURL, "pool_max_conns") {
-		poolConfig.MaxConns = int32(dbPool)
+		poolConfig.MaxConns = int32(connectionPoolCount)
 	}
 
-	llog.Infoln("размер пула", poolConfig.MaxConns)
+	llog.Debugf("Connection pool size: %v", poolConfig.MaxConns)
 
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {

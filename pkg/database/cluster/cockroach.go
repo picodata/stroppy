@@ -211,7 +211,7 @@ func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transf
 	return nil
 }
 
-func NewCockroachCluster(dbURL string, dbPool int) (cluster *CockroachDatabase, err error) {
+func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *CockroachDatabase, err error) {
 	llog.Infof("Establishing connection to cockroach on %v", dbURL)
 
 	var poolConfig *pgxpool.Config
@@ -221,8 +221,10 @@ func NewCockroachCluster(dbURL string, dbPool int) (cluster *CockroachDatabase, 
 	}
 
 	if !strings.Contains(dbURL, "pool_max_conns") {
-		poolConfig.MaxConns = int32(dbPool)
+		poolConfig.MaxConns = int32(connectionPoolSize)
 	}
+
+	llog.Debugf("Connection pool size: %v", poolConfig.MaxConns)
 
 	ctxt := context.Background()
 

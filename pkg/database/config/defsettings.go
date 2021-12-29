@@ -101,7 +101,7 @@ type DatabaseSettings struct {
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
-	ConnectPoolCount   int
+	ConnectPoolSize   int
 	Sharded            bool
 }
 
@@ -122,7 +122,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
 		StatInterval:       10,
-		ConnectPoolCount:   0,
+		ConnectPoolSize:   0,
 		Sharded:            false,
 	}
 }
