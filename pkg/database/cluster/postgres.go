@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"strconv"
+	"strings"
 	"time"
 
 	"gitlab.com/picodata/stroppy/internal/model"
@@ -27,13 +28,21 @@ type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresCluster(dbURL string) (*PostgresCluster, error) {
+const defaultMaxConns = 4
+
+func NewPostgresCluster(dbURL string, connectionPoolCount int) (*PostgresCluster, error) {
 	llog.Infof("Establishing connection to pg on %v", dbURL)
 
 	poolConfig, err := pgxpool.ParseConfig(dbURL)
 	if err != nil {
 		return nil, merry.Wrap(err)
 	}
+
+	if !strings.Contains(dbURL, "pool_max_conns") {
+		poolConfig.MaxConns = int32(connectionPoolCount)
+	}
+
+	llog.Debugf("Connection pool size: %v", poolConfig.MaxConns)
 
 	pgPool, err := pgxpool.ConnectConfig(context.Background(), poolConfig)
 	if err != nil {

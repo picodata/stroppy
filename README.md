@@ -375,6 +375,8 @@ make all
 ```workers, w``` - number of load workers (threads-goroutin), by default  ```4 * runtime.NumCPU()```;  
 ```banRangeMultiplier, r``` -  the coefficient that determines the BIC/BAN ratio in the generation process, details below;  
 ```stat-interval, s``` - statistics collection interval, by default 10 seconds;  
+```pool-size``` - the size of the database connection pool. Relevant for PostgreSQL, MongoDB and CocroachDB. If the key is not specified, then the pool size is equal to the number of workers.
+For PostgreSQL and CocroachDB, the pool size can also be set via the `max_pool_size" parameter in the connection string. In this case, the ``pool-size"' parameter is ignored.
   
 ***Important***: ```ban range multiplier``` (next ```brm```) is a number that defines the ratio of BAN (Bank Identifier Number) per BIC (Bank Identifier Code). The number of generated BICs is approximately equal to the square root of 'count'.  
 The count of BANs is defined by the following formula: ```Nban = (Nbic *brm)/square(count)```. If Nban* Nbic > count we generate more (BIC, BAN) combinations
@@ -389,7 +391,6 @@ The recommended range of brm is from 1.01 to 1.1. The default value of banRangeM
 
 Additional keys for the ```pop``` command:  
 ```sharded``` - flag for using sharding strategy when creating a data schema. Relevant only for MongoDB, false by default;  
-```add-pool, a``` - the size of the additional pool of connections, expands the main pool of connections to the database, equal to the number of workers. Relevant for all supported databases except FoundationDB. By default, 0.  
 
 **Example of command for tranfers test**:  
 

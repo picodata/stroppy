@@ -110,6 +110,10 @@ The default value of banRangeMultipluer is 1.1.`)
 		"stat-interval", "s",
 		settings.DatabaseSettings.StatInterval,
 		"interval by seconds for gettings db stats. Only fdb yet.")
+	rootCmd.PersistentFlags().IntVar(&settings.DatabaseSettings.ConnectPoolSize,
+		"pool-size", 
+		settings.DatabaseSettings.ConnectPoolSize,
+		"count of connection in db pool. Equal workers count by default.")
 
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),

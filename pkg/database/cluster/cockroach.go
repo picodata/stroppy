@@ -7,6 +7,7 @@ package cluster
 import (
 	"context"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ansel1/merry"
@@ -210,7 +211,7 @@ func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transf
 	return nil
 }
 
-func NewCockroachCluster(dbURL string) (cluster *CockroachDatabase, err error) {
+func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *CockroachDatabase, err error) {
 	llog.Infof("Establishing connection to cockroach on %v", dbURL)
 
 	var poolConfig *pgxpool.Config
@@ -218,6 +219,12 @@ func NewCockroachCluster(dbURL string) (cluster *CockroachDatabase, err error) {
 		err = merry.Prepend(err, "parse url parameter")
 		return
 	}
+
+	if !strings.Contains(dbURL, "pool_max_conns") {
+		poolConfig.MaxConns = int32(connectionPoolSize)
+	}
+
+	llog.Debugf("Connection pool size: %v", poolConfig.MaxConns)
 
 	ctxt := context.Background()
 

@@ -101,7 +101,7 @@ type DatabaseSettings struct {
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
-	AddPool            int
+	ConnectPoolSize   int
 	Sharded            bool
 }
 
@@ -109,20 +109,21 @@ type DatabaseSettings struct {
 // линтер требует указания всех полей структуры при присвоении переменной
 func DatabaseDefaults() *DatabaseSettings {
 	return &DatabaseSettings{
+		DBType:             cluster.Postgres,
 		Workers:            defaultCountCPU * runtime.NumCPU(),
 		Count:              10000,
 		User:               "",
 		Password:           "",
-		Check:              false,
 		Seed:               time.Now().UnixNano(),
 		Zipfian:            false,
 		Oracle:             false,
+		Check:              false,
 		DBURL:              "",
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
-		DBType:             cluster.Postgres,
 		StatInterval:       10,
-		AddPool:            0,
+		ConnectPoolSize:   0,
+		Sharded:            false,
 	}
 }
 
