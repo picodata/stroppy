@@ -24,6 +24,11 @@ type TarantoolCluster struct {
 type tarantoolModel struct {
 }
 
+type settingsParams struct{
+	Key string
+	Value int
+}
+
 func (cluster *TarantoolCluster) InsertTransfer(_ *model.Transfer) error {
 	return errors.New("implement me")
 }
@@ -113,7 +118,7 @@ func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*Tarantoo
 
 	if _, err = conn.Call("box.space.transfers:format", [][]map[string]string{
 		{
-			{"name": "transfer_id", "type": "cdata"},
+			{"name": "transfer_id", "type": "any"},
 			{"name": "src_bic", "type": "string"},
 			{"name": "src_ban", "type": "string"},
 			{"name": "dest_bic", "type": "string"},
@@ -126,9 +131,17 @@ func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*Tarantoo
 	if _, err = conn.Call("box.space.settings:format", [][]map[string]string{
 		{
 			{"name": "key", "type": "string"},
-			{"name": "value", "type": "string"},
+			{"name": "value", "type": "number"},
 		}}); err != nil {
 		return nil, merry.Prepend(err, "failed to format settings space")
+	}
+
+	if _, err = conn.Call("box.space.settings:create_index", []interface{}{
+		"primary",
+		map[string]interface{}{
+			"parts":         []string{"key"},
+			"if_not_exists": true}}); err != nil {
+		return nil, merry.Prepend(err, "failed to create primary index for settings space")
 	}
 
 	if _, err = conn.Call("box.space.checksum:format", [][]map[string]string{
@@ -150,17 +163,33 @@ func (cluster *TarantoolCluster) addSharding() error {
 
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *TarantoolCluster) BootstrapDB(count int, seed int) error {
+	var err error
 	llog.Infof("Populating settings...")
 
+	if _, err = cluster.conn.Call("box.space.accounts:truncate", []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to truncate space account")
+	}
+
+	if _, err = cluster.conn.Call("box.space.transfers:truncate", []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to truncate space transfers")
+	}
+
+	if _, err = cluster.conn.Call("box.space.settings:truncate", []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to truncate space settings")
+	}
+
+	if _, err = cluster.conn.Call("box.space.checksum:truncate", []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to truncate space checksum")
+	}
 
 	resp, err := cluster.conn.Insert("settings", []interface{}{"count", count})
-	if err != nil{
+	if err != nil {
 		return merry.Errorf("failed to insert count in settings. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
 	}
 
 	resp, err = cluster.conn.Insert("settings", []interface{}{"seed", seed})
-	if err != nil{
-		return merry.Errorf("failed to insert count in settings. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
+	if err != nil {
+		return merry.Errorf("failed to insert seed in settings. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
 	}
 
 	return nil
@@ -173,12 +202,30 @@ func (cluster *TarantoolCluster) GetClusterType() DBClusterType {
 
 // FetchSettings - получить значения параметров настройки.
 func (cluster *TarantoolCluster) FetchSettings() (Settings, error) {
+	//var count, seed int
+	var results []settingsParams
 
-	return Settings{}, nil
+	err := cluster.conn.SelectTyped("settings", "primary", 0, 2, tarantool.IterAll, []interface{}{}, &results)
+	if err != nil{
+		return Settings{}, merry.Errorf("failed to select settings from account. Err: %v", err)
+	}
+
+	return Settings{
+		Count: results[0].Value,
+		Seed:  results[1].Value,
+	}, nil
 }
 
 // InsertAccount - сохранить новый счет.
 func (cluster *TarantoolCluster) InsertAccount(acc model.Account) (err error) {
+
+	resp, err := cluster.conn.Insert("accounts", []interface{}{acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64()})
+	if err != nil {
+		if tntErr, ok := err.(tarantool.Error); ok || tntErr.Code == tarantool.ErrTupleFound{
+			return ErrDuplicateKey
+		}
+		return merry.Errorf("failed to insert record in account. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
+	}
 
 	return nil
 }
