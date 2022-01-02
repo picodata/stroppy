@@ -24,9 +24,22 @@ type TarantoolCluster struct {
 type tarantoolModel struct {
 }
 
-type settingsParams struct{
-	Key string
+type settingsParams struct {
+	Key   string
 	Value int
+}
+
+type totalBalance struct {
+	Name string
+	Total int64
+}
+
+type finalBalance struct {
+	Balance int64
+}
+
+type transactionResult struct{
+	Result string
 }
 
 func (cluster *TarantoolCluster) InsertTransfer(_ *model.Transfer) error {
@@ -118,7 +131,7 @@ func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*Tarantoo
 
 	if _, err = conn.Call("box.space.transfers:format", [][]map[string]string{
 		{
-			{"name": "transfer_id", "type": "any"},
+			{"name": "transfer_id", "type": "uuid"},
 			{"name": "src_bic", "type": "string"},
 			{"name": "src_ban", "type": "string"},
 			{"name": "dest_bic", "type": "string"},
@@ -126,6 +139,14 @@ func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*Tarantoo
 			{"name": "balance", "type": "number"},
 		}}); err != nil {
 		return nil, merry.Prepend(err, "failed to format transfers space")
+	}
+
+	if _, err = conn.Call("box.space.transfers:create_index", []interface{}{
+		"primary",
+		map[string]interface{}{
+			"parts":         []string{"transfer_id"},
+			"if_not_exists": true}}); err != nil {
+		return nil, merry.Prepend(err, "failed to create primary index for accounts space")
 	}
 
 	if _, err = conn.Call("box.space.settings:format", [][]map[string]string{
@@ -150,6 +171,14 @@ func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*Tarantoo
 			{"name": "amount", "type": "number"},
 		}}); err != nil {
 		return nil, merry.Prepend(err, "failed to format checksum space")
+	}
+
+	if _, err = conn.Call("box.space.checksum:create_index", []interface{}{
+		"primary",
+		map[string]interface{}{
+			"parts":         []string{"name"},
+			"if_not_exists": true}}); err != nil {
+		return nil, merry.Prepend(err, "failed to create primary index for checksum space")
 	}
 
 	return &TarantoolCluster{
@@ -206,7 +235,7 @@ func (cluster *TarantoolCluster) FetchSettings() (Settings, error) {
 	var results []settingsParams
 
 	err := cluster.conn.SelectTyped("settings", "primary", 0, 2, tarantool.IterAll, []interface{}{}, &results)
-	if err != nil{
+	if err != nil {
 		return Settings{}, merry.Errorf("failed to select settings from account. Err: %v", err)
 	}
 
@@ -221,7 +250,7 @@ func (cluster *TarantoolCluster) InsertAccount(acc model.Account) (err error) {
 
 	resp, err := cluster.conn.Insert("accounts", []interface{}{acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64()})
 	if err != nil {
-		if tntErr, ok := err.(tarantool.Error); ok || tntErr.Code == tarantool.ErrTupleFound{
+		if tntErr, ok := err.(tarantool.Error); ok || tntErr.Code == tarantool.ErrTupleFound {
 			return ErrDuplicateKey
 		}
 		return merry.Errorf("failed to insert record in account. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
@@ -232,23 +261,64 @@ func (cluster *TarantoolCluster) InsertAccount(acc model.Account) (err error) {
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *TarantoolCluster) FetchTotal() (*inf.Dec, error) {
+	var results []totalBalance
+	var balance *inf.Dec
 
-	return nil, nil
+	err := cluster.conn.SelectTyped("checksum", "primary", 0, 1, tarantool.IterAll, []interface{}{}, &results)
+	if err != nil {
+		return nil, merry.Errorf("failed to select total from checksum. Err: %v", err)
+	}
+
+	if len(results) != 0 {
+		balance = inf.NewDec(results[0].Total, 0)
+	} else {
+		return nil, ErrNoRows
+	}
+
+	return balance, nil
 }
 
 // PersistTotal - сохранить значение итогового баланса в settings.
 func (cluster *TarantoolCluster) PersistTotal(total inf.Dec) error {
+
+	resp, err := cluster.conn.Insert("checksum", []interface{}{"total", total.UnscaledBig().Int64()})
+	if err != nil {
+		return merry.Errorf("failed to insert total balance in checksum. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
+	}
+
 	return nil
 }
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *TarantoolCluster) CheckBalance() (*inf.Dec, error) {
+	var result []finalBalance
 
-	return nil, nil
+	err := cluster.conn.CallTyped("sum_accounts_balances", []interface{}{}, &result)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to calculate total balance from accounts")
+	}
+
+	llog.Infoln(result[0].Balance)
+
+	return inf.NewDec(result[0].Balance, 0), nil
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *TarantoolCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+	var result []transactionResult
+
+	if err := cluster.conn.CallTyped("makeAtomicTransfer", []interface{}{transfer.Id.String(), transfer.Acs[0].Bic, transfer.Acs[0].Ban, transfer.Acs[1].Bic, transfer.Acs[1].Ban, 
+	transfer.Amount.UnscaledBig().Int64()}, &result); err != nil{
+		return merry.Prepend(err, "failed to execute transaction")
+	}
+
+	if result[0].Result == "ErrInsufficientFunds"{
+		return ErrInsufficientFunds
+	}
+
+	if result[0].Result == "ErrNotFound"{
+		return ErrNoRows
+	}
 
 	return nil
 }
@@ -264,5 +334,6 @@ func (cluster *TarantoolCluster) FetchBalance(bic string, ban string) (*inf.Dec,
 }
 
 func (cluster *TarantoolCluster) StartStatisticsCollect(statInterval time.Duration) error {
+	llog.Infoln("collect statistic from tarantool db is not implemented")
 	return nil
 }
