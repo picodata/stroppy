@@ -37,7 +37,7 @@ func (tarantool *tarantoolCluster) Connect() (cluster interface{}, err error) {
 	connectionPool := uint64(tarantool.commonCluster.connectionPoolSize) + uint64(tarantool.commonCluster.addPool)
 	cluster, err = clusterImplementation.NewTarantoolCluster(tarantool.DBUrl, connectionPool, tarantool.commonCluster.sharded)
 	if err != nil {
-		return nil, merry.Prepend(err, "failed to init connect to  tarantool cluster")
+		return nil, merry.Prepend(err, "failed to init connect to tarantool cluster")
 	}
 	return
 }

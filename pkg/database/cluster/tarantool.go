@@ -30,7 +30,7 @@ type settingsParams struct {
 }
 
 type totalBalance struct {
-	Name string
+	Name  string
 	Total int64
 }
 
@@ -38,7 +38,7 @@ type finalBalance struct {
 	Balance int64
 }
 
-type transactionResult struct{
+type transactionResult struct {
 	Result string
 }
 
@@ -88,13 +88,15 @@ func (cluster *TarantoolCluster) UnlockAccount(bic string, ban string, transferI
 
 // NewFoundationCluster - Создать подключение к Tarantool и создать новые коллекции, если ещё не созданы.
 func NewTarantoolCluster(dbURL string, poolSize uint64, sharded bool) (*TarantoolCluster, error) {
-	opts := tarantool.Opts{User: "stroppy", Pass: "stroppy"}
+	opts := tarantool.Opts{User: "stroppy", Pass: "stroppy", Concurrency: uint32(poolSize)}
 
 	llog.Debugln("connecting to tarantool...")
 	conn, err := tarantool.Connect(dbURL, opts)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to connect tarantool database")
 	}
+
+	llog.Debugf("Initialed %v mutexes for requests \n", opts.Concurrency)
 
 	if _, err = conn.Call("box.schema.space.create", []interface{}{"accounts", map[string]bool{"if_not_exists": true}}); err != nil {
 		return nil, merry.Prepend(err, "failed to create space account")
@@ -221,6 +223,14 @@ func (cluster *TarantoolCluster) BootstrapDB(count int, seed int) error {
 		return merry.Errorf("failed to insert seed in settings. Err: %v, Resp: %v %v", err, resp.Code, resp.Data)
 	}
 
+	if _, err = cluster.conn.Eval(SumAccountsBalancesFunction, []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to create function for accounts balances sum")
+	}
+
+	if _, err = cluster.conn.Eval(MakeAtomicTransferFunction, []interface{}{}); err != nil {
+		return merry.Prepend(err, "failed to create function for atomic transfer")
+	}
+
 	return nil
 }
 
@@ -307,16 +317,16 @@ func (cluster *TarantoolCluster) CheckBalance() (*inf.Dec, error) {
 func (cluster *TarantoolCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
 	var result []transactionResult
 
-	if err := cluster.conn.CallTyped("makeAtomicTransfer", []interface{}{transfer.Id.String(), transfer.Acs[0].Bic, transfer.Acs[0].Ban, transfer.Acs[1].Bic, transfer.Acs[1].Ban, 
-	transfer.Amount.UnscaledBig().Int64()}, &result); err != nil{
+	if err := cluster.conn.CallTyped("makeAtomicTransfer", []interface{}{transfer.Id.String(), transfer.Acs[0].Bic, transfer.Acs[0].Ban, transfer.Acs[1].Bic, transfer.Acs[1].Ban,
+		transfer.Amount.UnscaledBig().Int64()}, &result); err != nil {
 		return merry.Prepend(err, "failed to execute transaction")
 	}
 
-	if result[0].Result == "ErrInsufficientFunds"{
+	if result[0].Result == "ErrInsufficientFunds" {
 		return ErrInsufficientFunds
 	}
 
-	if result[0].Result == "ErrNotFound"{
+	if result[0].Result == "ErrNotFound" {
 		return ErrNoRows
 	}
 
