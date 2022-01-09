@@ -66,6 +66,9 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.Cockroach:
 		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+
+	case cluster.Tarantool:
+		_cluster = createTarantoolCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize, dbConfig.Sharded)
 	}
 
 	return
