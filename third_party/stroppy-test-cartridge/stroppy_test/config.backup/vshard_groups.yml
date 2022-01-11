@@ -1,0 +1,11 @@
+---
+default:
+  rebalancer_max_receiving: 100
+  bootstrapped: false
+  sync_timeout: 1
+  bucket_count: 32
+  collect_lua_garbage: false
+  sched_ref_quota: 300
+  rebalancer_disbalance_threshold: 1
+  sched_move_quota: 1
+...

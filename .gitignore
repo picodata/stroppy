@@ -17,3 +17,27 @@ bin
 
 !*/.dockerignore
 docs/examples/*/config
+
+third_party/stroppy-test-cartridge/.rocks
+third_party/stroppy-test-cartridge/.swo
+third_party/stroppy-test-cartridge/.swp
+third_party/stroppy-test-cartridge/CMakeCache.txt
+third_party/stroppy-test-cartridge/CMakeFiles
+third_party/stroppy-test-cartridge/cmake_install.cmake
+third_party/stroppy-test-cartridge/*.dylib
+third_party/stroppy-test-cartridge/*.idea
+third_party/stroppy-test-cartridge/__pycache__
+third_party/stroppy-test-cartridge/*pyc
+third_party/stroppy-test-cartridge/.cache
+third_party/stroppy-test-cartridge/.pytest_cache
+third_party/stroppy-test-cartridge/.vagrant
+third_party/stroppy-test-cartridge/.DS_Store
+third_party/stroppy-test-cartridge/*.xlog
+third_party/stroppy-test-cartridge/*.snap
+third_party/stroppy-test-cartridge/*.rpm
+third_party/stroppy-test-cartridge/*.deb
+third_party/stroppy-test-cartridge/*.tar.gz
+third_party/stroppy-test-cartridge/node_modules
+third_party/stroppy-test-cartridge/tmp/*
+third_party/stroppy-test-cartridge/stroppy_test/*
+!third_party/stroppy-test-cartridge/tmp/.keep
