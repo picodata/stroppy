@@ -19,34 +19,26 @@ local function internal_error_response(req, error)
     return resp
 end
 
-local function profile_not_found_response(req)
+local function entity_not_found_response(req, error)
     local resp = json_response(req, {
-        info = "Profile not found"
+        info = error.err
     }, 404)
     return resp
 end
 
-local function profile_conflict_response(req)
+local function entity_conflict_response(req, error)
     local resp = json_response(req, {
-        info = "Profile already exist"
+        info = error.err
     }, 409)
     return resp
 end
 
-local function profile_unauthorized(req)
-    local resp = json_response(req, {
-        info = "Unauthorized"
-    }, 401)
-    return resp
-end
 
 local function storage_error_response(req, error)
     if error.err == "Account already exist" or "Transfer already exist" then
-        return profile_conflict_response(req)
+        return entity_conflict_response(req, error)
     elseif error.err == "Account not found" then
-        return profile_not_found_response(req)
-    elseif error.err == "Unauthorized" then
-        return profile_unauthorized(req)
+        return entity_not_found_response(req, error)
     else
         return internal_error_response(req, error)
     end

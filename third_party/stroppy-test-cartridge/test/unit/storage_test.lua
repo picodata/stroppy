@@ -9,7 +9,7 @@ local storage = require('app.roles.storage')
 local utils = storage.utils
 local deepcopy = helper.shared.deepcopy
 
-
+-- взято из https://pastebin.com/CYNn4bfs
 local function rand_str(len)
     len = tonumber(len) or 1
     
