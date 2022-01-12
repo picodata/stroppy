@@ -1,31 +1,55 @@
 local log = require('log')
 local errors = require('errors')
 local err_storage = errors.new_class("Storage error")
+local uuid = require("uuid")
 
 
 local function account_add(account)
-    -- Проверяем существование пользователя с таким id
-    log.info(account)
-    local exist = box.space.accounts:get({account.bic, account.ban})
-    if exist ~= nil then
-        return {ok = false, error = err_storage:new("Account already exist")}
-    end
-    box.space.accounts:insert(box.space.accounts:frommap(account))
+       log.info(account)
+       -- Проверяем на дубликаты
+       local exist = box.space.accounts:get({account.bic, account.ban})
+       if exist ~= nil then
+           return {ok = false, error = err_storage:new("Account already exist")}
+       end
+
+       box.space.accounts:insert(box.space.accounts:frommap(account))
+
+       return {ok = true, error = nil}
 end
---[[
-    Запуск роли
-    В случае запуска на лидере репликасета создаём необходимую таблицу `frame`
-    И для неё создаем первичный индекс и индекс для шардирования данных
-    В случае, когда роль перезапускается, используем флаг `if_not_exists=true`
-    для игнорирования в случае уже созданных объектов
-]]
+
+local function transfer_add(transfer)
+    log.debug(transfer)
+    -- Проверяем на дубликаты
+    local exist = box.space.transfers:get({uuid.fromstr(transfer.transfer_id)})
+    if exist ~= nil then
+        return {ok = false, error = err_storage:new("Transfer already exist")}
+    end
+
+    box.space.transfers:insert({uuid.fromstr(transfer.transfer_id), transfer.src_bic,transfer.src_ban, transfer.dest_bic, transfer.dest_ban, transfer.amount, 
+        transfer.bucket_id})
+    
+    return {ok = true, error = nil}
+end
+
+local function account_update(account)
+   -- Проверяем на дубликаты
+    local exist = box.space.accounts:get({account.bic, account.ban})
+    if exist == nil then
+        return {ok = false, error = err_storage:new("Account not found")}
+    end
+
+    box.space.accounts:replace(box.space.accounts:frommap(account))
+
+    return {ok = true, error = nil}
+end
+
 local function init(opts)
     if opts.is_master then
         -- cоздаем спейсы, если не созданы
-        local accounts = box.schema.space.create('accounts',{ if_not_exists=true })
+        local accounts = box.schema.space.create('accounts', { if_not_exists = true })
         accounts:format({
-            {name="bic", type="string"},
-            {name="ban", type="string"},
+            { name = "bic", type = "string" },
+            { name = "ban", type = "string" },
             {name="balance", type="number"},
             {name="bucket_id", type="unsigned"},
         })
@@ -68,7 +92,11 @@ local function init(opts)
         if_not_exists=true })
 
         box.schema.func.create('account_add', {if_not_exists = true})
+        box.schema.func.create('account_update', {if_not_exists = true})
+        box.schema.func.create('transfer_add', {if_not_exists = true})
         rawset(_G, 'account_add', account_add)
+        rawset(_G, 'account_update', account_update)
+        rawset(_G, 'transfer_add', transfer_add)
     end
 end
 
@@ -82,20 +110,9 @@ local function apply_config(conf, opts)
     return true
 end
 
---[[
-    Удаление таблиц предпочтительно не автоматизировать
-]]
 local function stop()
 end
 
---[[
-    Возвращаем
-      - имя роли для использования в GUI и rpc API
-      - колбеки жизненного цикла
-      - зависимости от других ролей
-        - vshard-storage, роль которая будет заботиться о шардировании данных
-          всех спейсов, у которых есть индекс `bucket_id`
-]]
 return {
     role_name="storage",
 
@@ -105,6 +122,8 @@ return {
     stop=stop,
     utils = {
         account_add = account_add,
+        account_update = account_update,
+        transfer_add = transfer_add,
     },
     dependencies={'cartridge.roles.vshard-storage'}
 }

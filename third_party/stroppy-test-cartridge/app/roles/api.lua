@@ -40,6 +40,17 @@ local function profile_unauthorized(req)
     return resp
 end
 
+local function storage_error_response(req, error)
+    if error.err == "Account already exist" or "Transfer already exist" then
+        return profile_conflict_response(req)
+    elseif error.err == "Account not found" then
+        return profile_not_found_response(req)
+    elseif error.err == "Unauthorized" then
+        return profile_unauthorized(req)
+    else
+        return internal_error_response(req, error)
+    end
+end
 
 local function http_account_add(req)
     local account = req:json()
@@ -55,17 +66,69 @@ local function http_account_add(req)
         {account}
     )
 
-    log.info(error)
-
     if error then
+        log.info(error)
         return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        return storage_error_response(req, resp.error)
     end
     
     return json_response(req, {info = "Successfully created"}, 201)
 end
 
-local function  http_account_get(req)
-    log.info('test')
+local function http_account_update(req)
+    local account = req:json()
+    local router = cartridge.service_get('vshard-router').get()
+    account.bucket_id = router:bucket_id_mpcrc32(account.bic..account.ban)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        account.bucket_id,
+        'write',
+        'account_update',
+        {account}
+    )
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        return storage_error_response(req, resp.error)
+    end
+    
+    return json_response(req, {info = "Successfully updated"}, 200)
+end
+
+
+local function http_transfer_add(req)
+    local transfer = req:json()
+    local router = cartridge.service_get('vshard-router').get()
+    transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        transfer.bucket_id,
+        'write',
+        'transfer_add',
+        {transfer}
+    )
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        return storage_error_response(req, resp.error)
+    end
+    
+    return json_response(req, {info = "Successfully created"}, 201)
 end
 
 local function init(opts)
@@ -88,9 +151,13 @@ local function init(opts)
         http_account_add
     )
     httpd:route(
-        { path = '/account/:bic/:ban', method = 'GET', public = true },
-        http_account_get
-    )
+        { path = '/account', method = 'PUT', public = true },
+        http_account_update
+        )
+    httpd:route(
+        { path = '/transfers', method = 'POST', public = true },
+        http_transfer_add
+        )
 
     log.info("Created httpd")
     return true

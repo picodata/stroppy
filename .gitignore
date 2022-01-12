@@ -40,4 +40,6 @@ third_party/stroppy-test-cartridge/*.tar.gz
 third_party/stroppy-test-cartridge/node_modules
 third_party/stroppy-test-cartridge/tmp/*
 third_party/stroppy-test-cartridge/stroppy_test/*
+third_party/stroppy-test-cartridge/stroppy_test/config/
+third_party/stroppy-test-cartridge/stroppy_test/config.backup/
 !third_party/stroppy-test-cartridge/tmp/.keep
