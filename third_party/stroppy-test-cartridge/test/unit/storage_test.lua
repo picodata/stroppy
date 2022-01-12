@@ -51,10 +51,10 @@ g.test_account_add_ok = function ()
     t.assert_equals(utils.account_add(to_insert), {ok = true, error = nil})
 end
 
-g.test_account_update_ok = function ()
+g.test_account_balance_update_ok = function ()
     local to_update = deepcopy(test_account)
     to_update.balance = to_update.balance+10
-    t.assert_equals(utils.account_update(to_update), {ok = true, error = nil})
+    t.assert_equals(utils.account_balance_update(to_update), {ok = true, error = nil})
 end
 
 g.test_transfer_add_ok = function ()

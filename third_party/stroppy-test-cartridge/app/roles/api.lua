@@ -70,7 +70,7 @@ local function http_account_add(req)
     return json_response(req, {info = "Successfully created"}, 201)
 end
 
-local function http_account_update(req)
+local function http_account_balance_update(req)
     local account = req:json()
     local router = cartridge.service_get('vshard-router').get()
     account.bucket_id = router:bucket_id_mpcrc32(account.bic..account.ban)
@@ -80,7 +80,7 @@ local function http_account_update(req)
         router,
         account.bucket_id,
         'write',
-        'account_update',
+        'account_balance_update',
         {account}
     )
 
@@ -143,8 +143,8 @@ local function init(opts)
         http_account_add
     )
     httpd:route(
-        { path = '/account', method = 'PUT', public = true },
-        http_account_update
+        { path = '/account_balance', method = 'PUT', public = true },
+        http_account_balance_update
         )
     httpd:route(
         { path = '/transfers', method = 'POST', public = true },

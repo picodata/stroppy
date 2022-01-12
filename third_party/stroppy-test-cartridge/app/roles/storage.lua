@@ -31,14 +31,14 @@ local function transfer_add(transfer)
     return {ok = true, error = nil}
 end
 
-local function account_update(account)
-   -- Проверяем на дубликаты
-    local exist = box.space.accounts:get({account.bic, account.ban})
-    if exist == nil then
+local function account_balance_update(new_account)
+   -- Проверяем, есть ли счет
+    local old_account = box.space.accounts:get({new_account.bic, new_account.ban})
+    if old_account == nil then
         return {ok = false, error = err_storage:new("Account not found")}
     end
 
-    box.space.accounts:replace(box.space.accounts:frommap(account))
+    box.space.accounts:update({old_account.bic, old_account.ban},{{'=',3,new_account.balance}})
 
     return {ok = true, error = nil}
 end
@@ -92,10 +92,10 @@ local function init(opts)
         if_not_exists=true })
 
         box.schema.func.create('account_add', {if_not_exists = true})
-        box.schema.func.create('account_update', {if_not_exists = true})
+        box.schema.func.create('account_balance_update', {if_not_exists = true})
         box.schema.func.create('transfer_add', {if_not_exists = true})
         rawset(_G, 'account_add', account_add)
-        rawset(_G, 'account_update', account_update)
+        rawset(_G, 'account_balance_update', account_balance_update)
         rawset(_G, 'transfer_add', transfer_add)
     end
 end
@@ -122,7 +122,7 @@ return {
     stop=stop,
     utils = {
         account_add = account_add,
-        account_update = account_update,
+        account_balance_update = account_balance_update,
         transfer_add = transfer_add,
     },
     dependencies={'cartridge.roles.vshard-storage'}
