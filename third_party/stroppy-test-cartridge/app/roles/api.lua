@@ -123,6 +123,61 @@ local function http_transfer_add(req)
     return json_response(req, {info = "Successfully created"}, 201)
 end
 
+local function http_fetch_total(req)
+    local total = {}
+
+    local router = cartridge.service_get('vshard-router').get()
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        1,
+        'read',
+        'fetch_total',
+        {}
+    )
+
+    log.debug("response of fetch total: %s", resp)
+
+    if error then
+        log.error(error)
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        return storage_error_response(req, resp.error)
+    end
+
+    total.total = resp[1][2]
+    
+    return json_response(req, {info = total}, 200)
+end
+
+local function http_persist_total(req)
+    local total = req:json()
+    local router = cartridge.service_get('vshard-router').get()
+
+    local _, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        1,
+        'write',
+        'persist_total',
+        {total}
+    )
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+    
+    return json_response(req, {info = "Succesfully persist total DB"}, 200)
+end
+
 local function init(opts)
     if opts.is_master then
         box.schema.user.create('stroppy', {if_not_exists = true})
@@ -150,6 +205,16 @@ local function init(opts)
         { path = '/transfers', method = 'POST', public = true },
         http_transfer_add
         )
+    httpd:route(
+        { path = '/fetch_total', method = 'GET', public = true },
+        http_fetch_total
+        )
+    httpd:route(
+        { path = '/persist_total', method = 'POST', public = true },
+        http_persist_total
+        )
+
+
 
     log.info("Created httpd")
     return true
