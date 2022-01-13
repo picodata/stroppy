@@ -5,13 +5,13 @@ local uuid = require("uuid")
 
 
 local function account_add(account)
-       log.info(account)
+       log.debug(account)
        -- Проверяем на дубликаты
        local exist = box.space.accounts:get({account.bic, account.ban})
        if exist ~= nil then
            return {ok = false, error = err_storage:new("Account already exist")}
        end
-
+       
        box.space.accounts:insert(box.space.accounts:frommap(account))
 
        return {ok = true, error = nil}
@@ -40,6 +40,22 @@ local function account_balance_update(new_account)
 
     box.space.accounts:update({old_account.bic, old_account.ban},{{'=',3,new_account.balance}})
 
+    return {ok = true, error = nil}
+end
+
+local function fetch_total()
+    local totalBalance = box.space.checksum:select()
+    log.info(totalBalance)
+    if totalBalance == nil then
+        return {ok = false, error = "Total balance not found"}
+    end
+
+    return totalBalance
+end
+
+local function persist_total(total)
+    log.debug(total)
+    local s, err = box.space.checksum:replace({"total", total.total})
     return {ok = true, error = nil}
 end
 
@@ -83,20 +99,25 @@ local function init(opts)
         settings:create_index('primary', { parts={{field='key'}},
         if_not_exists=true })
 
-        local settings = box.schema.space.create('checksum', { if_not_exists=true })
-        settings:format({
+        local checksum = box.schema.space.create('checksum', { if_not_exists=true })
+        checksum:format({
             {name="name", type="string"},
             {name="amount", type="number"},
         })
-        settings:create_index('primary', { parts={{field='name'}},
+        checksum:create_index('primary', { parts={{field='amount'}},
         if_not_exists=true })
 
         box.schema.func.create('account_add', {if_not_exists = true})
         box.schema.func.create('account_balance_update', {if_not_exists = true})
         box.schema.func.create('transfer_add', {if_not_exists = true})
+        box.schema.func.create('fetch_total', {if_not_exists = true})
+        box.schema.func.create('persist_total', {if_not_exists = true})
         rawset(_G, 'account_add', account_add)
         rawset(_G, 'account_balance_update', account_balance_update)
         rawset(_G, 'transfer_add', transfer_add)
+        rawset(_G, 'fetch_total', fetch_total)
+        rawset(_G, 'persist_total', persist_total)
+
     end
 end
 
@@ -124,6 +145,8 @@ return {
         account_add = account_add,
         account_balance_update = account_balance_update,
         transfer_add = transfer_add,
+        fetch_total = fetch_total,
+        persist_total = persist_total
     },
     dependencies={'cartridge.roles.vshard-storage'}
 }
