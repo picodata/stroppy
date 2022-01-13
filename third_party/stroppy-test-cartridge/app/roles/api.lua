@@ -1,6 +1,7 @@
 local cartridge = require('cartridge')
 local log = require('log')
 local errors = require('errors')
+local msgpack = require('msgpack')
 
 local err_vshard_router = errors.new_class("Vshard routing error")
 local err_httpd = errors.new_class("httpd error")
@@ -37,7 +38,8 @@ end
 local function storage_error_response(req, error)
     if error.err == "Account already exist" or "Transfer already exist" then
         return entity_conflict_response(req, error)
-    elseif error.err == "Account not found" then
+    elseif error.err == "Account not found" or "Settings not found" or "Settings found, but count parameter not found" 
+    or "Settings found, but seed parameter not found" then
         return entity_not_found_response(req, error)
     else
         return internal_error_response(req, error)
@@ -178,6 +180,93 @@ local function http_persist_total(req)
     return json_response(req, {info = "Succesfully persist total DB"}, 200)
 end
 
+local function http_calculate_balance(req)
+    local router = cartridge.service_get('vshard-router').get()
+    local totalBalance = 0
+    local shards, err = router:routeall()
+    if err then
+        log.err("failed to call routecall(): %s", err)
+        return internal_error_response(req, error)
+    end
+    log.debug("shards info: %s", shards)
+    for _, replica in pairs(shards) do
+        local set = replica:callro('calculate_accounts_balance')
+        log.info(set)
+        totalBalance = totalBalance+set
+    end
+    
+    return json_response(req, {info = totalBalance}, 200)
+    
+end
+
+local function http_fetch_settings(req)
+    local settings = {}
+
+    local router = cartridge.service_get('vshard-router').get()
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        1,
+        'read',
+        'fetch_settings',
+        {}
+    )
+
+    log.debug("response: %s", resp)
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        return storage_error_response(req, resp.error)
+    end
+
+    settings.count = resp[1][2]
+    settings.seed =  resp[2][2]
+    
+    return json_response(req, {info = settings}, 200)
+end
+
+local function http_bootstrap_db(req)
+    local settings = req:json()
+    log.debug(settings)
+    local router = cartridge.service_get('vshard-router').get()
+    local shards, err = router:routeall()
+    if err then
+        log.err("failed to call routecall(): %s", err)
+        return internal_error_response(req, error)
+    end
+    log.debug("shards info: %s", shards)
+
+     -- чистим таблицы аналогично логике stroppy
+    for _, replica in pairs(shards) do
+        replica:callrw('box.space.accounts:truncate')
+        replica:callrw('box.space.transfers:truncate')
+        replica:callrw('box.space.settings:truncate')
+        replica:callrw('box.space.checksum:truncate')
+    end
+
+    local _, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        1,
+        'write',
+        'insert_settings',
+        {settings}
+    )
+
+    if error then
+        log.info(error)
+        return internal_error_response(req, error)
+    end
+    
+    return json_response(req, {info = "Succesfully bootstraping DB"}, 200)
+    
+end
+
+
 local function init(opts)
     if opts.is_master then
         box.schema.user.create('stroppy', {if_not_exists = true})
@@ -194,15 +283,15 @@ local function init(opts)
     log.info("Starting httpd")
     -- Навешиваем функции-обработчики
     httpd:route(
-        { path = '/account', method = 'POST', public = true },
+        { path = '/insert_account', method = 'POST', public = true },
         http_account_add
     )
     httpd:route(
-        { path = '/account_balance', method = 'PUT', public = true },
+        { path = '/account_balance_update', method = 'PUT', public = true },
         http_account_balance_update
         )
     httpd:route(
-        { path = '/transfers', method = 'POST', public = true },
+        { path = '/insert_transfer', method = 'POST', public = true },
         http_transfer_add
         )
     httpd:route(
@@ -213,8 +302,20 @@ local function init(opts)
         { path = '/persist_total', method = 'POST', public = true },
         http_persist_total
         )
+    httpd:route(
+        { path = '/check_balance', method = 'GET', public = true },
+        http_calculate_balance
+    )
 
+   httpd:route(
+        { path = '/fetch_settings', method = 'GET', public = true },
+        http_fetch_settings
+    )
+    httpd:route(
+        { path = '/bootstrap_db', method = 'POST', public = true },
+        http_bootstrap_db
 
+    )
 
     log.info("Created httpd")
     return true
