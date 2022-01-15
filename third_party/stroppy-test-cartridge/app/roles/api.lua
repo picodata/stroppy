@@ -1,10 +1,26 @@
 local cartridge = require('cartridge')
 local log = require('log')
 local errors = require('errors')
-local msgpack = require('msgpack')
+local custom_errors = require("app.custom_errors")
 
 local err_vshard_router = errors.new_class("Vshard routing error")
 local err_httpd = errors.new_class("httpd error")
+
+local function isNotFoundError(err)
+    if err.class_name == "NotFoundError" then
+        return true
+    else 
+        return false
+    end 
+end
+
+local function isConflictError(err)
+    if err.class_name == "ConflictError" then
+        return true
+    else 
+        return false
+    end 
+end
 
 local function json_response(req, json, status) 
     local resp = req:render({json = json})
@@ -36,10 +52,10 @@ end
 
 
 local function storage_error_response(req, error)
-    if error.err == "Account already exist" or "Transfer already exist" then
+    if isConflictError(error) then
         return entity_conflict_response(req, error)
-    elseif error.err == "Account not found" or "Settings not found" or "Settings found, but count parameter not found" 
-    or "Settings found, but seed parameter not found" then
+    elseif isNotFoundError(error) 
+    then
         return entity_not_found_response(req, error)
     else
         return internal_error_response(req, error)
@@ -59,7 +75,7 @@ local function http_account_add(req)
         'account_add',
         {account}
     )
-
+    
     if error then
         log.info(error)
         return internal_error_response(req, error)
@@ -190,7 +206,7 @@ local function http_calculate_balance(req)
     end
     log.debug("shards info: %s", shards)
     for _, replica in pairs(shards) do
-        local set = replica:callro('calculate_accounts_balance')
+        local set = replica:callrw('calculate_accounts_balance')
         log.info(set)
         totalBalance = totalBalance+set
     end

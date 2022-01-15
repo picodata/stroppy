@@ -1,7 +1,7 @@
 local log = require('log')
-local errors = require('errors')
-local err_storage = errors.new_class("Storage error")
 local uuid = require("uuid")
+local decimal = require("decimal")
+local custom_errors = require("app.custom_errors")
 
 
 local function account_add(account)
@@ -9,8 +9,10 @@ local function account_add(account)
     -- Проверяем на дубликаты
     local exist = box.space.accounts:get({account.bic, account.ban})
     if exist ~= nil then
-        return {ok = false, error = err_storage:new("Account already exist")}
+        return {ok = false, error = custom_errors.storageConflictErrors.AccoutAlReadyExist}
     end
+
+    account.balance = decimal.new(account.balance)
     
     box.space.accounts:insert(box.space.accounts:frommap(account))
 
@@ -21,10 +23,10 @@ local function account_balance_update(new_account)
     -- Проверяем, есть ли счет
      local old_account = box.space.accounts:get({new_account.bic, new_account.ban})
      if old_account == nil then
-         return {ok = false, error = err_storage:new("Account not found")}
+         return {ok = false, error = custom_errors.storageNotFoundErrors.AccNotFound}
      end
  
-     box.space.accounts:update({old_account.bic, old_account.ban},{{'=',3,new_account.balance}})
+     box.space.accounts:update({old_account.bic, old_account.ban},{{'=',3,decimal.new(new_account.balance)}})
  
      return {ok = true, error = nil}
  end
@@ -34,8 +36,10 @@ local function account_balance_update(new_account)
     -- Проверяем на дубликаты
     local exist = box.space.transfers:get({uuid.fromstr(transfer.transfer_id)})
     if exist ~= nil then
-        return {ok = false, error = err_storage:new("Transfer already exist")}
+        return {ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist}
     end
+
+    transfer.amount = decimal.new(transfer.amount)
 
     box.space.transfers:insert({uuid.fromstr(transfer.transfer_id), transfer.src_bic,transfer.src_ban, transfer.dest_bic, transfer.dest_ban, transfer.amount, 
         transfer.bucket_id})
@@ -47,7 +51,7 @@ local function fetch_total()
     local totalBalance = box.space.checksum:select()
     log.info(totalBalance)
     if totalBalance == nil then
-        return {ok = false, error = "Total balance not found"}
+        return {ok = false, error = custom_errors.storageNotFoundErrors.totalBalanceNotFound}
     end
 
     return totalBalance
@@ -55,15 +59,14 @@ end
 
 local function persist_total(total)
     log.debug(total)
-    local s, err = box.space.checksum:replace({"total", total.total})
+    box.space.checksum:replace({"total", decimal.new(total.total)})
     return {ok = true, error = nil}
 end
 
 local function calculate_accounts_balance()
-    local sum
-    sum = 0
+    local sum = 0
     for _, t in box.space.accounts:pairs() do 
-        if type(t[3]) == "number" then sum = sum + t[3]
+        if type(t[3]) == "decimal" then sum = sum + t[3]
         end
     end
         return sum
@@ -75,7 +78,7 @@ local function insert_settings(settings)
        -- Проверяем на дубликаты
        local exist = box.space.settings:get({key})
        if exist ~= nil then
-           return {ok = false, error = err_storage:new("Settings already exist")}
+           return {ok = false, error = custom_errors.storageConflictErrors.SetingsAlreadyExist}
        end
 
        box.space.settings:insert({key, value})
@@ -88,9 +91,9 @@ local function fetch_settings()
     local settings = box.space.settings:select()
     log.info(settings)
     if settings == nil then
-        return {ok = false, error = "Settings not found"}
-    elseif #settings <1 then 
-        return {ok = false, error = "Settings found, expected 2 parameters, but got"..settings:len() }
+        return {ok = false, error = custom_errors.storageNotFoundErrors.settingsNotFound}
+    elseif #settings <2 then 
+        return {ok = false, error =  custom_errors.storageConflictErrors.SettingsIncorrectCount}
     end
 
     return settings
@@ -103,7 +106,7 @@ local function init(opts)
         accounts:format({
             { name = "bic", type = "string" },
             { name = "ban", type = "string" },
-            {name="balance", type="number"},
+            {name="balance", type="decimal"},
             {name="bucket_id", type="unsigned"},
         })
         accounts:create_index('primary', { parts={{field='bic'}, {field='ban'}},
@@ -119,7 +122,7 @@ local function init(opts)
                 {name="src_ban", type="string"},
                 {name="dest_bic", type="string"},
                 {name="dest_ban", type="string"},
-                {name="balance", type="number"},
+                {name="balance", type="decimal"},
                 {name="bucket_id", type="unsigned"},
             })
         transfers:create_index('primary', { parts={{field='transfer_id'}},
@@ -139,7 +142,7 @@ local function init(opts)
         local checksum = box.schema.space.create('checksum', { if_not_exists=true })
         checksum:format({
             {name="name", type="string"},
-            {name="amount", type="number"},
+            {name="amount", type="decimal"},
         })
         checksum:create_index('primary', { parts={{field='amount'}},
         if_not_exists=true })
