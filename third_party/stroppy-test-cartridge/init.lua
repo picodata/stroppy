@@ -31,7 +31,8 @@ end
 
 local cartridge = require('cartridge')
 
-local ok, err = cartridge.cfg({
+local ok, err = cartridge.cfg(
+{
     workdir = 'stroppy_test',
     bucket_count = 32,
     roles = {
