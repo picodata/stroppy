@@ -42,6 +42,7 @@ const (
 	FDBClusterType
 	MongoDBClusterType
 	CockroachClusterType
+	CartridgeClusterType
 )
 
 func (e DBClusterType) String() string {
@@ -59,6 +60,7 @@ const (
 	Postgres   = "postgres"
 	MongoDB    = "mongodb"
 	Cockroach  = "cockroach"
+	Cartridge = "cartridge"
 )
 
 const (

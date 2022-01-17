@@ -9,7 +9,7 @@ local function account_add(account)
     -- Проверяем на дубликаты
     local exist = box.space.accounts:get({account.bic, account.ban})
     if exist ~= nil then
-        return {ok = false, error = custom_errors.storageConflictErrors.AccoutAlReadyExist}
+        return {ok = false, error = custom_errors.storageConflictErrors.AccountAlReadyExist}
     end
 
     account.balance = decimal.new(account.balance)
@@ -49,8 +49,8 @@ end
 
 local function fetch_total()
     local totalBalance = box.space.checksum:select()
-    log.info(totalBalance)
-    if totalBalance == nil then
+    log.debug(totalBalance)
+    if #totalBalance <1 then
         return {ok = false, error = custom_errors.storageNotFoundErrors.totalBalanceNotFound}
     end
 
@@ -64,12 +64,11 @@ local function persist_total(total)
 end
 
 local function calculate_accounts_balance()
-    local sum = 0
+    local sum = decimal.new(0)
     for _, t in box.space.accounts:pairs() do 
-        if type(t[3]) == "decimal" then sum = sum + t[3]
-        end
+        sum = sum + decimal.new(t[3])
     end
-        return sum
+        return decimal.new(sum)
 end
 
 local function insert_settings(settings)
@@ -89,7 +88,7 @@ end
 
 local function fetch_settings()
     local settings = box.space.settings:select()
-    log.info(settings)
+    log.debug(settings)
     if settings == nil then
         return {ok = false, error = custom_errors.storageNotFoundErrors.settingsNotFound}
     elseif #settings <2 then 
