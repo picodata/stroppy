@@ -55,7 +55,6 @@ local function account_balance_update(new_account)
 	return { ok = true, error = nil }
 end
 
-
 local function insert_transfer(transfer)
     log.debug(transfer)
     -- Проверяем на дубликаты
@@ -273,8 +272,10 @@ local function init(opts)
 			{ name = "dest_bic", type = "string" },
 			{ name = "dest_ban", type = "string" },
 			{ name = "state", type = "string" },
+
 			{ name = "client_id", type = "uuid", is_nullable = true },
 			{ name = "client_timestamp", type = "scalar", is_nullable = true },
+
 			{ name = "amount", type = "decimal" },
 
 			{ name = "bucket_id", type = "unsigned" },
@@ -329,7 +330,6 @@ local function init(opts)
 		rawset(_G, "set_storage_transfer_state", set_storage_transfer_state)
 		rawset(_G, "fetch_transfer", fetch_transfer)
 	end
-
 end
 
 --[[
