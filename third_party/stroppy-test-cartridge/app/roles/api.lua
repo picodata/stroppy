@@ -118,8 +118,8 @@ local function http_account_balance_update(req)
 end
 
 
-local function http_transfer_add(req)
-    local transfer = req:json()
+local function transfer_add(transfer)
+    log.info(transfer)
     local router = cartridge.service_get('vshard-router').get()
     transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
@@ -134,14 +134,14 @@ local function http_transfer_add(req)
 
     if error then
         log.info(error)
-        return internal_error_response(req, error)
+        return nil, error
     end
 
     if resp ~= nil and resp.error then
-        return storage_error_response(req, resp.error)
+        return resp.error, nil
     end
     
-    return json_response(req, {info = "Successfully created"}, 201)
+    return resp, nil
 end
 
 local function http_fetch_total(req)
@@ -281,9 +281,40 @@ local function http_bootstrap_db(req)
     
 end
 
-local function http_make_custom_transfer(req)
-    http_transfer_add(req)
+local function update_transfer(transfer)
+    log.info("router: update_transfer: transfer from req: %s", transfer)
+    local router = cartridge.service_get('vshard-router').get()
+    transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        transfer.bucket_id,
+        'write',
+        'update_transfer',
+        {transfer}
+    )
+
+    if error then
+        log.info(error)
+        return nil, error
+    end
+
+    if resp ~= nil and resp.error then
+        return resp.error, nil
+    end
     
+    return resp, nil
+    
+end
+
+local function http_make_custom_transfer(req)
+    log.info(req)
+    local transfer = req:json()
+    local resp, err = transfer_add(transfer)
+    log.info(resp, err)
+    local resp, err = update_transfer(transfer) 
+    log.info(resp, err)
 end
 
 
@@ -309,10 +340,6 @@ local function init(opts)
     httpd:route(
         { path = '/account_balance_update', method = 'PUT', public = true },
         http_account_balance_update
-        )
-    httpd:route(
-        { path = '/insert_transfer', method = 'POST', public = true },
-        http_transfer_add
         )
     httpd:route(
         { path = '/fetch_total', method = 'GET', public = true },
