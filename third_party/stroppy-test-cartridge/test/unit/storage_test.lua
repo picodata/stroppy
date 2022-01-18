@@ -12,16 +12,15 @@ local deepcopy = helper.shared.deepcopy
 -- взято из https://pastebin.com/CYNn4bfs
 local function rand_str(len)
     len = tonumber(len) or 1
-    
     local function rand_char()
-        return math.random() > 0.5 
+        return math.random() > 0.5
             and string.char(math.random(65, 90))
             or string.char(math.random(97, 122))
     end
     local function rand_num()
         return string.char(math.random(48, 57))
     end
-    
+
     local str = ""
     for i = 1, len do
         str = str .. (math.random() > 0.5 and rand_char() or rand_num())

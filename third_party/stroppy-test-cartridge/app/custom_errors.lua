@@ -15,6 +15,7 @@ local custom_errors = {
         AccNotFound = not_found_error:new("Account not found"),
         SettingsNotFound = not_found_error:new("Settings not found"),
         totalBalanceNotFound = not_found_error:new("Total balance not found"),
+        TransferNotFound = not_found_error:new("Transfer not found")
 }
 }
 
