@@ -55,20 +55,14 @@ local function account_balance_update(new_account)
 	return { ok = true, error = nil }
 end
 
-local function insert_transfer(transfer)
-	log.debug({ "storage: insert_transfer: got transfer:", transfer })
-	-- Проверяем на дубликаты
-	local exist = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
-	if exist ~= nil then
-		-- если клиент, приславший запрос, тот же, то это не дубликат, а переповтор
-		if exist[7] == transfer.client_id then
-			return { result = true, error = nil }
-		else
-			return { result = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
-		end
-	end
 
-	transfer.amount = decimal.new(transfer.amount)
+local function insert_transfer(transfer)
+    log.debug(transfer)
+    -- Проверяем на дубликаты
+    local exist = box.space.transfers:get({uuid.fromstr(transfer.transfer_id)})
+    if exist ~= nil then
+        return {ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist}
+    end
 
 	box.atomic(function()
 		box.space.transfers:insert({
@@ -86,6 +80,7 @@ local function insert_transfer(transfer)
 	end)
 
 	return { result = true, error = nil }
+
 end
 
 local function fetch_total()
@@ -334,6 +329,7 @@ local function init(opts)
 		rawset(_G, "set_storage_transfer_state", set_storage_transfer_state)
 		rawset(_G, "fetch_transfer", fetch_transfer)
 	end
+
 end
 
 --[[
@@ -373,3 +369,4 @@ return {
 	},
 	dependencies = { "cartridge.roles.vshard-storage" },
 }
+
