@@ -27,38 +27,31 @@ local function account_add(account)
 end
 
 local function account_balance_update(new_account)
-	-- Проверяем, есть ли счет
-	local old_account = box.space.accounts:get({ new_account.bic, new_account.ban })
-	if old_account == nil then
-		return { ok = false, error = custom_errors.storageNotFoundErrors.AccNotFound }
-	end
+    -- Проверяем, есть ли счет
+     local current_account = box.space.accounts:get({new_account.bic, new_account.ban})
+     if current_account == nil then
+         return {ok = false, error = custom_errors.storageNotFoundErrors.AccNotFound}
+     end
+ 
+     box.space.accounts:update({current_account.bic, current_account.ban},{{'=',3,decimal.new(new_account.balance)}})
+ 
+     return {ok = true, error = nil}
+ end
 
-	box.space.accounts:update({ old_account.bic, old_account.ban }, { { "=", 3, decimal.new(new_account.balance) } })
+ local function insert_transfer(transfer)
+    log.debug(transfer)
+    -- Проверяем на дубликаты
+    local exist = box.space.transfers:get({uuid.fromstr(transfer.transfer_id)})
+    if exist ~= nil then
+        return {ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist}
+    end
 
-	return { ok = true, error = nil }
-end
+    transfer.amount = decimal.new(transfer.amount)
 
-local function transfer_add(transfer)
-	log.debug(transfer)
-	-- Проверяем на дубликаты
-	local exist = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
-	if exist ~= nil then
-		return { ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
-	end
-
-	transfer.amount = decimal.new(transfer.amount)
-
-	box.space.transfers:insert({
-		uuid.fromstr(transfer.transfer_id),
-		transfer.src_bic,
-		transfer.src_ban,
-		transfer.dest_bic,
-		transfer.dest_ban,
-		transfer.amount,
-		transfer.bucket_id,
-	})
-
-	return { ok = true, error = nil }
+    box.space.transfers:insert({uuid.fromstr(transfer.transfer_id), transfer.src_bic,transfer.src_ban, transfer.dest_bic, transfer.dest_ban, transfer.amount, 
+        transfer.bucket_id})
+    
+    return {ok = true, error = nil}
 end
 
 local function fetch_total()
@@ -112,75 +105,135 @@ local function fetch_settings()
 	return settings
 end
 
+local function  update_transfer(transfer)
+    -- Проверяем, есть ли счет
+    local current_transfer = box.space.transfers:get({transfer.transfer_id})
+    if current_transfer == nil then
+        return {ok = false, error = custom_errors.storageNotFoundErrors.TransferNotFound}
+    end
+
+    box.space.transfers:update(transfer)
+
+    return {ok = true, error = nil}
+end
+
+local function fetch_account_balance(account)
+    local account_balance = box.space.accounts:get({account.bic, account.ban})['balance']
+    log.debug(account_balance)
+    if account_balance == nil then
+        return {ok = false, error = custom_errors.storageNotFoundErrors.totalBalanceNotFound}
+    end
+
+    assert(type(account_balance)== "decimal", "account_balance has a type not a decimal")
+
+    return account_balance
+end
+
+local function lock_account(new_account)
+     -- Проверяем, есть ли счет
+     local current_account = box.space.accounts:get({new_account.bic, new_account.ban})
+     if current_account == nil then
+         return {ok = false, error = custom_errors.storageNotFoundErrors.AccNotFound}
+     end
+     -- аналогично lockAccount в https://github.com/picodata/stroppy/blob/develop/pkg/database/cluster/pgSqlConstants.go#L105
+     if current_account.pending_transfer ~= nil then
+        new_account.pending_transfer = current_account.pending_transfer
+     end
+
+     if current_account.pending_amount ~= 0 then
+        new_account.pending_amount = current_account.pending_amount
+     end
+ 
+     box.space.accounts:update({current_account.bic, current_account.ban},{{'=',4,new_account.pending_transfer}, {'=',5,new_account.pending_amount}})
+ 
+     return {ok = true, error = nil}
+end
+
+local function complete_transfer(transfer)
+    
+end
+
 local function init(opts)
-	if opts.is_master then
-		-- cоздаем спейсы, если не созданы
-		local accounts = box.schema.space.create("accounts", { if_not_exists = true })
-		accounts:format({
-			{ name = "bic", type = "string" },
-			{ name = "ban", type = "string" },
-			{ name = "balance", type = "decimal" },
-			{ name = "pending_transfer", type = "uuid", is_nullable=true},
-			{ name = "pending_amount", type = "decimal" },
-			{ name = "bucket_id", type = "unsigned" },
-		})
-		accounts:create_index("primary", { parts = { { field = "bic" }, { field = "ban" } }, if_not_exists = true })
-		accounts:create_index(
-			"bucket_id",
-			{ parts = { { field = "bucket_id" } }, unique = false, if_not_exists = true }
-		)
+    if opts.is_master then
+        -- cоздаем спейсы, если не созданы
+        local accounts = box.schema.space.create('accounts', { if_not_exists = true })
+        accounts:format({
+            { name = "bic", type = "string" },
+            { name = "ban", type = "string" },
+            {name="balance", type="decimal"},
+            {name="pending_transfer", type="uuid"},
+            {name="pending_amount", type="decimal"},
+            {name="bucket_id", type="unsigned"},
+        })
+        accounts:create_index('primary', { parts={{field='bic'}, {field='ban'}},
+            if_not_exists=true })
+        accounts:create_index('bucket_id', { parts={{field="bucket_id"}},
+            unique=false,
+            if_not_exists=true })   
 
-		local transfers = box.schema.space.create("transfers", { if_not_exists = true })
-		transfers:format({
-			{ name = "transfer_id", type = "uuid" },
-			{ name = "src_bic", type = "string" },
-			{ name = "src_ban", type = "string" },
-			{ name = "dest_bic", type = "string" },
-			{ name = "dest_ban", type = "string" },
-			{ name = "state", type = "string" },
-			{ name = "client_id", type = "uuid" },
-			{ name = "client_timestamp", type = "number" },
-			{ name = "balance", type = "decimal" },
+        local transfers = box.schema.space.create('transfers', { if_not_exists=true })
+        transfers:format({
+                {name="transfer_id", type="uuid"},
+                {name="src_bic", type="string"},
+                {name="src_ban", type="string"},
+                {name="dest_bic", type="string"},
+                {name="dest_ban", type="string"},
+                {name="state", type="string"},
+                {name="client_id", type="uuid"},
+                {name="client_timestamp", type="number"},
+                {name="balance", type="decimal"},
 
-			{ name = "bucket_id", type = "unsigned" },
-		})
-		transfers:create_index("primary", { parts = { { field = "transfer_id" } }, if_not_exists = true })
-		transfers:create_index(
-			"bucket_id",
-			{ parts = { { field = "bucket_id" } }, unique = false, if_not_exists = true }
-		)
+                {name="bucket_id", type="unsigned"},
+            })
+        transfers:create_index('primary', { parts={{field='transfer_id'}},
+                if_not_exists=true })
+        transfers:create_index('bucket_id', { parts={{field="bucket_id"}},
+                unique=false,
+                if_not_exists=true })
 
-		local settings = box.schema.space.create("settings", { if_not_exists = true })
-		settings:format({
-			{ name = "key", type = "string" },
-			{ name = "value", type = "number" },
-		})
-		settings:create_index("primary", { parts = { { field = "key" } }, if_not_exists = true })
+        local settings = box.schema.space.create('settings', { if_not_exists=true })
+        settings:format({
+            {name="key", type="string"},
+            {name="value", type="number"},
+        })
+        settings:create_index('primary', { parts={{field='key'}},
+        if_not_exists=true })
 
-		local checksum = box.schema.space.create("checksum", { if_not_exists = true })
-		checksum:format({
-			{ name = "name", type = "string" },
-			{ name = "amount", type = "decimal" },
-		})
-		checksum:create_index("primary", { parts = { { field = "amount" } }, if_not_exists = true })
+        local checksum = box.schema.space.create('checksum', { if_not_exists=true })
+        checksum:format({
+            {name="name", type="string"},
+            {name="amount", type="decimal"},
+        })
+        checksum:create_index('primary', { parts={{field='amount'}},
+        if_not_exists=true })
 
-		box.schema.func.create("account_add", { if_not_exists = true })
-		box.schema.func.create("account_balance_update", { if_not_exists = true })
-		box.schema.func.create("transfer_add", { if_not_exists = true })
-		box.schema.func.create("fetch_total", { if_not_exists = true })
-		box.schema.func.create("persist_total", { if_not_exists = true })
-		box.schema.func.create("calculate_accounts_balance", { if_not_exists = true })
-		box.schema.func.create("insert_settings", { if_not_exists = true })
-		box.schema.func.create("fetch_settings", { if_not_exists = true })
-		rawset(_G, "account_add", account_add)
-		rawset(_G, "account_balance_update", account_balance_update)
-		rawset(_G, "transfer_add", transfer_add)
-		rawset(_G, "fetch_total", fetch_total)
-		rawset(_G, "persist_total", persist_total)
-		rawset(_G, "calculate_accounts_balance", calculate_accounts_balance)
-		rawset(_G, "insert_settings", insert_settings)
-		rawset(_G, "fetch_settings", fetch_settings)
-	end
+        box.schema.func.create('account_add', {if_not_exists = true})
+        box.schema.func.create('account_balance_update', {if_not_exists = true})
+        box.schema.func.create('transfer_add', {if_not_exists = true})
+        box.schema.func.create('fetch_total', {if_not_exists = true})
+        box.schema.func.create('persist_total', {if_not_exists = true})
+        box.schema.func.create('calculate_accounts_balance', {if_not_exists = true})
+        box.schema.func.create('insert_settings', {if_not_exists = true})
+        box.schema.func.create('fetch_settings', {if_not_exists = true})
+        box.schema.func.create('insert_transfer', {if_not_exists = true})
+        box.schema.func.create('update_transfer', {if_not_exists = true})
+        box.schema.func.create('fetch_account_balance', {if_not_exists = true})
+        box.schema.func.create('lock_account', {if_not_exists = true})
+        box.schema.func.create('complete_transfer', {if_not_exists = true})
+        rawset(_G, 'account_add', account_add)
+        rawset(_G, 'account_balance_update', account_balance_update)
+        rawset(_G, 'transfer_add', insert_transfer)
+        rawset(_G, 'fetch_total', fetch_total)
+        rawset(_G, 'persist_total', persist_total)
+        rawset(_G, 'calculate_accounts_balance', calculate_accounts_balance)
+        rawset(_G, 'insert_settings', insert_settings)
+        rawset(_G, 'fetch_settings', fetch_settings)
+        rawset(_G, 'insert_transfer', insert_transfer)
+        rawset(_G, 'update_transfer', update_transfer)
+        rawset(_G, 'fetch_account_balance', fetch_account_balance)
+        rawset(_G, 'lock_account', lock_account)
+        rawset(_G, 'complete_transfer', complete_transfer)
+    end
 end
 
 --[[
@@ -196,21 +249,24 @@ end
 local function stop() end
 
 return {
-	role_name = "storage",
+    role_name="storage",
 
-	init = init,
-	validate_config = validate_config,
-	apply_config = apply_config,
-	stop = stop,
-	utils = {
-		account_add = account_add,
-		account_balance_update = account_balance_update,
-		transfer_add = transfer_add,
-		fetch_total = fetch_total,
-		persist_total = persist_total,
-		calculate_accounts_balance = calculate_accounts_balance,
-		insert_settings = insert_settings,
-		fetch_settings = fetch_settings,
-	},
-	dependencies = { "cartridge.roles.vshard-storage" },
+    init=init,
+    validate_config=validate_config,
+    apply_config=apply_config,
+    stop=stop,
+    utils = {
+        account_add = account_add,
+        account_balance_update = account_balance_update,
+        transfer_add = insert_transfer,
+        fetch_total = fetch_total,
+        persist_total = persist_total,
+        calculate_accounts_balance = calculate_accounts_balance,
+        insert_settings = insert_settings,
+        fetch_settings = fetch_settings, 
+        insert_transfer = insert_transfer,
+        update_transfer = update_transfer
+    },
+    dependencies={'cartridge.roles.vshard-storage'}
 }
+

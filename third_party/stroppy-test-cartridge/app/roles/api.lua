@@ -128,7 +128,7 @@ local function http_transfer_add(req)
         router,
         transfer.bucket_id,
         'write',
-        'transfer_add',
+        'insert_transfer',
         {transfer}
     )
 
@@ -281,6 +281,11 @@ local function http_bootstrap_db(req)
     
 end
 
+local function http_make_custom_transfer(req)
+    http_transfer_add(req)
+    
+end
+
 
 local function init(opts)
     if opts.is_master then
@@ -329,7 +334,11 @@ local function init(opts)
     httpd:route(
         { path = '/bootstrap_db', method = 'POST', public = true },
         http_bootstrap_db
+    )   
 
+    httpd:route(
+        { path = '/make_custom_transfer', method = 'POST', public = true },
+        http_make_custom_transfer
     )
 
     log.info("Created httpd")
