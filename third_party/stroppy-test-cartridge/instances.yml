@@ -9,5 +9,5 @@ stroppy-test-cartridge.s1-master:
 
 stroppy-test-cartridge.s2-master:
   advertise_uri: localhost:3303
-  http_port: 8084
+  http_port: 8083
 
