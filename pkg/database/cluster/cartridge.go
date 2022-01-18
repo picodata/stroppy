@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"strconv"
 	"time"
@@ -24,9 +25,9 @@ import (
 
 // CartridgeCluster - объявление соединения к FDB и ссылки на модель данных.
 type CartridgeCluster struct {
-	client *http.Client
+	client      *http.Client
 	binary_conn *tarantool.Connection
-	url    string
+	url         string
 }
 
 type settingsParams struct {
@@ -45,6 +46,15 @@ type finalBalance struct {
 
 type transactionResult struct {
 	Result string
+}
+
+type account struct {
+	Bic             string `json:"bic"`
+	Ban             string `json:"ban"`
+	Balance         int64  `json:"balance"`
+	PendingAmount   int64  `json:"pending_amount"`
+	PendingTransfer uuid.UUID `json:"pending_transfer"`
+	Found           bool `json:"found"`
 }
 
 func (cluster *CartridgeCluster) InsertTransfer(_ *model.Transfer) error {
@@ -178,7 +188,7 @@ func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 
 	var settings map[string]map[string]int
 
-    if err = json.NewDecoder(resp.Body).Decode(&settings);err != nil{
+	if err = json.NewDecoder(resp.Body).Decode(&settings); err != nil {
 		return Settings{}, merry.Prepend(err, "failed to decode settings from cartridge app response")
 	}
 
@@ -191,12 +201,26 @@ func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 // InsertAccount - сохранить новый счет.
 func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 
-	body_template := []byte(`{"bic":"` + fmt.Sprintf("%s", acc.Bic) + 
-	`","ban": "` + fmt.Sprintf("%s", acc.Ban) + `", "balance":` + fmt.Sprintf("%v", acc.Balance.UnscaledBig().Int64()) + `}`)
+	account := account{
+		Bic:             acc.Bic,
+		Ban:             acc.Ban,
+		Balance:         acc.Balance.UnscaledBig().Int64(),
+		PendingAmount:   acc.PendingAmount.UnscaledBig().Int64(),
+		PendingTransfer: acc.PendingTransfer,
+		Found:           false,
+	}
+
+	account_json, err := json.Marshal(account)
+	if err != nil {
+		return merry.Prepend(err, "failed to marshal account to json to insert account in cartridge app")
+	}
+
+	llog.Traceln(string(account_json))
+
 	request_template := fmt.Sprintf("%s/insert_account", cluster.url)
 
 	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(body_template),
+		"POST", request_template, bytes.NewBuffer(account_json),
 	)
 
 	if err != nil {
@@ -211,19 +235,24 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 		return merry.Prepend(err, "failed to make request to insert account in cartridge app")
 	}
 
+	if resp.StatusCode != 201 && resp.StatusCode != 409 {
+		error_body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return merry.Prepend(err, "failed to insert account in cartridge app, but error body cannot be read")
+		}
+		return merry.Errorf("failed to insert account in cartridge app: %v %v", resp.StatusCode, string(error_body))
+	}
+
 	var response map[string]string
 
-	if err = json.NewDecoder(resp.Body).Decode(&response);err != nil{
+	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return merry.Prepend(err, "failed to decode result to insert account from cartridge app response")
 	}
 
-	if resp.StatusCode != 200 {
-		if resp.StatusCode == 409 {
-			if response["error"] == "Account already exist"{
-				return ErrDuplicateKey
-			}
+	if resp.StatusCode == 409 {
+		if response["error"] == "Account already exist" {
+			return ErrDuplicateKey
 		}
-		return merry.Prepend(err, "failed to insert account in cartridge app")
 	}
 
 	defer resp.Body.Close()
@@ -249,7 +278,7 @@ func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
 	}
 
 	if resp.StatusCode != 200 {
-		if resp.StatusCode == 404{
+		if resp.StatusCode == 404 {
 			return nil, ErrNoRows
 		}
 		return nil, merry.Prepend(err, "failed to fetch total balance in cartridge app")
@@ -259,14 +288,14 @@ func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
 
 	var balance_from_resp map[string]string
 
-    if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp);err != nil{
+	if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp); err != nil {
 		return nil, merry.Prepend(err, "failed to fetch total balance from cartridge app response")
 	}
 
 	llog.Debugf("result of fetch balance %v \n", balance_from_resp["info"])
 
-	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64) 
-	if err != nil{
+	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64)
+	if err != nil {
 		return nil, merry.Prepend(err, "failed to convert balance string from cartridge app response")
 	}
 
@@ -296,7 +325,7 @@ func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
 
 	var response map[string]interface{}
 
-	if err = json.NewDecoder(resp.Body).Decode(&response);err != nil{
+	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 		return err
 	}
 
@@ -334,14 +363,14 @@ func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
 
 	var balance_from_resp map[string]string
 
-    if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp);err != nil{
+	if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp); err != nil {
 		return nil, merry.Prepend(err, "failed to calculate balance from cartridge app response")
 	}
 
 	llog.Debugf("result of check balance %v \n", balance_from_resp["info"])
 
-	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64) 
-	if err != nil{
+	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64)
+	if err != nil {
 		return nil, merry.Prepend(err, "failed to convert balance string from cartridge app response")
 	}
 
@@ -350,6 +379,43 @@ func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+
+	transfer_json, err := json.Marshal(transfer)
+	if err != nil {
+		merry.Prepend(err, "failed to marshal transfer to json to make custom transfer in cartridge app")
+	}
+
+	llog.Debugln(string(transfer_json))
+
+	request_template := fmt.Sprintf("%s/make_custom_transfer", cluster.url)
+
+	request, err := http.NewRequest(
+		"POST", request_template, bytes.NewBuffer(transfer_json),
+	)
+
+	if err != nil {
+		return merry.Prepend(err, "failed to create request to make custom transfer in cartridge app")
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+
+	resp, err := cluster.client.Do(request)
+
+	if err != nil {
+		return merry.Prepend(err, "failed to make request to make custom transfer in cartridge app")
+	}
+
+	var response map[string]interface{}
+
+	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return err
+	}
+
+	if resp.StatusCode != 200 {
+		return merry.Prepend(err, "failed to make custom transfer balance in cartridge app")
+	}
+
+	defer resp.Body.Close()
 
 	return nil
 }

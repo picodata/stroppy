@@ -168,7 +168,7 @@ local function http_fetch_total(req)
         return storage_error_response(req, resp.error)
     end
 
-    log.info(resp)
+    log.debug(resp)
 
     total.total = resp[1][2]
     
