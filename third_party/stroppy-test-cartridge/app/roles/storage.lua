@@ -13,6 +13,7 @@ local function tuple_to_table(format, tuple)
 	return map
 end
 
+
 local function account_add(account)
 	log.debug(account)
 	-- Проверяем на дубликаты
@@ -200,6 +201,7 @@ local function lock_storage_account(account)
 		account.pending_amount = current_account.pending_amount
 	end
 
+
 	local received_account = box.atomic(function()
 		local updated_account = box.space.accounts:update(
 			{ current_account.bic, current_account.ban },
@@ -369,4 +371,3 @@ return {
 	},
 	dependencies = { "cartridge.roles.vshard-storage" },
 }
-

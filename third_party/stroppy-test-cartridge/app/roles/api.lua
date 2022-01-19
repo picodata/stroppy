@@ -1,3 +1,4 @@
+
 local cartridge = require("cartridge")
 local log = require("log")
 local errors = require("errors")
@@ -152,7 +153,6 @@ local function account_balance_update(account)
 end
 
 local function insert_transfer(transfer)
-<<<<<<< HEAD
 	log.debug({ "insert_transfer: got transfer: ", transfer })
 	local router = cartridge.service_get("vshard-router").get()
 	transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
@@ -177,31 +177,7 @@ local function insert_transfer(transfer)
 	end
 
 	return resp, nil
-=======
-    log.info(transfer)
-    local router = cartridge.service_get('vshard-router').get()
-    transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
-    local resp, error = err_vshard_router:pcall(
-        router.call,
-        router,
-        transfer.bucket_id,
-        'write',
-        'insert_transfer',
-        {transfer}
-    )
-
-    if error then
-        log.info(error)
-        return nil, error
-    end
-
-    if resp ~= nil and resp.error then
-        return resp.error, nil
-    end
-    
-    return resp, nil
->>>>>>> fix(stroppy-cartridge): add first integration tests and change unit tests  Also remove storage method complete_transfer, because there is no need for it
 end
 
 local function http_fetch_total(req)
@@ -294,7 +270,6 @@ local function http_fetch_settings(req)
 end
 
 local function http_bootstrap_db(req)
-<<<<<<< HEAD
 	local settings = req:json()
 	log.debug(settings)
 	local router = cartridge.service_get("vshard-router").get()
@@ -460,42 +435,6 @@ local function lock_account(account)
 	local received_account = resp[1]
 
 	return received_account, nil
-=======
-    local settings = req:json()
-    log.debug(settings)
-    local router = cartridge.service_get('vshard-router').get()
-    local shards, err = router:routeall()
-    if err then
-        log.err("failed to call routecall(): %s", err)
-        return internal_error_response(req, error)
-    end
-    log.debug("shards info: %s", shards)
-
-     -- чистим таблицы аналогично логике stroppy
-    for _, replica in pairs(shards) do
-        replica:callrw('box.space.accounts:truncate')
-        replica:callrw('box.space.transfers:truncate')
-        replica:callrw('box.space.settings:truncate')
-        replica:callrw('box.space.checksum:truncate')
-    end
-
-    local _, error = err_vshard_router:pcall(
-        router.call,
-        router,
-        1,
-        'write',
-        'insert_settings',
-        {settings}
-    )
-
-    if error then
-        log.info(error)
-        return internal_error_response(req, error)
-    end
-    
-    return json_response(req, {info = "Succesfully bootstraping DB"}, 201)
-    
->>>>>>> fix(stroppy-cartridge): add first integration tests and change unit tests  Also remove storage method complete_transfer, because there is no need for it
 end
 
 local function unlock_account(account)
@@ -523,9 +462,9 @@ local function unlock_account(account)
 	end
 
 	return resp, nil
+
 end
 
-<<<<<<< HEAD
 local function http_fetch_transfer(transfer_id)
 	log.debug({ "http_fetch_transfer: got transfer_id: ", { transfer_id } })
 	local router = cartridge.service_get("vshard-router").get()
@@ -553,15 +492,6 @@ local function http_fetch_transfer(transfer_id)
 	local current_transfer = resp[1]
 
 	return current_transfer, nil
-=======
-local function http_make_custom_transfer(req)
-    log.info(req)
-    local transfer = req:json()
-    local resp, err = insert_transfer(transfer)
-    log.info(resp, err)
-    local resp, err = update_transfer(transfer) 
-    log.info(resp, err)
->>>>>>> fix(stroppy-cartridge): add first integration tests and change unit tests  Also remove storage method complete_transfer, because there is no need for it
 end
 
 local function http_make_atomic_transfer(req)
@@ -788,7 +718,6 @@ local function http_make_atomic_transfer(req)
 end
 
 local function init(opts)
-<<<<<<< HEAD
 	if opts.is_master then
 		box.schema.user.create("stroppy", { if_not_exists = true })
 		box.schema.user.grant("stroppy", "super", nil, nil, { if_not_exists = true })
@@ -818,59 +747,7 @@ local function init(opts)
 
 	log.debug("Created httpd")
 	return true
-=======
-    if opts.is_master then
-        box.schema.user.create('stroppy', {if_not_exists = true})
-        box.schema.user.grant('stroppy', 'super', nil, nil, { if_not_exists = true })
-        box.schema.user.passwd('stroppy', 'stroppy')
-    end
 
-    local httpd = cartridge.service_get('httpd')
-
-    if not httpd then
-        return nil, err_httpd:new("not found")
-    end
-
-    log.info("Starting httpd")
-    -- Навешиваем функции-обработчики
-    httpd:route(
-        { path = '/account/insert', method = 'POST', public = true },
-        http_account_add
-    )
-    httpd:route(
-        { path = '/account/update_balance', method = 'PUT', public = true },
-        http_account_balance_update
-        )
-    httpd:route(
-        { path = '/total_balance/fetch', method = 'GET', public = true },
-        http_fetch_total
-        )
-    httpd:route(
-        { path = '/total_balance/persist', method = 'POST', public = true },
-        http_persist_total
-        )
-    httpd:route(
-        { path = '/balance/check', method = 'GET', public = true },
-        http_calculate_balance
-    )
-
-   httpd:route(
-        { path = '/settings/fetch', method = 'GET', public = true },
-        http_fetch_settings
-    )
-    httpd:route(
-        { path = '/db/bootstrap', method = 'POST', public = true },
-        http_bootstrap_db
-    )   
-
-    httpd:route(
-        { path = '/transfer/custom/create', method = 'POST', public = true },
-        http_make_custom_transfer
-    )
-
-    log.info("Created httpd")
-    return true
->>>>>>> fix(stroppy-cartridge): add first integration tests and change unit tests  Also remove storage method complete_transfer, because there is no need for it
 end
 
 return {
