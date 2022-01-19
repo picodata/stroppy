@@ -1,7 +1,7 @@
 local cartridge = require('cartridge')
 local log = require('log')
 local errors = require('errors')
-local custom_errors = require("app.custom_errors")
+local decimal = require('decimal')
 
 local err_vshard_router = errors.new_class("Vshard routing error")
 local err_httpd = errors.new_class("httpd error")
@@ -38,14 +38,16 @@ end
 
 local function entity_not_found_response(req, error)
     local resp = json_response(req, {
-        info = error.err
+        info = error.class_name,
+        error = error.err
     }, 404)
     return resp
 end
 
 local function entity_conflict_response(req, error)
     local resp = json_response(req, {
-        info = error.err
+        info = error.class_name,
+        error = error.err
     }, 409)
     return resp
 end
@@ -64,6 +66,7 @@ end
 
 local function http_account_add(req)
     local account = req:json()
+    log.debug(account)
     local router = cartridge.service_get('vshard-router').get()
     account.bucket_id = router:bucket_id_mpcrc32(account.bic..account.ban)
 
@@ -165,9 +168,11 @@ local function http_fetch_total(req)
         return storage_error_response(req, resp.error)
     end
 
+    log.debug(resp)
+
     total.total = resp[1][2]
     
-    return json_response(req, {info = total}, 200)
+    return json_response(req, {info = decimal.new(total.total)}, 200)
 end
 
 local function http_persist_total(req)
@@ -182,11 +187,6 @@ local function http_persist_total(req)
         'persist_total',
         {total}
     )
-
-    if error then
-        log.info(error)
-        return internal_error_response(req, error)
-    end
 
     if error then
         log.info(error)
@@ -207,12 +207,11 @@ local function http_calculate_balance(req)
     log.debug("shards info: %s", shards)
     for _, replica in pairs(shards) do
         local set = replica:callrw('calculate_accounts_balance')
-        log.info(set)
         totalBalance = totalBalance+set
     end
     
     return json_response(req, {info = totalBalance}, 200)
-    
+
 end
 
 local function http_fetch_settings(req)

@@ -5,7 +5,7 @@ local conflict_error = errors.new_class("ConflictError")
 
 local custom_errors = {
     storageConflictErrors = {
-        AccoutAlReadyExist = conflict_error:new("Account already exist"),
+        AccountAlReadyExist = conflict_error:new("Account already exist"),
         TransferAlReadyExist = conflict_error:new("Transfer already exist"),
         SetingsAlreadyExist = conflict_error:new("Settings already exist"),
         SettingsIncorrectCount = conflict_error:new("Settings found, expected 2 parameters, but got another count")
