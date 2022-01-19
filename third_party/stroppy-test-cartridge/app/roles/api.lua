@@ -2,6 +2,7 @@ local cartridge = require('cartridge')
 local log = require('log')
 local errors = require('errors')
 local decimal = require('decimal')
+local uuid = require('uuid')
 
 local err_vshard_router = errors.new_class("Vshard routing error")
 local err_httpd = errors.new_class("httpd error")
@@ -80,12 +81,13 @@ local function http_account_add(req)
     )
     
     if error then
-        log.info(error)
-        return internal_error_response(req, error)
+        log.error({"http_account_add: request execution error:", error})
+        return nil, error
     end
 
     if resp ~= nil and resp.error then
-        return storage_error_response(req, resp.error)
+        log.error({"http_account_add: storage error:", resp.error})
+        return resp.error, nil
     end
     
     return json_response(req, {info = "Successfully created"}, 201)
@@ -106,11 +108,12 @@ local function http_account_balance_update(req)
     )
 
     if error then
-        log.info(error)
+        log.error(error)
         return internal_error_response(req, error)
     end
 
     if resp ~= nil and resp.error then
+        log.error(resp.error)
         return storage_error_response(req, resp.error)
     end
     
@@ -133,11 +136,12 @@ local function insert_transfer(transfer)
     )
 
     if error then
-        log.info(error)
+        log.error({"insert_transfer: request execution error:", error})
         return nil, error
     end
 
     if resp ~= nil and resp.error then
+        log.error({"insert_transfer: storage error:", resp.error})
         return resp.error, nil
     end
     
@@ -189,7 +193,7 @@ local function http_persist_total(req)
     )
 
     if error then
-        log.info(error)
+        log.error(error)
         return internal_error_response(req, error)
     end
     
@@ -230,7 +234,7 @@ local function http_fetch_settings(req)
     log.debug("response: %s", resp)
 
     if error then
-        log.info(error)
+        log.error(error)
         return internal_error_response(req, error)
     end
 
@@ -273,7 +277,7 @@ local function http_bootstrap_db(req)
     )
 
     if error then
-        log.info(error)
+        log.error(error)
         return internal_error_response(req, error)
     end
     
@@ -282,7 +286,7 @@ local function http_bootstrap_db(req)
 end
 
 local function update_transfer(transfer)
-    log.info("router: update_transfer: transfer from req: %s", transfer)
+    log.info({"update_transfer: got transfer: ", transfer})
     local router = cartridge.service_get('vshard-router').get()
     transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
@@ -296,11 +300,12 @@ local function update_transfer(transfer)
     )
 
     if error then
-        log.info(error)
+        log.error({"update_transfer: request execution error:", error})
         return nil, error
     end
 
     if resp ~= nil and resp.error then
+        log.error({"update_transfer: storage error:", resp.error})
         return resp.error, nil
     end
     
@@ -308,13 +313,196 @@ local function update_transfer(transfer)
     
 end
 
+local function check_transfer_status(transfer)
+    log.info({"check_transfer_status: got transfer: ", transfer})
+    local router = cartridge.service_get('vshard-router').get()
+    transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        transfer.bucket_id,
+        'read',
+        'box.space.transfers:get',
+        {uuid.fromstr(transfer.transfer_id)}
+    )
+
+    if error then
+        log.error({"check_transfer_status: request execution error:", error})
+        return nil, error
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"check_transfer_status: storage error:", resp.error})
+        return resp.error, nil
+    end
+    
+    return resp, nil
+    
+end
+
+local function get_account_balance(account_attr)
+    log.info({"get_account_balance: got bic and ban: ", {account_attr.bic, account_attr.ban}})
+    local router = cartridge.service_get('vshard-router').get()
+    local bucket_id = router:bucket_id_mpcrc32(account_attr.bic..account_attr.ban)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        bucket_id,
+        'read',
+        'box.space.accounts:get',
+        {account_attr}
+    )
+
+    if error then
+        log.error({"get_account_balance: request execution error:", error})
+        return nil, error
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"get_account_balance: storage error:", resp.error})
+        return resp.error, nil
+    end
+    
+    return resp, nil
+    
+end
+
+local function set_account_lock(account)
+    log.info({"set_account_lock: got account: ", account})
+    local router = cartridge.service_get('vshard-router').get()
+    local bucket_id = router:bucket_id_mpcrc32(account.bic..account.ban)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        bucket_id,
+        'write',
+        'lock_account',
+        {account}
+    )
+
+    if error then
+        log.error({"set_account_lock: request execution error:", error})
+        return nil, error
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"set_account_lock: storage error:", resp.error})
+        return resp.error, nil
+    end
+    
+    return resp, nil
+end
+
+local function set_account_unlock(account)
+    log.info({"set_account_unlock: got account: ", account})
+    local router = cartridge.service_get('vshard-router').get()
+    local bucket_id = router:bucket_id_mpcrc32(account.bic..account.ban)
+
+    local resp, error = err_vshard_router:pcall(
+        router.call,
+        router,
+        bucket_id,
+        'write',
+        'unlock_account',
+        {account}
+    )
+
+    if error then
+        log.error({"set_account_unlock: request execution error:", error})
+        return nil, error
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"set_account_unlock: storage error:", resp.error})
+        return resp.error, nil
+    end
+    
+    return resp, nil
+end
+
 local function http_make_custom_transfer(req)
-    log.info(req)
     local transfer = req:json()
-    local resp, err = insert_transfer(transfer)
-    log.info(resp, err)
-    local resp, err = update_transfer(transfer) 
-    log.info(resp, err)
+
+    --1. Регистрация транзакции
+    local resp, error = insert_transfer(transfer)
+    if error then
+        log.error({"http_make_custom_transfer: request execution error:", error})
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"http_make_custom_transfer: storage error:", resp.error})
+        return storage_error_response(req, resp.error)
+    end
+
+    log.debug({"success insert transfer with transfer_id: ", transfer.transfer_id})
+
+    -- 2. Обновление трансфера, добавление id клиента и timestamp
+    local resp, error = update_transfer(transfer)
+    if error then
+        log.error({"http_make_custom_transfer: request execution error:", error})
+        return internal_error_response(req, error)
+    end
+
+    if resp ~= nil and resp.error then
+        log.error({"http_make_custom_transfer: storage error:", resp.error})
+        return storage_error_response(req, resp.error)
+    end
+
+    log.debug({"success update transfer with transfer_id: ", transfer.transfer_id})
+
+    -- 3. Блокировка счетов
+    -- возможно, излишне, но кажется, что нет
+    local resp, error = check_transfer_status(transfer)
+    if error then
+        log.error({"http_make_custom_transfer: request execution error:", error})
+        return internal_error_response(req, error)
+    end
+    if resp ~= nil and resp.error then
+        log.error({"http_make_custom_transfer: storage error:", resp.error})
+        return storage_error_response(req, resp.error)
+    end
+
+    --делаем массив из bic и bac счета-источника и счета-приемника для удобства обхода
+    local account_array = {{bic = resp[2], ban = resp[3]}, {bic = resp[4], ban = resp[5]}}
+    -- проверяем статус трансфера
+    if resp[7] == "complete" then
+        return json_response(req, {info = "Succesfully complete transfer"}, 200)
+    elseif resp[7] == "locked" then
+        for i=1,2 do
+            local resp, error = get_account_balance(account_array[i])
+            if error then
+                log.error({"http_make_custom_transfer: request execution error:", error})
+                return internal_error_response(req, error)
+            end
+            if resp ~= nil and resp.error then
+                log.error({"http_make_custom_transfer: storage error:", resp.error})
+                return storage_error_response(req, resp.error)
+            end
+            account_array[i]["balance"] = resp["balance"]
+            account_array[i]["pending_amount"] = resp["pending_amount"]
+            account_array[i]["Found"] = true
+        end
+    end
+
+    for i=1,2 do
+        account_array[i]["pending_transfer"] = uuid.fromstr(transfer.transfer_id)
+        local resp, error = set_account_lock(account_array[i])
+        if error then
+            log.error({"http_make_custom_transfer: request execution error:", error})
+            local resp, error = set_account_unlock(account_array[i])
+            --return internal_error_response(req, error)
+        end
+        if resp ~= nil and resp.error then
+            log.error({"http_make_custom_transfer: storage error:", resp.error})
+            local resp, error = set_account_unlock(account_array[i])
+            --return storage_error_response(req, resp.error)
+        end
+    end
+
 end
 
 
