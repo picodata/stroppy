@@ -179,8 +179,6 @@ local function lock_account(new_account)
 	return { ok = true, error = nil }
 end
 
-local function complete_transfer(transfer) 
-end
 
 local function init(opts)
 	if opts.is_master then
@@ -246,7 +244,6 @@ local function init(opts)
 		box.schema.func.create("update_transfer", { if_not_exists = true })
 		box.schema.func.create("fetch_account_balance", { if_not_exists = true })
 		box.schema.func.create("lock_account", { if_not_exists = true })
-		box.schema.func.create("complete_transfer", { if_not_exists = true })
 		rawset(_G, "account_add", account_add)
 		rawset(_G, "account_balance_update", account_balance_update)
 		rawset(_G, "transfer_add", insert_transfer)
@@ -259,7 +256,6 @@ local function init(opts)
 		rawset(_G, "update_transfer", update_transfer)
 		rawset(_G, "fetch_account_balance", fetch_account_balance)
 		rawset(_G, "lock_account", lock_account)
-		rawset(_G, "complete_transfer", complete_transfer)
 	end
 end
 
@@ -285,7 +281,6 @@ return {
 	utils = {
 		account_add = account_add,
 		account_balance_update = account_balance_update,
-		transfer_add = insert_transfer,
 		fetch_total = fetch_total,
 		persist_total = persist_total,
 		calculate_accounts_balance = calculate_accounts_balance,
@@ -293,6 +288,8 @@ return {
 		fetch_settings = fetch_settings,
 		insert_transfer = insert_transfer,
 		update_transfer = update_transfer,
+        fetch_account_balance = fetch_account_balance,
+        lock_account = lock_account,
 	},
 	dependencies = { "cartridge.roles.vshard-storage" },
 }
