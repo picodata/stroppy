@@ -118,7 +118,7 @@ local function http_account_balance_update(req)
 end
 
 
-local function transfer_add(transfer)
+local function insert_transfer(transfer)
     log.info(transfer)
     local router = cartridge.service_get('vshard-router').get()
     transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
@@ -277,7 +277,7 @@ local function http_bootstrap_db(req)
         return internal_error_response(req, error)
     end
     
-    return json_response(req, {info = "Succesfully bootstraping DB"}, 200)
+    return json_response(req, {info = "Succesfully bootstraping DB"}, 201)
     
 end
 
@@ -311,7 +311,7 @@ end
 local function http_make_custom_transfer(req)
     log.info(req)
     local transfer = req:json()
-    local resp, err = transfer_add(transfer)
+    local resp, err = insert_transfer(transfer)
     log.info(resp, err)
     local resp, err = update_transfer(transfer) 
     log.info(resp, err)
@@ -334,37 +334,37 @@ local function init(opts)
     log.info("Starting httpd")
     -- Навешиваем функции-обработчики
     httpd:route(
-        { path = '/insert_account', method = 'POST', public = true },
+        { path = '/account/insert', method = 'POST', public = true },
         http_account_add
     )
     httpd:route(
-        { path = '/account_balance_update', method = 'PUT', public = true },
+        { path = '/account/update_balance', method = 'PUT', public = true },
         http_account_balance_update
         )
     httpd:route(
-        { path = '/fetch_total', method = 'GET', public = true },
+        { path = '/total_balance/fetch', method = 'GET', public = true },
         http_fetch_total
         )
     httpd:route(
-        { path = '/persist_total', method = 'POST', public = true },
+        { path = '/total_balance/persist', method = 'POST', public = true },
         http_persist_total
         )
     httpd:route(
-        { path = '/check_balance', method = 'GET', public = true },
+        { path = '/balance/check', method = 'GET', public = true },
         http_calculate_balance
     )
 
    httpd:route(
-        { path = '/fetch_settings', method = 'GET', public = true },
+        { path = '/settings/fetch', method = 'GET', public = true },
         http_fetch_settings
     )
     httpd:route(
-        { path = '/bootstrap_db', method = 'POST', public = true },
+        { path = '/db/bootstrap', method = 'POST', public = true },
         http_bootstrap_db
     )   
 
     httpd:route(
-        { path = '/make_custom_transfer', method = 'POST', public = true },
+        { path = '/transfer/custom/create', method = 'POST', public = true },
         http_make_custom_transfer
     )
 

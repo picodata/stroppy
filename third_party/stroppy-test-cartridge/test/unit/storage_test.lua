@@ -2,6 +2,7 @@ local t = require('luatest')
 local g = t.group('unit_storage_utils')
 local helper = require('test.helper.unit')
 local uuid = require("uuid")
+local decimal = require("decimal")
 
 require('test.helper.unit')
 
@@ -31,7 +32,8 @@ end
 local test_account = {
     bic = rand_str(10),
     ban = rand_str(10),
-    balance = 123456,
+    balance = decimal.new(123456),
+    pending_amount = 0,
     bucket_id = 1
 }
 
@@ -41,7 +43,10 @@ local test_transfer = {
     src_ban = rand_str(10),
     dest_bic = rand_str(10),
     dest_ban = rand_str(10),
-    amount = 555,
+    state = "new",
+	client_id = uuid.str(),
+	client_timestamp = 123456789,
+    amount = decimal.new(555),
     bucket_id = 1
 }
 
@@ -58,7 +63,7 @@ end
 
 g.test_transfer_add_ok = function ()
     local to_insert = deepcopy(test_transfer)
-    t.assert_equals(utils.transfer_add(to_insert), {ok = true, error = nil})
+    t.assert_equals(utils.insert_transfer(to_insert), {ok = true, error = nil})
 end
 
 g.before_all(function()
