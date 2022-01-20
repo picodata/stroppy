@@ -63,7 +63,7 @@ end
 
 g.test_transfer_add_ok = function ()
     local to_insert = deepcopy(test_transfer)
-    t.assert_equals(utils.insert_transfer(to_insert), {ok = true, error = nil})
+    t.assert_equals(utils.insert_transfer(to_insert), {result = to_insert, error = nil})
 end
 
 g.before_all(function()
