@@ -1,7 +1,7 @@
 local log = require("log")
 local uuid = require("uuid")
 local decimal = require("decimal")
-local custom_errors = require("app.custom_errors")
+local custom_errors = require("custom_errors")
 local fiber = require("fiber")
 
 -- Функция преобразующая кортеж в таблицу согласно схеме хранения
@@ -140,6 +140,7 @@ end
 
 --кажется, что имеет смысл переписать на replace и обновлять все поля одним методом, но не уверен, поэтому на каждое действие отдельный метод
 local function set_storage_transfer_client(transfer)
+
 	log.debug({ "storage: set_transfer_client: got transfer:", transfer })
 	-- Проверяем, есть ли трансфер
 	local current_transfer = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
@@ -174,6 +175,7 @@ local function set_storage_transfer_state(transfer)
 	return { ok = true, error = nil }
 end
 
+
 local function get_account_storage_balance(account_attr)
 	local received_account = box.space.accounts:get({ account_attr.bic, account_attr.ban })
 	if received_account == nil then
@@ -200,7 +202,6 @@ local function lock_storage_account(account)
 	if current_account.pending_amount ~= 0 then
 		account.pending_amount = current_account.pending_amount
 	end
-
 
 	local received_account = box.atomic(function()
 		local updated_account = box.space.accounts:update(

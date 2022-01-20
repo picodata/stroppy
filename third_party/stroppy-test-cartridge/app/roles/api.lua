@@ -40,6 +40,7 @@ local function json_response(req, json, status)
 end
 
 local function internal_error_response(req, error)
+
 	local resp
 	-- для корректной передачи разных форматов в одном общем виде
 	if isTransientError(error) then
@@ -167,12 +168,12 @@ local function insert_transfer(transfer)
 	)
 
 	if error then
-		log.debug({ "insert_transfer: request execution error:", error })
+		log.error({ "insert_transfer: request execution error:", error })
 		return nil, error
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "insert_transfer: storage error:", resp.error })
+		log.error({ "insert_transfer: storage error:", resp.error })
 		return resp, nil
 	end
 
@@ -299,6 +300,7 @@ local function http_bootstrap_db(req)
 end
 
 local function set_transfer_client(transfer)
+
 	log.debug({ "set_transfer_client: got transfer: ", transfer })
 	local router = cartridge.service_get("vshard-router").get()
 	transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
@@ -313,7 +315,7 @@ local function set_transfer_client(transfer)
 	)
 
 	if error then
-		log.debug({ "set_transfer_client: request execution error:", error })
+		log.error({ "set_transfer_client: request execution error:", error })
 		return nil, error
 	end
 
@@ -324,6 +326,7 @@ local function set_transfer_client(transfer)
 
 	return resp, nil
 end
+
 
 local function set_transfer_state(transfer)
 	log.debug({ "set_transfer_state: got transfer: ", transfer })
@@ -345,12 +348,13 @@ local function set_transfer_state(transfer)
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "set_transfer_state: storage error:", resp.error })
+		log.error({ "check_transfer_status: storage error:", resp.error })
 		return resp, nil
 	end
 
 	return resp, nil
 end
+
 
 local function get_current_transfer_state(transfer)
 	log.debug({ "get_current_transfer_status: got transfer: ", transfer })
@@ -401,7 +405,7 @@ local function get_account_balance(account_attr)
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "get_account_balance: storage error:", resp.error })
+		log.error({ "set_account_lock: storage error:", resp.error })
 		return resp, nil
 	end
 
@@ -717,6 +721,7 @@ local function http_make_atomic_transfer(req)
 	return json_response(req, { info = "Successfully transfer execution" }, 200)
 end
 
+
 local function init(opts)
 	if opts.is_master then
 		box.schema.user.create("stroppy", { if_not_exists = true })
@@ -730,7 +735,7 @@ local function init(opts)
 		return nil, err_httpd:new("not found")
 	end
 
-	log.debug("Starting httpd")
+	log.info("Starting httpd")
 	-- Навешиваем функции-обработчики
 	httpd:route({ path = "/account/insert", method = "POST", public = true }, http_account_add)
 	httpd:route({ path = "/account/update_balance", method = "PUT", public = true }, http_account_balance_update)
@@ -747,6 +752,7 @@ local function init(opts)
 
 	log.debug("Created httpd")
 	return true
+
 
 end
 
