@@ -1,9 +1,9 @@
 local t = require("luatest")
 local g = t.group("integration_api")
-local fio = require('fio')
+local fio = require("fio")
 local decimal = require("decimal")
+local fiber = require("fiber")
 
-local helper = require("test.helper")
 local cartridge_helpers = require("cartridge.test-helpers")
 local shared = require("test.helper")
 
@@ -59,7 +59,6 @@ g.before_all(function()
 	})
 
 	g.cluster:start()
-
 end)
 
 g.before_each = function()
@@ -67,24 +66,44 @@ g.before_each = function()
 end
 
 g.after_all = function()
-	g.cluster:stop() 
+	g.cluster:stop()
 end
 
-
-g.test_bootstrap_db = function ()
-    assert_http_request(
+g.test_bootstrap_db = function()
+	assert_http_request(
 		"POST",
 		"/db/bootstrap",
-		{ count = 10000, seed = 12345678},
+		{ count = 10000, seed = 12345678 },
 		{ info = "Succesfully bootstraping DB", status = 201 }
 	)
 end
 
 g.test_insert_account = function()
+	for i = 1, 2 do
+		assert_http_request(
+			"POST",
+			"/account/insert",
+			{ bic = "33" .. i, ban = "33" .. i, balance = decimal.new(123458), pending_amount = 0 },
+			{ info = "Successfully created", status = 201 }
+		)
+	end
+end
+
+g.test_make_atomic_transfer = function()
 	assert_http_request(
 		"POST",
-		"/account/insert",
-		{ bic = "333", ban = "333", balance = decimal.new(123458), pending_amount = 0},
-		{ info = "Successfully created", status = 201 }
+		"/transfer/custom/create",
+		{
+			transfer_id = "edec7a00-72d6-11ec-90d6-0242ac120063",
+			src_bic = "331",
+			src_ban = "331",
+			dest_bic = "332",
+			dest_ban = "332",
+			state = "new",
+			client_id = "95328eee-5012-4ae4-9860-a07cac895f37",
+			client_timestamp = 123456789,
+			amount = 10,
+		},
+		{ info = "Successfully transfer execution", status = 200 }
 	)
 end
