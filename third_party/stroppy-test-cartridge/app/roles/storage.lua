@@ -1,7 +1,7 @@
 local log = require("log")
 local uuid = require("uuid")
 local decimal = require("decimal")
-local custom_errors = require("custom_errors")
+local custom_errors = require("app.custom_errors")
 local fiber = require("fiber")
 
 -- Функция преобразующая кортеж в таблицу согласно схеме хранения
@@ -12,7 +12,6 @@ local function tuple_to_table(format, tuple)
 	end
 	return map
 end
-
 
 local function account_add(account)
 	log.debug(account)
@@ -53,16 +52,16 @@ local function account_balance_update(new_account)
 		)
 	end)
 
-	return { ok = true, error = nil }
+	return { result = new_account, error = nil }
 end
 
 local function insert_transfer(transfer)
-    log.debug(transfer)
-    -- Проверяем на дубликаты
-    local exist = box.space.transfers:get({uuid.fromstr(transfer.transfer_id)})
-    if exist ~= nil then
-        return {ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist}
-    end
+	log.debug(transfer)
+	-- Проверяем на дубликаты
+	local exist = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
+	if exist ~= nil then
+		return { ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
+	end
 
 	box.atomic(function()
 		box.space.transfers:insert({
@@ -80,7 +79,6 @@ local function insert_transfer(transfer)
 	end)
 
 	return { result = true, error = nil }
-
 end
 
 local function fetch_total()
@@ -140,7 +138,6 @@ end
 
 --кажется, что имеет смысл переписать на replace и обновлять все поля одним методом, но не уверен, поэтому на каждое действие отдельный метод
 local function set_storage_transfer_client(transfer)
-
 	log.debug({ "storage: set_transfer_client: got transfer:", transfer })
 	-- Проверяем, есть ли трансфер
 	local current_transfer = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
@@ -174,7 +171,6 @@ local function set_storage_transfer_state(transfer)
 
 	return { ok = true, error = nil }
 end
-
 
 local function get_account_storage_balance(account_attr)
 	local received_account = box.space.accounts:get({ account_attr.bic, account_attr.ban })
