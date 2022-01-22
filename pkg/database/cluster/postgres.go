@@ -479,7 +479,7 @@ func TopUpMoney(
 
 // MakeAtomicTransfer inserts new transfer (should be used as history in the future) and
 // update corresponding balances in a single SQL transaction
-func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), txTimeout)
 	defer cancel()
 

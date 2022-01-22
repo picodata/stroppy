@@ -12,6 +12,7 @@ s-1:
   roles:
   - app.roles.api
   - vshard-storage
+  - app.roles.storage
   weight: 1
   all_rw: false
   vshard_group: default
@@ -21,6 +22,7 @@ s-2:
   roles:
   - app.roles.api
   - vshard-storage
+  - app.roles.storage
   weight: 1
   all_rw: false
   vshard_group: default

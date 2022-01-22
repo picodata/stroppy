@@ -33,7 +33,7 @@ local cartridge = require('cartridge')
 
 local ok, err = cartridge.cfg(
 {
-    workdir = 'stroppy_test',
+   -- workdir = 'stroppy_test',
     bucket_count = 32,
     roles = {
         'cartridge.roles.vshard-storage',

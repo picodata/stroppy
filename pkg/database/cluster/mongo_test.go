@@ -12,6 +12,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"github.com/google/uuid"
 	"gopkg.in/inf.v0"
 )
 
@@ -163,7 +164,7 @@ func MongoMakeAtomicTransfer(t *testing.T) {
 		State:     "",
 	}
 
-	if err := mongoCluster.MakeAtomicTransfer(&expectedTransfer); err != nil {
+	if err := mongoCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
 
