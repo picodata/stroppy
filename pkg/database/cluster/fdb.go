@@ -373,7 +373,7 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		err := cluster.setTransfer(tx, transfer)
 		if err != nil {

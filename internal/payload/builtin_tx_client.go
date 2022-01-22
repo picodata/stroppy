@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/mongo"
 	"gopkg.in/inf.v0"
 
@@ -51,7 +52,7 @@ type BasicTxTransfer interface {
 
 	// MakeAtomicTransfer performs transfer operation using db's builtin ACID transactions
 	// This methods should not return ErrNoRows - if one of accounts does not exist we should simply proceed further
-	MakeAtomicTransfer(t *model.Transfer) error
+	MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID) error
 
 	database.PredictableCluster
 }
@@ -62,28 +63,30 @@ type ClientBasicTx struct {
 	// for large dbs
 	oracle   *database.Oracle
 	payStats *PayStats
+	clientId uuid.UUID
 }
 
 func (c *ClientBasicTx) Init(cluster BasicTxTransfer, oracle *database.Oracle, payStats *PayStats) {
 	c.cluster = cluster
 	c.oracle = oracle
 	c.payStats = payStats
+	c.clientId = uuid.New()
 }
 
-func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
+func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
-
 	for i := 0; i < maxTxRetries; i++ {
-		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
+		if err := c.cluster.MakeAtomicTransfer(t, clientId); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 			// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
 			// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
 			// description of mongo.error with code 64 - waiting for replication timed out
 			//  description of mongo.error with code 11602 - InterruptedDueToReplStateChange
-			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
-				Code: 1037,
-			}) || errors.Is(err, fdb.Error{
+			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, cluster.ErrInternalServerError) ||
+				errors.Is(err, fdb.Error{
+					Code: 1037,
+				}) || errors.Is(err, fdb.Error{
 				Code: 1009,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1007,
@@ -149,9 +152,8 @@ func payWorkerBuiltinTx(
 	for i := 0; i < nTransfers; {
 		t := new(model.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
-
 		cookie := statistics.StatsRequestStart()
-		if _, err := client.MakeAtomicTransfer(t); err != nil {
+		if _, err := client.MakeAtomicTransfer(t, client.clientId); err != nil {
 			if IsTransientError(err) {
 				llog.Tracef("[%v] Transfer failed: %v", t.Id, err)
 			} else {

@@ -26,6 +26,8 @@ var (
 	// ErrTimeoutExceeded is ...TODO: transform into any transient error.
 	ErrTimeoutExceeded = errors.New("cluster: query timeout exceeded")
 
+	ErrInternalServerError = errors.New("cluster: internal server error")
+
 	// ErrDuplicateKey is returned then there already such unique key
 	ErrDuplicateKey = errors.New("cluster: duplicate unique key")
 
