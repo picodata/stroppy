@@ -56,6 +56,7 @@ run "installing helm" sudo apt-get install helm
 
 run "cloning kubespray" git clone https://github.com/kubernetes-incubator/kubespray
 run "change dir to kubespray" cd kubespray
+run "checkout kubespray version 2.17.1" git checkout -b v2.17.1 tags/v2.17.1
 
 run "installing kubespray requirements" sudo pip3 install -r requirements.txt
 

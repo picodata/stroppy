@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"time"
+
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
@@ -34,7 +36,7 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 			if settings.TestSettings.UseCloudStroppy {
 				sh, err := deployment.LoadState(settings)
 				if err != nil {
-					llog.Fatalf("shell load state failed: %v", err)
+					llog.Fatalf("deployment load state failed: %v", err)
 				}
 				if err = sh.RunRemotePayTest(); err != nil {
 					llog.Fatalf("test failed with error %v", err)
@@ -58,9 +60,12 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 
 				llog.Infof("Initial balance: %v", sum)
 
+				beginTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 				if err = p.Pay(""); err != nil {
 					llog.Fatalf("%v", err)
 				}
+				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+				llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				if settings.DatabaseSettings.Check {
 					balance, err := p.Check(sum)
@@ -103,11 +108,6 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		"run-as-pod", "",
 		false,
 		"run stroppy as in pod statement")
-
-	payCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.AddPool,
-		"add-pool", "a",
-		settings.DatabaseSettings.AddPool,
-		"count of additional connection in db pool. Default 0")
 
 	return payCmd
 }

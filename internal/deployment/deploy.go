@@ -125,9 +125,9 @@ func (sh *shell) preparePayload() (err error) {
 		if sh.settings.DatabaseSettings.DBType != cluster.Foundation {
 			return merry.Prepend(err, "failed to init payload")
 		}
-		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 
 		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
+		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 		err = nil
 	}
 	return
@@ -180,7 +180,6 @@ func (sh *shell) deploy() (err error) {
 
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
 
-	grafanaPort, kubernetesMasterPort := sh.k.GetInfraPorts()
-	llog.Infof(interactiveUsageHelpTemplate, grafanaPort, kubernetesMasterPort)
+	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 	return
 }

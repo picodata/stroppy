@@ -22,7 +22,7 @@ import (
 func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
 	commandClientType := ssh.RemoteClient
-	if !settings.TestSettings.RunAsPod {
+	if settings.TestSettings.UseCloudStroppy {
 		if kubernetesMasterAddress == "" {
 			err = fmt.Errorf("kubernetes master address is empty")
 			return
@@ -39,16 +39,6 @@ func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 		err = merry.Prependf(err, "setup ssh tunnel to '%s'", kubernetesMasterAddress)
 	}
 
-	return
-}
-
-func CreateShell(settings *config.Settings) (k *Engine, err error) {
-	var sc ssh.Client
-	if sc, err = CreateSystemShell(settings); err != nil {
-		return
-	}
-
-	k = createKubernetesObject(settings, nil, sc)
 	return
 }
 

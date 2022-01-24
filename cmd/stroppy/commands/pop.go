@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"time"
+
 	llog "github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
@@ -35,7 +37,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 			if settings.TestSettings.UseCloudStroppy {
 				sh, err := deployment.LoadState(settings)
 				if err != nil {
-					llog.Fatalf("shell load state failed: %v", err)
+					llog.Fatalf("deployment load state failed: %v", err)
 				}
 				if err = sh.RunRemotePopTest(); err != nil {
 					llog.Fatalf("test failed with error %v", err)
@@ -52,9 +54,12 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("get stat err %v", err)
 				}
 
+				beginTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 				if err = p.Pop(""); err != nil {
 					llog.Fatalf("%v", err)
 				}
+				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+				llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				var balance *inf.Dec
 				if balance, err = p.Check(nil); err != nil {
@@ -79,11 +84,6 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		"kube-master-addr", "k",
 		settings.TestSettings.KubernetesMasterAddress,
 		"kubernetes master address")
-
-	popCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.AddPool,
-		"add-pool", "a",
-		settings.DatabaseSettings.AddPool,
-		"count of additional connection in db pool. Default 0")
 
 	popCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Sharded,
 		"sharded", "",

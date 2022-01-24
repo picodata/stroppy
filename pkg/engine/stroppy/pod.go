@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"time"
 
 	"github.com/ansel1/merry"
 	"github.com/ghodss/yaml"
@@ -74,17 +75,59 @@ func (pod *Pod) Deploy() (err error) {
 		return merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
 
-	stroppy := applyconfig.Pod(PodName, engine.ResourceDefaultNamespace)
-
-	if err = yaml.Unmarshal(deployConfigBytes, &stroppy); err != nil {
+	stroppyPodConfig := applyconfig.Pod(PodName, engine.ResourceDefaultNamespace)
+	if err = yaml.Unmarshal(deployConfigBytes, &stroppyPodConfig); err != nil {
 		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
+	}
+
+	createPod := func() (err error) {
+		pod.internalPod, err = clientSet.CoreV1().
+			Pods(engine.ResourceDefaultNamespace).
+			Apply(context.TODO(),
+				stroppyPodConfig,
+				metav1.ApplyOptions{
+					TypeMeta: metav1.TypeMeta{
+						Kind:       "",
+						APIVersion: "",
+					},
+					DryRun:       []string{},
+					Force:        false,
+					FieldManager: fieldManagerName,
+				})
+		if err != nil {
+			err = fmt.Errorf("failed to create stroppy pod: %v", err)
+		}
+		return
+	}
+
+	deletePod := func() (err error) {
+		err = clientSet.CoreV1().
+			Pods(engine.ResourceDefaultNamespace).
+			Delete(context.TODO(), PodName, metav1.DeleteOptions{})
+		if err != nil {
+			err = fmt.Errorf("failed to delete stroppy pod: %v", err)
+			llog.Warn(err)
+		}
+		return
 	}
 
 	llog.Infoln("Applying stroppy pod...")
 	err = tools.Retry("deploy stroppy pod",
 		func() (err error) {
+			if err = createPod(); err != nil {
+				return
+			}
+
+			const podImagePullBackOff = "ImagePullBackOff"
+			if pod.internalPod.Status.Phase == podImagePullBackOff {
+				_ = deletePod()
+				err = fmt.Errorf("stroppy pod '%s' in status '%s'",
+					pod.internalPod.Name, podImagePullBackOff)
+			}
+
 			return
 		},
+
 		tools.RetryStandardRetryCount,
 		tools.RetryStandardWaitingTime)
 	if err != nil {
@@ -98,15 +141,21 @@ func (pod *Pod) Deploy() (err error) {
 		if err != nil {
 			retryErr := tools.Retry("stroppy pod recreation",
 				func() (err error) {
-					// x := pod.e.GetClientSet()
+					time.Sleep(5 * time.Second)
+					if err = deletePod(); err != nil {
+						return
+					}
+
+					time.Sleep(5 * time.Second)
+					err = createPod()
 					return
 				},
+
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if retryErr != nil {
-				err = merry.Errorf("")
+				return merry.Prepend(err, "stroppy pod running status check")
 			}
-			return merry.Prepend(err, "stroppy pod running status")
 		}
 	}
 

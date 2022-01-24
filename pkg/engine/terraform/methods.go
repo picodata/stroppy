@@ -30,12 +30,11 @@ func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder s
 	addressMap := make(map[string]map[string]string)
 
 	t = &Terraform{
-		settings:          settings,
-		exePath:           filepath.Join(exeFolder, "terraform"),
-		templatesFilePath: filepath.Join(cfgFolder, "cluster", provider.ClusterTemplateFileName),
-		addressMap:        addressMap,
-		isInit:            false,
-		WorkDirectory:     cfgFolder,
+		settings:      settings,
+		exePath:       filepath.Join(exeFolder, "terraform"),
+		addressMap:    addressMap,
+		isInit:        false,
+		WorkDirectory: cfgFolder,
 	}
 	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 
@@ -58,8 +57,23 @@ func (t *Terraform) InitProvider() (err error) {
 		if err != nil {
 			return merry.Prepend(err, "failed to initialized oracle provider")
 		}
+
+	case provider.Neutral:
+		t.Provider = createNeutralProvider()
+
+	default:
+		err = fmt.Errorf("unknown provider '%s'", t.settings.Provider)
 	}
 
+	return
+}
+
+func (t *Terraform) LoadState() (err error) {
+	if t.data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
+		err = merry.Prepend(err, "failed to read file terraform.tfstate")
+	}
+
+	t.Provider.SetTerraformStatusData(t.data)
 	return
 }
 
@@ -84,11 +98,7 @@ func (t *Terraform) Run() (err error) {
 		return merry.Prepend(err, "failed to apply terraform")
 	}
 
-	if t.data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
-		err = merry.Prepend(err, "failed to read file terraform.tfstate")
-	}
-
-	t.Provider.SetTerraformStatusData(t.data)
+	err = t.LoadState()
 	return
 }
 

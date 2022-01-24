@@ -12,6 +12,8 @@ import (
 
 func Execute() {
 	settings := config.DefaultSettings()
+	dbSettings := settings.DatabaseSettings
+	statistics.StatsSetTotal(dbSettings.Count)
 
 	rootCmd := &cobra.Command{
 		Use:   "stroppy [pop|pay|deploy|shell]",
@@ -27,12 +29,10 @@ bandwidth along the way.`,
 				return
 			}
 
-			dbSettings := settings.DatabaseSettings
 			if dbSettings.Workers > dbSettings.Count && dbSettings.Count > 0 {
 				dbSettings.Workers = dbSettings.Count
 			}
 
-			statistics.StatsSetTotal(dbSettings.Count)
 			return
 		},
 	}
@@ -110,6 +110,10 @@ The default value of banRangeMultipluer is 1.1.`)
 		"stat-interval", "s",
 		settings.DatabaseSettings.StatInterval,
 		"interval by seconds for gettings db stats. Only fdb yet.")
+	rootCmd.PersistentFlags().IntVar(&settings.DatabaseSettings.ConnectPoolSize,
+		"pool-size", 
+		settings.DatabaseSettings.ConnectPoolSize,
+		"count of connection in db pool. Equal workers count by default.")
 
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),

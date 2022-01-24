@@ -7,6 +7,7 @@ package payload
 import (
 	"errors"
 	"math/rand"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -69,25 +70,30 @@ func (c *ClientBasicTx) Init(cluster BasicTxTransfer, oracle *database.Oracle, p
 	c.payStats = payStats
 }
 
-//nolint:gosec
 func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 	sleepDuration := time.Millisecond*time.Duration(rand.Intn(10)) + time.Millisecond
 	applied := false
+
 	for i := 0; i < maxTxRetries; i++ {
 		if err := c.cluster.MakeAtomicTransfer(t); err != nil {
 			// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 			// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
 			// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
+			// description of mongo.error with code 64 - waiting for replication timed out
+			//  description of mongo.error with code 11602 - InterruptedDueToReplStateChange
 			if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, fdb.Error{
 				Code: 1037,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1009,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1007,
-			}) || errors.Is(err, mongo.CommandError{
+			}) || errors.Is(err, cluster.ErrCockroachTxClosed) || errors.Is(err, cluster.ErrCockroachUnexpectedEOF) || errors.Is(err, mongo.CommandError{
 				Code: 133,
 				// https://gitlab.com/picodata/openway/stroppy/-/issues/57
-			}) || errors.Is(err, cluster.ErrTxRollback) {
+			}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
+				// временная мера до стабилизации mongo
+				mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||
+				errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
@@ -98,7 +104,6 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer) (bool, error) {
 				if sleepDuration > maxSleepDuration {
 					sleepDuration = maxSleepDuration
 				}
-
 				continue
 			}
 			if errors.Is(err, cluster.ErrInsufficientFunds) {
@@ -161,7 +166,6 @@ func payWorkerBuiltinTx(
 }
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
-//nolint:unparam
 func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup

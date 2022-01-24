@@ -27,15 +27,14 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
-func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, dbPool int, addPool int) (pc Cluster) {
+func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (pc Cluster) {
 	pc = &postgresCluster{
 		commonCluster: createCommonCluster(sc,
 			k,
 			filepath.Join(wd, dbWorkingDirectory, cluster.Postgres),
 			cluster.Postgres,
 			dbURL,
-			dbPool,
-			addPool,
+			connectionPoolSize,
 			false),
 	}
 	return
@@ -51,7 +50,7 @@ func (pc *postgresCluster) Connect() (cluster interface{}, err error) {
 		pc.DBUrl = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", pc.DBUrl)
 	}
-	cluster, err = cluster2.NewPostgresCluster(pc.DBUrl)
+	cluster, err = cluster2.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
 	return
 }
 

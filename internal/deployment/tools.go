@@ -6,10 +6,13 @@ package deployment
 
 import (
 	"fmt"
-	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 	"io/ioutil"
 	"path/filepath"
 	"time"
+
+	llog "github.com/sirupsen/logrus"
+
+	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"
@@ -29,7 +32,6 @@ func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime,
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
-		"--kube-master-addr", sh.k.Engine.AddressMap["internal"]["master"],
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 	}
 
@@ -65,6 +67,7 @@ func (sh *shell) executePay(_ string) (err error) {
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+	llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -72,7 +75,7 @@ func (sh *shell) executePay(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
@@ -87,7 +90,6 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-		"--kube-master-addr", sh.k.Engine.AddressMap["internal"]["master"],
 		"-w", fmt.Sprintf("%v", settings.Workers),
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 	}
@@ -128,6 +130,7 @@ func (sh *shell) executePop(_ string) (err error) {
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+	llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
@@ -135,7 +138,7 @@ func (sh *shell) executePop(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.StartCollectMonitoringData(beginTime, endTime, monImagesArchName); err != nil {
+	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
@@ -162,8 +165,13 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	case cluster.Foundation:
 		settings.DBURL = "fdb.cluster"
+
 	case cluster.MongoDB:
-		settings.DBURL = "mongodb://stroppy:stroppy@my-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
+		settings.DBURL = "mongodb://stroppy:stroppy@sample-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
+
+	case cluster.Cockroach:
+		settings.DBURL = "postgres://stroppy:stroppy@/stroppy?sslmode=disable"
+
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return

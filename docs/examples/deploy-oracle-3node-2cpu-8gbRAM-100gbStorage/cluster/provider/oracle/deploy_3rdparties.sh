@@ -7,6 +7,7 @@ source "$SCRIPT_DIR/../../../common.sh"
 run "run deploy_kubernetes.sh file" sh deploy_kubernetes.sh
 
 run "change dir to kubespray" cd kubespray
+run "checkout kubespray version 2.17.1" git checkout -b v2.17.1 tags/v2.17.1
 
 run "enable ingress nginx setting in k8s cluster addons.yml file" \
 sudo sed -i \'s/ingress_nginx_enabled: false/ingress_nginx_enabled: true/g\' inventory/local/group_vars/k8s_cluster/addons.yml
@@ -49,12 +50,12 @@ helm repo add prometheus-community https://prometheus-community.github.io/helm-c
 
 run "update repo data" helm repo update
 
-run "installing grafana stack" \
+errorless_run "installing grafana stack" \
 helm install grafana-stack prometheus-community/kube-prometheus-stack \
                             --set grafana.enables=false \
                             --set prometheus.prometheusSpec.retention=180d \
-                            --namespace monitoring \
-                            --version 16.8.0
+                            --namespace monitoring # \
+                            # --version 16.8.0
 
 
 # grafana-on-premise

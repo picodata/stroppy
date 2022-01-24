@@ -106,11 +106,9 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 
 	llog.Debugln(iqnMap)
 
-	/*
-		В цикле выполняется следующий алгоритм:
-		Если команда проверки вернула false, то выполняем команду создания/добавления сущности.
-		Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя.
-	*/
+	/* В цикле выполняется следующий алгоритм:
+	   Если команда проверки вернула false, то выполняем команду создания/добавления сущности.
+	   Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя. */
 
 	op.addressMapLock.Lock()
 	defer op.addressMapLock.Unlock()
@@ -125,12 +123,12 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 
 		llog.Infof("Adding network storage to %v %v", k, address)
 
-		llog.Infoln("checking additional storage mount ...")
-		providerName := provider.Yandex
+		llog.Infoln("checking additional storage mount...")
+		providerName := provider.Oracle
 		ok, err := engineSsh.IsExistEntity(address, checkAddedDiskCmd,
 			"block special", op.workingDirectory, providerName)
 		if err != nil {
-			return merry.Prepend(err, "failed to check additional storage mount ")
+			return merry.Prepend(err, "failed to check additional storage mount")
 		}
 
 		if !ok {
@@ -269,6 +267,9 @@ func (op *Provider) reparseAddressMap(nodes int) (err error) {
 			Get(currentInstanceValue).Str
 	}
 
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
+
 	op.addressMap = make(map[string]map[string]string)
 	op.addressMap["external"] = externalAddress
 	op.addressMap["internal"] = internalAddress
@@ -328,6 +329,9 @@ func (op *Provider) Name() string {
 }
 
 func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
+	op.addressMapLock.Lock()
+	defer op.addressMapLock.Unlock()
+
 	scriptParameters := "--pod-addresses "
 	internalAddressMap := op.addressMap["internal"]
 	for _, podAddress := range internalAddressMap {

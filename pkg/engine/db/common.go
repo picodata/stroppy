@@ -20,7 +20,7 @@ import (
 )
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
-	dbPool int, addPool int, sharded bool) (fc *commonCluster) {
+	ConnectionPoolSize int, sharded bool) (fc *commonCluster) {
 
 	fc = &commonCluster{
 		k:                      k,
@@ -33,8 +33,7 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		clusterSpec: ClusterSpec{
 			Pods: make([]*v1.Pod, 0, 10),
 		},
-		dbPool:  dbPool,
-		addPool: addPool,
+		connectionPoolSize:  ConnectionPoolSize,
 		sharded: sharded,
 	}
 	return
@@ -51,23 +50,23 @@ type commonCluster struct {
 
 	DBUrl string
 
-	dbPool  int
+	connectionPoolSize  int
 	addPool int
 
 	sharded bool
 }
 
 func (cc *commonCluster) deploy() (err error) {
-	llog.Infof("Prepare deploy of %s\n", cc.tg)
+	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/"); err != nil {
+	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/databases"); err != nil {
 		return
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
 	llog.Infof("%s deploy started\n", cc.tg)
-	deployCmd := fmt.Sprintf("chmod +x %s/deploy_operator.sh && ./%s/deploy_operator.sh", cc.tg, cc.tg)
+	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}

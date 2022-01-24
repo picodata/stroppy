@@ -31,6 +31,9 @@ func createPayload(settings *config.Settings) (_payload payload.Payload) {
 	}
 
 	tf := terraform.CreateTerraform(settings.DeploymentSettings, settings.WorkingDirectory, settings.WorkingDirectory)
+	if err = tf.InitProvider(); err != nil {
+		llog.Fatalf("provider init failed: %v", err)
+	}
 
 	var addressMap map[string]map[string]string
 	if addressMap, err = tf.GetAddressMap(); err != nil {
@@ -71,7 +74,7 @@ func initLogFacility(settings *config.Settings) (err error) {
 	llog.SetLevel(l)
 
 	if len(os.Args) < 2 {
-		err = fmt.Errorf("not enought arguments")
+		err = fmt.Errorf("not enough arguments")
 		return
 	}
 

@@ -193,7 +193,7 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 				// transfer we've conflicted with is orphaned and recover
 				// it, before waiting
 				var clientId *uuid.UUID
-				clientId, err := c.cluster.FetchTransferClient(receivedAccount.PendingTransfer)
+				clientId, err = c.cluster.FetchTransferClient(receivedAccount.PendingTransfer)
 				if err != nil {
 					if err != cluster.ErrNoRows {
 						return merry.Prepend(err, "failed to fetch transfer client")
@@ -363,7 +363,6 @@ func payWorkerCustomTx(
 	}
 }
 
-//nolint:unparam
 func payCustomTx(settings *config.DatabaseSettings,
 	cluster CustomTxTransfer,
 	oracle *database.Oracle) (*PayStats, error) {

@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"errors"
+	"time"
 )
 
 var (
@@ -27,6 +28,9 @@ var (
 
 	// ErrDuplicateKey is returned then there already such unique key
 	ErrDuplicateKey = errors.New("cluster: duplicate unique key")
+
+	ErrCockroachTxClosed      = errors.New("tx is closed")
+	ErrCockroachUnexpectedEOF = errors.New("unexpected EOF")
 )
 
 // DBClusterType is type for choose ClusterType.
@@ -37,6 +41,7 @@ const (
 	PostgresClusterType DBClusterType = iota
 	FDBClusterType
 	MongoDBClusterType
+	CockroachClusterType
 )
 
 func (e DBClusterType) String() string {
@@ -53,13 +58,15 @@ const (
 	Foundation = "fdb"
 	Postgres   = "postgres"
 	MongoDB    = "mongodb"
+	Cockroach  = "cockroach"
 )
 
-const statJsonFileTemplate = "status_json_%v.json"
-
 const (
-	limitRange = 100001
-	iterRange  = 100000
+	limitRange         = 100001
+	iterRange          = 100000
+	maxConnIdleTimeout = 120 * time.Second
+	heartBeatInterval  = 30 * time.Second
+	socketTimeout      = 180 * time.Second
 )
 
 // Settings returns the test run settings
