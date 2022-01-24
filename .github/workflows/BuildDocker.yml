@@ -10,7 +10,7 @@ jobs:
         run: ./deps.sh
       - name: build cartridge application
         working-directory: third_party/stroppy-test-cartridge
-        run: cartridge build --verion 0.1.0
+        run: cartridge build
       - name: build docker image
         working-directory: third_party/stroppy-test-cartridge
-        run: catridge pack docker
+        run: cartridge pack docker
