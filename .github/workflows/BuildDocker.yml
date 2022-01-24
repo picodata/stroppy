@@ -13,4 +13,4 @@ jobs:
         run: cartridge build
       - name: build docker image
         working-directory: third_party/stroppy-test-cartridge
-        run: cartridge pack docker
+        run: cartridge pack docker --version ${{ github.event.release.tag_name }}
