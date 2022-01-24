@@ -40,7 +40,7 @@ end
 
 local function internal_error_response(req, error)
 	local resp
-    -- для корректной передачи разных форматов в одном общем виде
+	-- для корректной передачи разных форматов в одном общем виде
 	if isTransientError(error) then
 		resp = json_response(req, {
 			info = error.class_name,
@@ -225,8 +225,19 @@ local function http_calculate_balance(req)
 		return internal_error_response(req, error)
 	end
 	log.debug("shards info: %s", shards)
+	local set = 0
 	for _, replica in pairs(shards) do
-		local set = replica:callrw("calculate_accounts_balance")
+		for i = 1, 100 do
+			set = replica:callrw("calculate_accounts_balance")
+			if set ~= nil then
+				break
+			end
+			fiber.sleep(0.1)
+		end
+		if set == nil then
+			log.error(error)
+			return internal_error_response(req, error)
+		end
 		totalBalance = totalBalance + set
 	end
 
