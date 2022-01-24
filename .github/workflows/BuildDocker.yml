@@ -1,7 +1,7 @@
 name: BuildDocker
 on: [push]
 jobs:
-  Build-Image-Specific-Container:
+  build:
     runs-on: ["self-hosted", "linux", "stroppy"]
     steps:
       - uses: actions/checkout@v2
@@ -11,6 +11,11 @@ jobs:
       - name: build cartridge application
         working-directory: third_party/stroppy-test-cartridge
         run: cartridge build
+      - name: Get latest tag
+        run: echo "GIT_TAG=`echo $(git describe --tags --abbrev=0)`" >> $GITHUB_ENV
       - name: build docker image
         working-directory: third_party/stroppy-test-cartridge
-        run: cartridge pack docker --version ${{ github.event.release.tag_name }}
+        run: cartridge pack docker --tag ghcr.io/stroppy-test-cartridge:${{ env.GIT_TAG }}
+      - name: push image
+        run: docker push ghcr.io/stroppy-test-cartridge:${{ env.GIT_TAG }}
+
