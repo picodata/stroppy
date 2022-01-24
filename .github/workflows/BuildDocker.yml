@@ -1,0 +1,16 @@
+name: BuildDocker
+on: [push]
+jobs:
+  Build-Image-Specific-Container:
+    runs-on: ["self-hosted", "linux", "stroppy"]
+    steps:
+      - uses: actions/checkout@v2
+      - name: install dependencies
+        working-directory: third_party/stroppy-test-cartridge
+        run: ./deps.sh
+      - name: build cartridge application
+        working-directory: third_party/stroppy-test-cartridge
+        run: cartridge build --verion 0.1.0
+      - name: build docker image
+        working-directory: third_party/stroppy-test-cartridge
+        run: catridge pack docker
