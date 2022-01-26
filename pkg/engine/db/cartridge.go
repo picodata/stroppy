@@ -6,7 +6,13 @@ import (
 	"github.com/ansel1/merry"
 	clusterImplementation "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+)
+
+const (
+	tarantoolCartridgeOperatorName = "tarantool-operator" 
+	cartridgeCheckPodName = "storage"
 )
 
 func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (cartridge Cluster) {
@@ -43,6 +49,17 @@ func (cartridge *cartridgeCluster) Connect() (cluster interface{}, err error) {
 }
 
 func (cartridge *cartridgeCluster) Deploy() (err error) {
+	if err = cartridge.deploy(); err != nil {
+		return merry.Prepend(err, "deploy failed")
+	}
+
+	err = cartridge.examineCluster("cartridge",
+		kubeengine.ResourceDefaultNamespace,
+		tarantoolCartridgeOperatorName,
+		cartridgeCheckPodName)
+	if err != nil {
+		return
+	}
 	return nil
 }
 
