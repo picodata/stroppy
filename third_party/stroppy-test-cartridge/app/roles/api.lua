@@ -152,7 +152,7 @@ local function account_balance_update(account)
 end
 
 local function insert_transfer(transfer)
-	log.debug(transfer)
+	log.debug({ "insert_transfer: got transfer: ", transfer })
 	local router = cartridge.service_get("vshard-router").get()
 	transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
@@ -350,8 +350,8 @@ local function set_transfer_state(transfer)
 	return resp, nil
 end
 
-local function check_transfer_status(transfer)
-	log.debug({ "check_transfer_status: got transfer: ", transfer })
+local function get_current_transfer_state(transfer)
+	log.debug({ "get_current_transfer_status: got transfer: ", transfer })
 	local router = cartridge.service_get("vshard-router").get()
 	transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
@@ -365,16 +365,18 @@ local function check_transfer_status(transfer)
 	)
 
 	if error then
-		log.debug({ "check_transfer_status: request execution error:", error })
+		log.debug({ "get_current_transfer_status: request execution error:", error })
 		return nil, error
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "check_transfer_status: storage error:", resp.error })
+		log.debug({ "get_current_transfer_status: storage error:", resp.error })
 		return resp, nil
 	end
 
-	return resp, nil
+	local transfer_status = resp[6]
+
+	return transfer_status, nil
 end
 
 local function get_account_balance(account_attr)
@@ -387,7 +389,7 @@ local function get_account_balance(account_attr)
 		router,
 		bucket_id,
 		"read",
-		"box.space.accounts:get",
+		"get_account_storage_balance",
 		{ account_attr }
 	)
 
@@ -404,35 +406,51 @@ local function get_account_balance(account_attr)
 	return resp, nil
 end
 
-local function set_account_lock(account)
-	log.debug({ "set_account_lock: got account: ", account })
+local function lock_account(account)
+	log.debug({ "lock_account: got account: ", account })
 	local router = cartridge.service_get("vshard-router").get()
 	local bucket_id = router:bucket_id_mpcrc32(account.bic .. account.ban)
 
-	local resp, error = err_vshard_router:pcall(router.call, router, bucket_id, "write", "lock_account", { account })
+	local resp, error = err_vshard_router:pcall(
+		router.call,
+		router,
+		bucket_id,
+		"write",
+		"lock_storage_account",
+		{ account }
+	)
 
 	if error then
-		log.debug({ "set_account_lock: request execution error:", error })
+		log.debug({ "lock_account: request execution error:", error })
 		return nil, error
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "set_account_lock: storage error:", resp.error })
+		log.debug({ "lock_account: storage error:", resp.error })
 		return resp, nil
 	end
 
-	return resp, nil
+	local received_account = resp[1]
+
+	return received_account, nil
 end
 
-local function set_account_unlock(account)
-	log.debug({ "set_account_unlock: got account: ", account })
+local function unlock_account(account)
+	log.debug({ "unlock_account: got account: ", account })
 	local router = cartridge.service_get("vshard-router").get()
 	local bucket_id = router:bucket_id_mpcrc32(account.bic .. account.ban)
 
-	local resp, error = err_vshard_router:pcall(router.call, router, bucket_id, "write", "unlock_account", { account })
+	local resp, error = err_vshard_router:pcall(
+		router.call,
+		router,
+		bucket_id,
+		"write",
+		"unlock_storage_account",
+		{ account }
+	)
 
 	if error then
-		log.debug({ "set_account_unlock: request execution error:", error })
+		log.debug({ "unlock_account: request execution error:", error })
 		return nil, error
 	end
 
@@ -444,12 +462,19 @@ local function set_account_unlock(account)
 	return resp, nil
 end
 
-local function http_fetch_transfer(transfer)
-	log.debug({ "http_fetch_transfer: got transfer: ", { transfer } })
+local function http_fetch_transfer(transfer_id)
+	log.debug({ "http_fetch_transfer: got transfer_id: ", { transfer_id } })
 	local router = cartridge.service_get("vshard-router").get()
-	local bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
+	local bucket_id = router:bucket_id_mpcrc32(transfer_id)
 
-	local resp, error = err_vshard_router:pcall(router.call, router, bucket_id, "read", "fetch_transfer", { transfer })
+	local resp, error = err_vshard_router:pcall(
+		router.call,
+		router,
+		bucket_id,
+		"read",
+		"fetch_transfer",
+		{ transfer_id }
+	)
 
 	if error then
 		log.debug({ "http_fetch_transfer: request execution error:", error })
@@ -461,7 +486,9 @@ local function http_fetch_transfer(transfer)
 		return resp, nil
 	end
 
-	return resp, nil
+	local current_transfer = resp[1]
+
+	return current_transfer, nil
 end
 
 local function http_make_atomic_transfer(req)
@@ -471,43 +498,43 @@ local function http_make_atomic_transfer(req)
 	local current_timeout = math.random(maxTimeout) / 1000
 
 	--1. Регистрация транзакции
-	local resp, error = insert_transfer(transfer)
+	local insert_result, error = insert_transfer(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
 
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if insert_result ~= nil and insert_result.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", insert_result.error })
+		return storage_error_response(req, insert_result.error)
 	end
 
 	log.debug({ "success insert transfer with transfer_id: ", transfer.transfer_id })
 
 	-- 2. Обновление трансфера, добавление id клиента и timestamp
-	local resp, error = set_transfer_client(transfer)
+	local set_client_result, error = set_transfer_client(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
 
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if set_client_result ~= nil and set_client_result.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", set_client_result.error })
+		return storage_error_response(req, set_client_result.error)
 	end
 
 	log.debug({ "success update transfer with transfer_id: ", transfer.transfer_id })
 
 	-- 3. Блокировка счетов
 	-- возможно, излишне, но кажется, что нет
-	local resp, error = check_transfer_status(transfer)
+	local transfer_state, error = get_current_transfer_state(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if transfer_state ~= nil and transfer_state.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", transfer_state.error })
+		return storage_error_response(req, transfer_state.error)
 	end
 
 	--делаем массив из bic и bac счета-источника и счета-приемника для удобства обхода
@@ -516,22 +543,22 @@ local function http_make_atomic_transfer(req)
 		{ bic = transfer.dest_bic, ban = transfer.dest_ban },
 	}
 	-- проверяем статус трансфера
-	if resp[7] == "complete" then
+	if transfer_state == "complete" then
 		return json_response(req, { info = "Succesfully complete transfer" }, 200)
 		-- если "locked", пробуем получить и сохранить балансы по обоим счетам
-	elseif resp[7] == "locked" then
+	elseif transfer_state == "locked" then
 		for i = 1, 2 do
-			local resp, error = get_account_balance(account_array[i])
+			local acc_balance_attrs, error = get_account_balance(account_array[i])
 			if error then
 				log.debug({ "http_make_atomic_transfer: request execution error:", error })
 				return internal_error_response(req, error)
 			end
-			if resp ~= nil and resp.error then
-				log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-				return storage_error_response(req, resp.error)
+			if acc_balance_attrs ~= nil and acc_balance_attrs.error then
+				log.debug({ "http_make_atomic_transfer: storage error:", acc_balance_attrs.error })
+				return storage_error_response(req, acc_balance_attrs.error)
 			end
-			account_array[i]["balance"] = resp["balance"]
-			account_array[i]["pending_amount"] = resp["pending_amount"]
+			account_array[i]["balance"] = acc_balance_attrs[1]["balance"]
+			account_array[i]["pending_amount"] = acc_balance_attrs[1]["pending_amount"]
 			account_array[i]["Found"] = true
 		end
 	end
@@ -540,36 +567,35 @@ local function http_make_atomic_transfer(req)
 	for i = 1, 2 do
 		account_array[i]["pending_transfer"] = uuid.fromstr(transfer.transfer_id)
 		account_array[i]["pending_amount"] = decimal.new(transfer.amount)
-		local resp, error = set_account_lock(account_array[i])
-		if error or (resp ~= nil and resp.error) then
+		local received_account, error = lock_account(account_array[i])
+		if error or (received_account ~= nil and received_account.error) then
 			if i == 2 and previosAccount ~= nil then
-				local resp, error = set_account_unlock(previosAccount)
+				local unlock_result, error = unlock_account(previosAccount)
 				if error then
 					log.debug({ "http_make_atomic_transfer: request execution error:", error })
 					return internal_error_response(req, error)
 				end
-				if resp ~= nil and resp.error then
-					log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-					return storage_error_response(req, resp.error)
+				if unlock_result ~= nil and unlock_result.error then
+					log.debug({ "http_make_atomic_transfer: storage error:", unlock_result.error })
+					return storage_error_response(req, unlock_result.error)
 				end
 			end
 
-			if resp ~= nil and resp.error then
-				log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-				if resp.error.err == custom_errors.storageNotFoundErrors.AccNotFound.err then
-					log.debug("мы тут")
+			if received_account ~= nil and received_account.error then
+				log.debug({ "http_make_atomic_transfer: storage error:", received_account.error })
+				if received_account.error.err == custom_errors.storageNotFoundErrors.AccNotFound.err then
 					transfer.state = "locked"
-					local resp_state, err = set_transfer_state(transfer)
+					local set_state_result, err = set_transfer_state(transfer)
 					if err then
 						log.debug({ "http_make_atomic_transfer: request execution error:", err })
 						return internal_error_response(req, err)
 					end
-					if resp_state ~= nil and resp_state.error then
-						log.debug({ "http_make_atomic_transfer: storage error:", resp_state.error })
-						return storage_error_response(req, resp_state.error)
+					if set_state_result ~= nil and set_state_result.error then
+						log.debug({ "http_make_atomic_transfer: storage error:", set_state_result.error })
+						return storage_error_response(req, set_state_result.error)
 					end
 				end
-				return storage_error_response(req, resp.error)
+				return storage_error_response(req, received_account.error)
 			elseif isTransientError(error) then
 				log.debug("transfer_id %s Retrying after error: %s %s", transfer.transfer_id, error)
 			else
@@ -586,20 +612,20 @@ local function http_make_atomic_transfer(req)
 			account_array[i + 1]["Found"] = false
 			previosAccount = nil
 
-			resp, error = set_transfer_client(transfer)
+			local set_client_result, error = set_transfer_client(transfer)
 			if error then
 				log.debug({ "http_make_atomic_transfer: request execution error:", error })
 				return internal_error_response(req, error)
 			end
-			if resp ~= nil and resp.error then
-				log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-				return storage_error_response(req, resp.error)
+			if set_client_result ~= nil and set_client_result.error then
+				log.debug({ "http_make_atomic_transfer: storage error:", set_client_result.error })
+				return storage_error_response(req, set_client_result.error)
 			end
 		else
 			--если все ок
-			account_array[i]["balance"] = resp["result"][3]
-			account_array[i]["pending_transfer"] = resp["result"][4]
-			account_array[i]["pending_amount"] = resp["result"][5]
+			account_array[i]["balance"] = received_account.balance
+			account_array[i]["pending_transfer"] = received_account.pending_transfer
+			account_array[i]["pending_amount"] = received_account.pending_amount
 			account_array[i]["Found"] = true
 			previosAccount = account_array[i]
 		end
@@ -607,34 +633,32 @@ local function http_make_atomic_transfer(req)
 
 	-- меняем статус трансфера на "locked"
 	transfer.state = "locked"
-	resp, error = set_transfer_state(transfer)
+	local set_state_result, error = set_transfer_state(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if set_state_result ~= nil and set_state_result.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", set_state_result.error })
+		return storage_error_response(req, set_state_result.error)
 	end
 
-	resp, error = http_fetch_transfer(transfer)
+	local received_transfer, error = http_fetch_transfer(transfer.transfer_id)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if received_transfer ~= nil and received_transfer.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", received_transfer.error })
+		return storage_error_response(req, received_transfer.error)
 	end
 
-	log.debug({ "текущее состояние трансфера", resp })
-
-	if resp["result"][6] ~= "locked" and resp["result"][6] ~= "complete" then
+	if received_transfer.state ~= "locked" and received_transfer.state ~= "complete" then
 		return storage_error_response(req, custom_errors.storageConflictErrors.TransferIncorrectState)
 	end
 	log.debug({ "счета перед обновлением", account_array })
 	-- обновляем балансы сначала в переменных, потом в БД, если проходим по условиям
-	if resp["result"][6] == "locked" then
+	if received_transfer.state == "locked" then
 		if account_array[1]["Found"] == true and account_array[2]["Found"] then
 			for i = 1, 2 do
 				if account_array[i]["bic"] == transfer.src_bic and account_array[i]["ban"] == transfer.src_ban then
@@ -648,14 +672,14 @@ local function http_make_atomic_transfer(req)
 			log.debug({ "счета перед обновлением #2", account_array })
 			if account_array[1]["balance"] > 0 then
 				for i = 1, 2 do
-					resp, error = account_balance_update(account_array[i])
+					local update_result, error = account_balance_update(account_array[i])
 					if error then
 						log.debug({ "http_make_atomic_transfer: request execution error:", error })
 						return internal_error_response(req, error)
 					end
-					if resp ~= nil and resp.error then
-						log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-						return storage_error_response(req, resp.error)
+					if update_result ~= nil and update_result.error then
+						log.debug({ "http_make_atomic_transfer: storage error:", update_result.error })
+						return storage_error_response(req, update_result.error)
 					end
 				end
 			else
@@ -665,25 +689,25 @@ local function http_make_atomic_transfer(req)
 	end
 
 	transfer.state = "complete"
-	resp, error = set_transfer_state(transfer)
+	local set_state_result, error = set_transfer_state(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
-	if resp ~= nil and resp.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-		return storage_error_response(req, resp.error)
+	if set_state_result ~= nil and set_state_result.error then
+		log.debug({ "http_make_atomic_transfer: storage error:", set_state_result.error })
+		return storage_error_response(req, set_state_result.error)
 	end
 
 	for i = 1, 2 do
-		resp, error = set_account_unlock(account_array[i])
+		local unlock_result, error = unlock_account(account_array[i])
 		if error then
 			log.debug({ "http_make_atomic_transfer: request execution error:", error })
 			return internal_error_response(req, error)
 		end
-		if resp ~= nil and resp.error then
-			log.debug({ "http_make_atomic_transfer: storage error:", resp.error })
-			return storage_error_response(req, resp.error)
+		if unlock_result ~= nil and unlock_result.error then
+			log.debug({ "http_make_atomic_transfer: storage error:", unlock_result.error })
+			return storage_error_response(req, unlock_result.error)
 		end
 	end
 
