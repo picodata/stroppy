@@ -12,4 +12,11 @@ helm repo add tarantool https://tarantool.github.io/tarantool-operator
 run "install operator" \
 helm install tarantool-operator tarantool/tarantool-operator --namespace default 
 
-sleep 5
+run "waiting for 120 seconds of operator deployment " \
+sleep 120
+
+run "install application" \
+helm install -f values.yaml stroppy-test-app tarantool/cartridge
+
+run "waiting for 120 seconds of application deployment " \
+sleep 120
