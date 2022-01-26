@@ -15,9 +15,9 @@ jobs:
 #        run: echo "GIT_TAG=`echo $(git describe --tags --abbrev=0)`" >> $GITHUB_ENV
       - name: build docker image
         working-directory: third_party/stroppy-test-cartridge
-        run: cartridge pack docker --tag docker.io/stroppy-test-cartridge:latest
+        run: cartridge pack docker --tag docker.io/picodata/stroppy-test-cartridge:latest
 #      - name: tag image as latest
 #        run: docker tag docker.io/stroppy-test-cartridge:${{ env.GIT_TAG }} docker.io/stroppy-test-cartridge:latest
       - name: push image
-        run: docker push docker.io/stroppy-test-cartridge:latest
+        run: docker push docker.io/picodata/stroppy-test-cartridge:latest
 
