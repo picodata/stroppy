@@ -62,7 +62,7 @@ const (
 	Postgres   = "postgres"
 	MongoDB    = "mongodb"
 	Cockroach  = "cockroach"
-	Cartridge = "cartridge"
+	Cartridge  = "cartridge"
 )
 
 const (
@@ -70,7 +70,7 @@ const (
 	iterRange          = 100000
 	maxConnIdleTimeout = 120 * time.Second
 	heartBeatInterval  = 30 * time.Second
-	socketTimeout      = 180 * time.Second
+	socketTimeout      = 10 * time.Second
 )
 
 // Settings returns the test run settings
