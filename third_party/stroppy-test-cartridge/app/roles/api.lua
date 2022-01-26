@@ -151,8 +151,8 @@ local function account_balance_update(account)
 	end
 end
 
-local function insert_transfer(transfer)
-	log.debug({ "insert_transfer: got transfer: ", transfer })
+local function upsert_transfer(transfer)
+	log.debug({ "upsert_transfer: got transfer: ", transfer })
 	local router = cartridge.service_get("vshard-router").get()
 	transfer.bucket_id = router:bucket_id_mpcrc32(transfer.transfer_id)
 
@@ -161,17 +161,17 @@ local function insert_transfer(transfer)
 		router,
 		transfer.bucket_id,
 		"write",
-		"insert_transfer",
+		"upsert_transfer",
 		{ transfer }
 	)
 
 	if error then
-		log.debug({ "insert_transfer: request execution error:", error })
+		log.debug({ "upsert_transfer: request execution error:", error })
 		return nil, error
 	end
 
 	if resp ~= nil and resp.error then
-		log.debug({ "insert_transfer: storage error:", resp.error })
+		log.debug({ "upsert_transfer: storage error:", resp.error })
 		return resp, nil
 	end
 
@@ -498,7 +498,7 @@ local function http_make_atomic_transfer(req)
 	local current_timeout = math.random(maxTimeout) / 1000
 
 	--1. Регистрация транзакции
-	local insert_result, error = insert_transfer(transfer)
+	local insert_result, error = upsert_transfer(transfer)
 	if error then
 		log.debug({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
@@ -646,13 +646,13 @@ local function http_make_atomic_transfer(req)
 	end
 
 	if set_state_result ~= nil and set_state_result.error then
-		log.debug({ "http_make_atomic_transfer: storage error:", set_state_result.error })
+		log.error({ "http_make_atomic_transfer: storage error:", set_state_result.error })
 		return storage_error_response(req, set_state_result.error)
 	end
 
 	local received_transfer, error = http_fetch_transfer(transfer.transfer_id)
 	if error then
-		log.debug({ "http_make_atomic_transfer: request execution error:", error })
+		log.error({ "http_make_atomic_transfer: request execution error:", error })
 		return internal_error_response(req, error)
 	end
 
@@ -682,7 +682,6 @@ local function http_make_atomic_transfer(req)
 			if account_array[1]["balance"] > 0 then
 				for i = 1, 2 do
 					local update_result, error = account_balance_update(account_array[i])
-
 					if error then
 						log.debug({ "http_make_atomic_transfer: request execution error:", error })
 						return internal_error_response(req, error)
