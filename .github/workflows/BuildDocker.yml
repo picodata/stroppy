@@ -13,7 +13,7 @@ jobs:
         run: cartridge build
       - name: Get latest tag
         run: echo "GIT_TAG=`echo $(git describe --tags --abbrev=0)`" >> $GITHUB_ENV
-      - run: whoami
+      - run: id -u && id -g
       - name: build docker image
         working-directory: third_party/stroppy-test-cartridge
         run: cartridge pack docker --tag ghcr.io/stroppy-test-cartridge:${{ env.GIT_TAG }}
