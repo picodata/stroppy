@@ -13,6 +13,7 @@ import (
 const (
 	tarantoolCartridgeOperatorName = "tarantool-operator" 
 	cartridgeCheckPodName = "storage"
+	cartridgeDirectory = "cartridge"
 )
 
 func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (cartridge Cluster) {
@@ -20,8 +21,8 @@ func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, dbWorkingDirectory, mongoDirectory),
-			mongoDirectory,
+			filepath.Join(wd, dbWorkingDirectory, cartridgeDirectory),
+			cartridgeDirectory,
 			dbURL,
 			connectionPoolSize,
 			false,

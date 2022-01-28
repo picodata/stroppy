@@ -91,14 +91,16 @@ func (sh *shell) prepareTerraform() (err error) {
 
 func (sh *shell) prepareEngine() (err error) {
 	var addressMap map[string]map[string]string
+	llog.Infoln("start getaddressmap in prepareEngine")
 	if addressMap, err = sh.tf.GetAddressMap(); err != nil {
 		return merry.Prepend(err, "failed to get address map")
 	}
-
+	llog.Infoln("stop getaddressmap in prepareEngine")
 	commandClientType := engineSsh.RemoteClient
 	if sh.settings.Local {
 		commandClientType = engineSsh.LocalClient
 	}
+	llog.Infoln("start CreateClient in prepareEngine")
 	sh.sc, err = engineSsh.CreateClient(sh.workingDirectory,
 		addressMap["external"]["master"],
 		sh.settings.DeploymentSettings.Provider,
@@ -106,6 +108,7 @@ func (sh *shell) prepareEngine() (err error) {
 	if err != nil {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
+	llog.Infoln("stop CreateClient in prepareEngine")
 
 	sh.k, err = kubernetes.CreateKubernetes(sh.settings, sh.tf.Provider, addressMap, sh.sc)
 	if err != nil {
@@ -143,9 +146,12 @@ func (sh *shell) deploy() (err error) {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
+	llog.Infoln("start prepare engine")
 	if err = sh.prepareEngine(); err != nil {
 		return
 	}
+	llog.Infoln("stop prepare engine")
+
 	if err = sh.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}

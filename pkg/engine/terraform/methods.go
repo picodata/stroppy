@@ -36,6 +36,7 @@ func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder s
 		isInit:        false,
 		WorkDirectory: cfgFolder,
 	}
+
 	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 
 	return

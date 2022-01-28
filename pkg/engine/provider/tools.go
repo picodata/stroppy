@@ -60,7 +60,7 @@ func DeepCopyAddressMap(addressMap map[string]map[string]string) (copy map[strin
 	for key, val := range addressMap {
 		valLen := len(val)
 		valCopy := make(map[string]string, valLen)
-
+		llog.Infoln("мы внутри цикла обработки адресов")
 		for valKey, valVal := range val {
 			valCopy[valKey] = valVal[:]
 		}

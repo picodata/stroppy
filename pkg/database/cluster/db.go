@@ -53,6 +53,12 @@ func (e DBClusterType) String() string {
 		return "PostgreSQL"
 	case FDBClusterType:
 		return "FoundationDB"
+	case CartridgeClusterType:
+		return "TarantoolCartridge"
+	case MongoDBClusterType:
+		return "MongoDB"
+	case CockroachClusterType:
+		return "CocroachDB"
 	}
 	panic("unknown DBClusterType")
 }

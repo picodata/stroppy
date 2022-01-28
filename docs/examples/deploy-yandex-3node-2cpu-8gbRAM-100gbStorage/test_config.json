@@ -3,12 +3,13 @@
   "banRangeMultiplier": 1.1,
   "database_type": [
     "postgres",
-    "fdb"
+    "fdb",
+    "cartridge"
   ],
   "cmd": [
     {
       "pop": {
-        "count": 5000
+        "count": 100000
       }
     },
     {
