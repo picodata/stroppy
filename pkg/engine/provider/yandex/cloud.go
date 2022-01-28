@@ -106,6 +106,8 @@ func (yp *Provider) reparseAddressMap(nodes int) (err error) {
 		return
 	}
 
+	llog.Infoln("мы внутри парсинга адресов")
+
 	workerKey := "worker-%v"
 	yandexInstanceValue := "instances.%v"
 	externalAddress := make(map[string]string)
@@ -153,6 +155,8 @@ func (yp *Provider) reparseAddressMap(nodes int) (err error) {
 	yp.addressMap = make(map[string]map[string]string)
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
+
+	llog.Infoln(yp.addressMap)
 	return
 }
 
@@ -164,7 +168,8 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
 	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
 
-	defer func() {
+	/*defer func() {
+		llog.Infoln("зашли в defer")
 		mapIPAddresses = provider.DeepCopyAddressMap(yp.addressMap)
 		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
 	}()
@@ -174,10 +179,14 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 
 	if yp.addressMap != nil {
 		return
-	}
+	}*/
 
 	err = yp.reparseAddressMap(nodes)
-	return
+	if err != nil{
+		return nil, err
+	}
+	llog.Infoln("вышли из функции GetAddressMap")
+	return yp.addressMap, err
 }
 
 func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {
