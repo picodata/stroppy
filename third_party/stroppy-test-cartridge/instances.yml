@@ -1,0 +1,13 @@
+---
+stroppy-test-cartridge.router:
+  advertise_uri: localhost:3301
+  http_port: 8081
+
+stroppy-test-cartridge.s1-master:
+  advertise_uri: localhost:3302
+  http_port: 8082
+
+stroppy-test-cartridge.s2-master:
+  advertise_uri: localhost:3303
+  http_port: 8084
+
