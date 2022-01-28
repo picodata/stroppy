@@ -19,7 +19,6 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spenczar/tdigest v2.1.0+incompatible
 	github.com/spf13/cobra v1.2.1
-	github.com/tarantool/go-tarantool v0.0.0-20220113162241-9c9a68e09870
 	github.com/tidwall/gjson v1.8.1
 	github.com/zalando/postgres-operator v1.6.3
 	github.com/zclconf/go-cty v1.9.0
