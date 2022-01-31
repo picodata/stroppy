@@ -66,6 +66,9 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.Cockroach:
 		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+
+	case cluster.Cartridge:
+		_cluster = createCartridgeCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
 	}
 
 	return
