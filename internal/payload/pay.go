@@ -17,8 +17,11 @@ import (
 // or it was just a request / tx timeout etc.
 func IsTransientError(err error) bool {
 	err = merry.Unwrap(err)
-
-	return err == cluster.ErrTimeoutExceeded
+	if err == cluster.ErrTimeoutExceeded || err == cluster.ErrInternalServerError {
+		return true
+	}
+	
+	return false
 }
 
 var nClients uint64

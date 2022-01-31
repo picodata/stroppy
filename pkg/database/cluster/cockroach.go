@@ -367,7 +367,7 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 
 const cockroachTxTimeout = 45 * time.Second
 
-func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
 	defer cancel()
 

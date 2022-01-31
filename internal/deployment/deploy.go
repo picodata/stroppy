@@ -99,6 +99,7 @@ func (sh *shell) prepareEngine() (err error) {
 	if sh.settings.Local {
 		commandClientType = engineSsh.LocalClient
 	}
+
 	sh.sc, err = engineSsh.CreateClient(sh.workingDirectory,
 		addressMap["external"]["master"],
 		sh.settings.DeploymentSettings.Provider,
@@ -146,6 +147,7 @@ func (sh *shell) deploy() (err error) {
 	if err = sh.prepareEngine(); err != nil {
 		return
 	}
+
 	if err = sh.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}

@@ -1,0 +1,18 @@
+name: Sync
+on:
+  schedule:
+    - cron: '30 5 * * 1,3'
+jobs:
+  build:
+    runs-on: ["self-hosted", "linux", "stroppy"]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Commit files
+        run: |
+#          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+#          git config --local user.name "github-actions[bot]"
+          eval $(ssh-agent -s)
+          echo "$PUSH_PRIVATE_KEY" | ssh-add -
+          git remote set-url --push git@github.com:picodata/stroppy.git
+          git push
+          ssh-agent -k

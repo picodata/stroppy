@@ -5,6 +5,8 @@
 package commands
 
 import (
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	llog "github.com/sirupsen/logrus"
@@ -25,6 +27,11 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
+			if settings.EnableProfile {
+				go func() {
+					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
+				}()
+			}
 			if settings.TestSettings.UseCloudStroppy && settings.TestSettings.RunAsPod {
 				llog.Fatalf("use-cloud-stroppy and run-as-pod flags specified at the same time")
 			}
