@@ -6,6 +6,8 @@ package commands
 
 import (
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"time"
 
 	"gitlab.com/picodata/stroppy/internal/deployment"
@@ -43,6 +45,11 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		},
 		PreRunE: nil,
 		Run: func(cmd *cobra.Command, args []string) {
+			if settings.EnableProfile {
+				go func() {
+					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
+				}()
+			}
 			sh, err := deployment.Deploy(settings)
 			if err != nil {
 				llog.Fatalf("status of exit: %v", err)

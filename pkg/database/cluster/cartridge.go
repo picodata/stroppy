@@ -49,12 +49,24 @@ type transactionResult struct {
 }
 
 type account struct {
-	Bic             string `json:"bic"`
-	Ban             string `json:"ban"`
-	Balance         int64  `json:"balance"`
-	PendingAmount   int64  `json:"pending_amount"`
+	Bic             string    `json:"bic"`
+	Ban             string    `json:"ban"`
+	Balance         int64     `json:"balance"`
+	PendingAmount   int64     `json:"pending_amount"`
 	PendingTransfer uuid.UUID `json:"pending_transfer"`
-	Found           bool `json:"found"`
+	Found           bool      `json:"found"`
+}
+
+type transferMessage struct {
+	TransferId      string `json:"transfer_id"`
+	SrcBic          string `json:"src_bic"`
+	SrcBan          string `json:"src_ban"`
+	DestBic         string `json:"dest_bic"`
+	DestBan         string `json:"dest_ban"`
+	State           string `json:"state"`
+	ClientId        string `json:"client_id"`
+	ClientTimestamp string `json:"client_timestamp"`
+	Amount          int64  `json:"amount"`
 }
 
 func (cluster *CartridgeCluster) InsertTransfer(_ *model.Transfer) error {
@@ -130,7 +142,7 @@ func (cluster *CartridgeCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
 
 	body_template := []byte(`{"count":` + fmt.Sprintf("%v", count) + `,"seed": ` + fmt.Sprintf("%v", seed) + `}`)
-	request_template := fmt.Sprintf("%s/bootstrap_db", cluster.url)
+	request_template := fmt.Sprintf("%s/db/bootstrap", cluster.url)
 
 	request, err := http.NewRequest(
 		"POST", request_template, bytes.NewBuffer(body_template),
@@ -165,7 +177,7 @@ func (cluster *CartridgeCluster) GetClusterType() DBClusterType {
 // FetchSettings - получить значения параметров настройки.
 func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 
-	request_template := fmt.Sprintf("%s/fetch_settings", cluster.url)
+	request_template := fmt.Sprintf("%s/settings/fetch", cluster.url)
 	request, err := http.NewRequest(
 		"GET", request_template, nil,
 	)
@@ -215,9 +227,7 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 		return merry.Prepend(err, "failed to marshal account to json to insert account in cartridge app")
 	}
 
-	llog.Traceln(string(account_json))
-
-	request_template := fmt.Sprintf("%s/insert_account", cluster.url)
+	request_template := fmt.Sprintf("%s/account/insert", cluster.url)
 
 	request, err := http.NewRequest(
 		"POST", request_template, bytes.NewBuffer(account_json),
@@ -235,24 +245,29 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 		return merry.Prepend(err, "failed to make request to insert account in cartridge app")
 	}
 
-	if resp.StatusCode != 201 && resp.StatusCode != 409 {
-		error_body, err := ioutil.ReadAll(resp.Body)
-		if err != nil {
-			return merry.Prepend(err, "failed to insert account in cartridge app, but error body cannot be read")
+	var response map[string]interface{}
+
+	if resp.StatusCode != 201 {
+
+		if resp.StatusCode == 409 || resp.StatusCode == 500 {
+
+			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				unknownResponse, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					llog.Errorf("failed to insert account in cartridge app because got unknown answer body: %v \n")
+				}
+				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
+			}
+
+			if response["error"] == "Account already exist" {
+				return ErrDuplicateKey
+			}
+			if response["error"] == "Timeout exceeded" {
+				return ErrTimeoutExceeded
+			}
+			return ErrInternalServerError
 		}
-		return merry.Errorf("failed to insert account in cartridge app: %v %v", resp.StatusCode, string(error_body))
-	}
-
-	var response map[string]string
-
-	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return merry.Prepend(err, "failed to decode result to insert account from cartridge app response")
-	}
-
-	if resp.StatusCode == 409 {
-		if response["error"] == "Account already exist" {
-			return ErrDuplicateKey
-		}
+		return merry.Errorf("failed to insert account in cartridge app: %v %v", resp.StatusCode, response)
 	}
 
 	defer resp.Body.Close()
@@ -262,7 +277,7 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
-	request_template := fmt.Sprintf("%s/fetch_total", cluster.url)
+	request_template := fmt.Sprintf("%s/total_balance/fetch", cluster.url)
 	request, err := http.NewRequest(
 		"GET", request_template, nil,
 	)
@@ -305,7 +320,7 @@ func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
 // PersistTotal - сохранить значение итогового баланса в settings.
 func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
 	body_template := []byte(`{"total":` + fmt.Sprintf("%v", total.UnscaledBig().Int64()) + `}`)
-	request_template := fmt.Sprintf("%s/persist_total", cluster.url)
+	request_template := fmt.Sprintf("%s/total_balance/persist", cluster.url)
 
 	request, err := http.NewRequest(
 		"POST", request_template, bytes.NewBuffer(body_template),
@@ -340,7 +355,7 @@ func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
-	request_template := fmt.Sprintf("%s/check_balance", cluster.url)
+	request_template := fmt.Sprintf("%s/balance/check", cluster.url)
 	request, err := http.NewRequest(
 		"GET", request_template, nil,
 	)
@@ -378,19 +393,29 @@ func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+	// преобразуем в новую структуру для удобства обработки приложением. На логику принципиально не влияет.
+	sendingTransfer := &transferMessage{
+		TransferId:      transfer.Id.String(),
+		SrcBic:          transfer.Acs[0].Bic,
+		SrcBan:          transfer.Acs[0].Ban,
+		DestBic:         transfer.Acs[1].Bic,
+		DestBan:         transfer.Acs[1].Ban,
+		State:           transfer.State,
+		ClientId:        clientId.String(),
+		ClientTimestamp: "",
+		Amount:          0,
+	}
 
-	transfer_json, err := json.Marshal(transfer)
+	transferJson, err := json.Marshal(sendingTransfer)
 	if err != nil {
 		merry.Prepend(err, "failed to marshal transfer to json to make custom transfer in cartridge app")
 	}
 
-	llog.Debugln(string(transfer_json))
-
-	request_template := fmt.Sprintf("%s/make_custom_transfer", cluster.url)
+	request_template := fmt.Sprintf("%s/transfer/custom/create", cluster.url)
 
 	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(transfer_json),
+		"POST", request_template, bytes.NewBuffer(transferJson),
 	)
 
 	if err != nil {
@@ -405,17 +430,36 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer) er
 		return merry.Prepend(err, "failed to make request to make custom transfer in cartridge app")
 	}
 
-	var response map[string]interface{}
-
-	if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
-		return err
-	}
+	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
-		return merry.Prepend(err, "failed to make custom transfer balance in cartridge app")
-	}
 
-	defer resp.Body.Close()
+		if resp.StatusCode == 409 || resp.StatusCode == 500 {
+			var response map[string]interface{}
+			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
+				unknownResponse, err := ioutil.ReadAll(resp.Body)
+				if err != nil {
+					llog.Errorf("failed to make custom transfer in cartridge app because got unknown answer body: %v \n")
+				}
+				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
+			}
+			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId,  resp.StatusCode, response)
+
+			if response["error"] == "insufficient funds for transfer" {
+				return ErrInsufficientFunds
+			}
+			if response["error"] == "Timeout exceeded" {
+				return ErrTimeoutExceeded
+			}
+			return ErrInternalServerError
+		}
+
+		if resp.StatusCode == 404 {
+			return ErrNoRows
+		}
+
+		return merry.Errorf("failed to make custom transfer in cartridge app with response code: %v", resp.StatusCode)
+	}
 
 	return nil
 }

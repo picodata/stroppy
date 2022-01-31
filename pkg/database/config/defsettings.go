@@ -39,6 +39,7 @@ type Settings struct {
 	DeploymentSettings *DeploymentSettings
 
 	DestroyOnExit bool
+	EnableProfile bool
 }
 
 func DefaultSettings() (s *Settings) {

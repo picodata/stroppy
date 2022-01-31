@@ -2,6 +2,16 @@ local log = require("log")
 local uuid = require("uuid")
 local decimal = require("decimal")
 local custom_errors = require("app.custom_errors")
+local fiber = require("fiber")
+
+-- Функция преобразующая кортеж в таблицу согласно схеме хранения
+local function tuple_to_table(format, tuple)
+	local map = {}
+	for i, v in ipairs(format) do
+		map[v.name] = tuple[i]
+	end
+	return map
+end
 
 local function account_add(account)
 	log.debug(account)
@@ -12,53 +22,70 @@ local function account_add(account)
 	end
 
 	account.balance = decimal.new(account.balance)
-    account.pending_amount = decimal.new(account.pending_amount)
+	account.pending_amount = decimal.new(account.pending_amount)
 
-	box.space.accounts:insert({
-		account.bic,
-		account.ban,
-		account.balance,
-        nil, --при загрузке счета должен быть пустой
-		account.pending_amount,
-		account.bucket_id,
-	})
+	box.atomic(function()
+		box.space.accounts:insert({
+			account.bic,
+			account.ban,
+			account.balance,
+			nil, --при загрузке счета должен быть пустой
+			account.pending_amount,
+			account.bucket_id,
+		})
+	end)
 
 	return { ok = true, error = nil }
 end
 
 local function account_balance_update(new_account)
 	-- Проверяем, есть ли счет
-	local old_account = box.space.accounts:get({ new_account.bic, new_account.ban })
-	if old_account == nil then
+	local current_account = box.space.accounts:get({ new_account.bic, new_account.ban })
+	if current_account == nil then
 		return { ok = false, error = custom_errors.storageNotFoundErrors.AccNotFound }
 	end
 
-	box.space.accounts:update({ old_account.bic, old_account.ban }, { { "=", 3, decimal.new(new_account.balance) } })
+	box.atomic(function()
+		box.space.accounts:update(
+			{ current_account.bic, current_account.ban },
+			{ { "=", 3, decimal.new(new_account.balance) } }
+		)
+	end)
 
 	return { ok = true, error = nil }
 end
 
-local function transfer_add(transfer)
-	log.debug(transfer)
+local function insert_transfer(transfer)
+	log.debug({ "storage: insert_transfer: got transfer:", transfer })
 	-- Проверяем на дубликаты
 	local exist = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
 	if exist ~= nil then
-		return { ok = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
+		-- если клиент, приславший запрос, тот же, то это не дубликат, а переповтор
+		if exist[7] == transfer.client_id then
+			return { result = true, error = nil }
+		else
+			return { result = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
+		end
 	end
 
 	transfer.amount = decimal.new(transfer.amount)
 
-	box.space.transfers:insert({
-		uuid.fromstr(transfer.transfer_id),
-		transfer.src_bic,
-		transfer.src_ban,
-		transfer.dest_bic,
-		transfer.dest_ban,
-		transfer.amount,
-		transfer.bucket_id,
-	})
+	box.atomic(function()
+		box.space.transfers:insert({
+			uuid.fromstr(transfer.transfer_id),
+			transfer.src_bic,
+			transfer.src_ban,
+			transfer.dest_bic,
+			transfer.dest_ban,
+			transfer.state,
+			nil,
+			nil,
+			transfer.amount,
+			transfer.bucket_id,
+		})
+	end)
 
-	return { ok = true, error = nil }
+	return { result = true, error = nil }
 end
 
 local function fetch_total()
@@ -73,7 +100,10 @@ end
 
 local function persist_total(total)
 	log.debug(total)
-	box.space.checksum:replace({ "total", decimal.new(total.total) })
+	box.atomic(function()
+		box.space.checksum:replace({ "total", decimal.new(total.total) })
+	end)
+
 	return { ok = true, error = nil }
 end
 
@@ -93,8 +123,9 @@ local function insert_settings(settings)
 		if exist ~= nil then
 			return { ok = false, error = custom_errors.storageConflictErrors.SetingsAlreadyExist }
 		end
-
-		box.space.settings:insert({ key, value })
+		box.atomic(function()
+			box.space.settings:insert({ key, value })
+		end)
 	end
 
 	return { ok = true, error = nil }
@@ -112,6 +143,115 @@ local function fetch_settings()
 	return settings
 end
 
+--кажется, что имеет смысл переписать на replace и обновлять все поля одним методом, но не уверен, поэтому на каждое действие отдельный метод
+local function set_storage_transfer_client(transfer)
+	log.debug({ "storage: set_transfer_client: got transfer:", transfer })
+	-- Проверяем, есть ли трансфер
+	local current_transfer = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
+	if current_transfer == nil then
+		return { result = false, error = custom_errors.storageNotFoundErrors.TransferNotFound }
+	end
+
+	box.atomic(function()
+		box.space.transfers:update(
+			uuid.fromstr(transfer.transfer_id),
+			{ { "=", 7, uuid.fromstr(transfer.client_id) }, { "=", 8, fiber.time() } }
+		)
+	end)
+
+	return { result = true, error = nil }
+end
+
+local function set_storage_transfer_state(transfer)
+	log.debug({ "storage: set_storage_transfer_state: got transfer:", transfer })
+	-- Проверяем, есть ли счет
+	local current_transfer = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
+	if current_transfer == nil then
+		return { ok = false, error = custom_errors.storageNotFoundErrors.TransferNotFound }
+	end
+
+	if current_transfer[1] == transfer.transfer_id and current_transfer[8] > fiber.time() - 30 then
+		box.atomic(function()
+			box.space.transfers:update(uuid.fromstr(transfer.transfer_id), { { "=", 6, transfer.state } })
+		end)
+	end
+
+	return { ok = true, error = nil }
+end
+
+local function get_account_storage_balance(account_attr)
+	local received_account = box.space.accounts:get({ account_attr.bic, account_attr.ban })
+	if received_account == nil then
+		return { nil, error = custom_errors.storageNotFoundErrors.AccNotFound }
+	end
+
+	local acc_balance_attrs = { balance = received_account.balance, pending_amount = received_account.pending_amount }
+
+	return { acc_balance_attrs, error = nil }
+end
+
+local function lock_storage_account(account)
+	log.debug({ "storage: lock_storage_account: got account:", account })
+	-- Проверяем, есть ли счет
+	local current_account = box.space.accounts:get({ account.bic, account.ban })
+	if current_account == nil then
+		return { nil, error = custom_errors.storageNotFoundErrors.AccNotFound }
+	end
+	-- аналогично lockAccount в https://github.com/picodata/stroppy/blob/develop/pkg/database/cluster/pgSqlConstants.go#L105
+	if current_account.pending_transfer ~= nil then
+		account.pending_transfer = current_account.pending_transfer
+	end
+
+	if current_account.pending_amount ~= 0 then
+		account.pending_amount = current_account.pending_amount
+	end
+
+	local received_account = box.atomic(function()
+		local updated_account = box.space.accounts:update(
+			{ current_account.bic, current_account.ban },
+			{ { "=", 4, account.pending_transfer }, { "=", 5, account.pending_amount } }
+		)
+		return updated_account
+	end)
+
+	received_account = tuple_to_table(box.space.accounts:format(), received_account)
+
+	return { received_account, error = nil }
+end
+
+local function unlock_storage_account(account)
+	log.debug({ "storage: unlock_storage_account: got account:", account })
+	-- Проверяем, есть ли счет
+	local current_account = box.space.accounts:get({ account.bic, account.ban })
+	if current_account == nil then
+		return { result = nil, error = custom_errors.storageNotFoundErrors.AccNotFound }
+	end
+
+	if current_account[4] == account.pending_transfer then
+		box.atomic(function()
+			box.space.accounts:update(
+				{ current_account.bic, current_account.ban },
+				{ { "=", 4, box.NULL }, { "=", 5, decimal.new(0) } }
+			)
+		end)
+	end
+
+	return { result = true, error = nil }
+end
+
+local function fetch_transfer(transfer_id)
+	log.debug({ "storage: fetch_transfer: got transfer:", transfer_id })
+
+	local current_transfer = box.space.transfers:get({ uuid.fromstr(transfer_id) })
+	if current_transfer == nil then
+		return { nil, error = custom_errors.storageNotFoundErrors.TransferNotFound }
+	end
+
+	current_transfer = tuple_to_table(box.space.transfers:format(), current_transfer)
+
+	return { current_transfer, error = nil }
+end
+
 local function init(opts)
 	if opts.is_master then
 		-- cоздаем спейсы, если не созданы
@@ -120,7 +260,7 @@ local function init(opts)
 			{ name = "bic", type = "string" },
 			{ name = "ban", type = "string" },
 			{ name = "balance", type = "decimal" },
-			{ name = "pending_transfer", type = "uuid", is_nullable=true},
+			{ name = "pending_transfer", type = "uuid", is_nullable = true },
 			{ name = "pending_amount", type = "decimal" },
 			{ name = "bucket_id", type = "unsigned" },
 		})
@@ -138,9 +278,9 @@ local function init(opts)
 			{ name = "dest_bic", type = "string" },
 			{ name = "dest_ban", type = "string" },
 			{ name = "state", type = "string" },
-			{ name = "client_id", type = "uuid" },
-			{ name = "client_timestamp", type = "number" },
-			{ name = "balance", type = "decimal" },
+			{ name = "client_id", type = "uuid", is_nullable = true },
+			{ name = "client_timestamp", type = "scalar", is_nullable = true },
+			{ name = "amount", type = "decimal" },
 
 			{ name = "bucket_id", type = "unsigned" },
 		})
@@ -172,14 +312,27 @@ local function init(opts)
 		box.schema.func.create("calculate_accounts_balance", { if_not_exists = true })
 		box.schema.func.create("insert_settings", { if_not_exists = true })
 		box.schema.func.create("fetch_settings", { if_not_exists = true })
+		box.schema.func.create("insert_transfer", { if_not_exists = true })
+		box.schema.func.create("get_account_storage_balance", { if_not_exists = true })
+		box.schema.func.create("lock_storage_account", { if_not_exists = true })
+		box.schema.func.create("set_transfer_client", { if_not_exists = true })
+		box.schema.func.create("set_storage_transfer_state", { if_not_exists = true })
+		box.schema.func.create("fetch_transfer", { if_not_exists = true })
 		rawset(_G, "account_add", account_add)
 		rawset(_G, "account_balance_update", account_balance_update)
-		rawset(_G, "transfer_add", transfer_add)
+		rawset(_G, "transfer_add", insert_transfer)
 		rawset(_G, "fetch_total", fetch_total)
 		rawset(_G, "persist_total", persist_total)
 		rawset(_G, "calculate_accounts_balance", calculate_accounts_balance)
 		rawset(_G, "insert_settings", insert_settings)
 		rawset(_G, "fetch_settings", fetch_settings)
+		rawset(_G, "insert_transfer", insert_transfer)
+		rawset(_G, "get_account_storage_balance", get_account_storage_balance)
+		rawset(_G, "lock_storage_account", lock_storage_account)
+		rawset(_G, "unlock_storage_account", unlock_storage_account)
+		rawset(_G, "set_storage_transfer_client", set_storage_transfer_client)
+		rawset(_G, "set_storage_transfer_state", set_storage_transfer_state)
+		rawset(_G, "fetch_transfer", fetch_transfer)
 	end
 end
 
@@ -205,12 +358,18 @@ return {
 	utils = {
 		account_add = account_add,
 		account_balance_update = account_balance_update,
-		transfer_add = transfer_add,
 		fetch_total = fetch_total,
 		persist_total = persist_total,
 		calculate_accounts_balance = calculate_accounts_balance,
 		insert_settings = insert_settings,
 		fetch_settings = fetch_settings,
+		insert_transfer = insert_transfer,
+		get_account_storage_balance = get_account_storage_balance,
+		lock_storage_account = lock_storage_account,
+		unlock_storage_account = unlock_storage_account,
+		set_storage_transfer_client = set_storage_transfer_client,
+		set_storage_transfer_state = set_storage_transfer_state,
+		fetch_transfer = fetch_transfer,
 	},
 	dependencies = { "cartridge.roles.vshard-storage" },
 }

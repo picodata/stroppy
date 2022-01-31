@@ -21,7 +21,7 @@ RoleConfig:
     CPUallocation: 1 # Часть vCPUs выделенного под каждый контейнер
     MemtxMemoryMB: 1024 # Количество RAM выделяемого под каждый контейнер
     RolesToAssign:     # Роли cartridge
-      - app.roles.api
+      - api
       - vshard-router
 
   - RoleName: storages
@@ -31,5 +31,5 @@ RoleConfig:
     CPUallocation: 1
     MemtxMemoryMB: 2048
     RolesToAssign:
-      - app.roles.storage
+      - storage
       - vshard-storage
