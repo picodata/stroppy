@@ -1,0 +1,35 @@
+# Название среды и название кластера.
+ClusterEnv: dev
+ClusterName: stroppy-test-app
+
+# Docker-образ, из которого создаем контейнеры
+image:
+  repository: picodata/stroppy-test-cartridge
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# Топология кластера, включающая в себя описание количества
+# и характеристик репликасетов. Описывается в разделе RoleConfig
+
+# Допустим, мы хотим создать кластер, содержащий два типа репликасетов:
+# routers и storages
+RoleConfig:
+  - RoleName: routers  # Название типа репликасетов
+    ReplicaCount: 1    # Количество реплик в репликасете
+    ReplicaSetCount: 1 # Количество репликасетов у данной роли
+    DiskSize: 1Gi      # Размер персистентного хранилища
+    CPUallocation: 1 # Часть vCPUs выделенного под каждый контейнер
+    MemtxMemoryMB: 1024 # Количество RAM выделяемого под каждый контейнер
+    RolesToAssign:     # Роли cartridge
+      - api
+      - vshard-router
+
+  - RoleName: storages
+    ReplicaCount: 1
+    ReplicaSetCount: 2
+    DiskSize: 1Gi
+    CPUallocation: 1
+    MemtxMemoryMB: 2048
+    RolesToAssign:
+      - storage
+      - vshard-storage

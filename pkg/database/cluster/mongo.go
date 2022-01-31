@@ -456,7 +456,7 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx := context.Background()
 	transfers := cluster.mongoModel.transfers
 	srcAccounts := cluster.mongoModel.accounts
