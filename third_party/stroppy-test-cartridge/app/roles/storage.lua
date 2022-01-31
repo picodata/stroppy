@@ -55,17 +55,18 @@ local function account_balance_update(new_account)
 	return { ok = true, error = nil }
 end
 
-local function insert_transfer(transfer)
-	log.debug({ "storage: insert_transfer: got transfer:", transfer })
+local function upsert_transfer(transfer)
+	log.debug(transfer)
 	-- Проверяем на дубликаты
 	local exist = box.space.transfers:get({ uuid.fromstr(transfer.transfer_id) })
-	if exist ~= nil then
-		-- если клиент, приславший запрос, тот же, то это не дубликат, а переповтор
-		if exist[7] == transfer.client_id then
-			return { result = true, error = nil }
-		else
-			return { result = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
-		end
+
+	-- если клиент, приславший запрос, тот же, то это не дубликат, а переповтор
+	if exist ~= nil and exist[7] == transfer.client_id and exist[8] == transfer.client_timestamp then
+		return { result = false, error = custom_errors.storageConflictErrors.TransferAlReadyExist }
+	else
+		box.atomic(function()
+			box.space.transfers:update(uuid.fromstr(transfer.transfer_id), { { "=", 8, fiber.time() } })
+		end)
 	end
 
 	transfer.amount = decimal.new(transfer.amount)
@@ -278,8 +279,10 @@ local function init(opts)
 			{ name = "dest_bic", type = "string" },
 			{ name = "dest_ban", type = "string" },
 			{ name = "state", type = "string" },
+
 			{ name = "client_id", type = "uuid", is_nullable = true },
 			{ name = "client_timestamp", type = "scalar", is_nullable = true },
+
 			{ name = "amount", type = "decimal" },
 
 			{ name = "bucket_id", type = "unsigned" },
@@ -312,7 +315,7 @@ local function init(opts)
 		box.schema.func.create("calculate_accounts_balance", { if_not_exists = true })
 		box.schema.func.create("insert_settings", { if_not_exists = true })
 		box.schema.func.create("fetch_settings", { if_not_exists = true })
-		box.schema.func.create("insert_transfer", { if_not_exists = true })
+		box.schema.func.create("upsert_transfer", { if_not_exists = true })
 		box.schema.func.create("get_account_storage_balance", { if_not_exists = true })
 		box.schema.func.create("lock_storage_account", { if_not_exists = true })
 		box.schema.func.create("set_transfer_client", { if_not_exists = true })
@@ -320,13 +323,13 @@ local function init(opts)
 		box.schema.func.create("fetch_transfer", { if_not_exists = true })
 		rawset(_G, "account_add", account_add)
 		rawset(_G, "account_balance_update", account_balance_update)
-		rawset(_G, "transfer_add", insert_transfer)
+		rawset(_G, "transfer_add", upsert_transfer)
 		rawset(_G, "fetch_total", fetch_total)
 		rawset(_G, "persist_total", persist_total)
 		rawset(_G, "calculate_accounts_balance", calculate_accounts_balance)
 		rawset(_G, "insert_settings", insert_settings)
 		rawset(_G, "fetch_settings", fetch_settings)
-		rawset(_G, "insert_transfer", insert_transfer)
+		rawset(_G, "upsert_transfer", upsert_transfer)
 		rawset(_G, "get_account_storage_balance", get_account_storage_balance)
 		rawset(_G, "lock_storage_account", lock_storage_account)
 		rawset(_G, "unlock_storage_account", unlock_storage_account)
@@ -363,7 +366,7 @@ return {
 		calculate_accounts_balance = calculate_accounts_balance,
 		insert_settings = insert_settings,
 		fetch_settings = fetch_settings,
-		insert_transfer = insert_transfer,
+		upsert_transfer = upsert_transfer,
 		get_account_storage_balance = get_account_storage_balance,
 		lock_storage_account = lock_storage_account,
 		unlock_storage_account = unlock_storage_account,

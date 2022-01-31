@@ -90,20 +90,15 @@ g.test_insert_account = function()
 end
 
 g.test_make_atomic_transfer = function()
-	assert_http_request(
-		"POST",
-		"/transfer/custom/create",
-		{
-			transfer_id = "edec7a00-72d6-11ec-90d6-0242ac120063",
-			src_bic = "331",
-			src_ban = "331",
-			dest_bic = "332",
-			dest_ban = "332",
-			state = "new",
-			client_id = "95328eee-5012-4ae4-9860-a07cac895f37",
-			client_timestamp = 123456789,
-			amount = 10,
-		},
-		{ info = "Successfully transfer execution", status = 200 }
-	)
+	assert_http_request("POST", "/transfer/custom/create", {
+		transfer_id = "edec7a00-72d6-11ec-90d6-0242ac120063",
+		src_bic = "331",
+		src_ban = "331",
+		dest_bic = "332",
+		dest_ban = "332",
+		state = "new",
+		client_id = "95328eee-5012-4ae4-9860-a07cac895f37",
+		client_timestamp = 123456789,
+		amount = 10,
+	}, { info = "Successfully transfer execution", status = 200 })
 end
