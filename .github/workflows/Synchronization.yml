@@ -1,9 +1,9 @@
 name: Synchronization
 on:
   schedule:
-    - cron: '30 5 * * 1,3'
+    - cron: '5 * * * *'
 jobs:
-  build:
+  synchronization:
     runs-on: ["self-hosted", "linux", "stroppy"]
     steps:
       - uses: actions/checkout@v2
