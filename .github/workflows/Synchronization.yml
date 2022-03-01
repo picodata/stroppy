@@ -1,16 +1,18 @@
 name: Synchronization
-on:
-  schedule:
-    - cron: '5 * * * *'
+on: [push]
 jobs:
   synchronization:
     runs-on: ["self-hosted", "linux", "stroppy"]
     steps:
       - uses: actions/checkout@v2
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.PUSH_PRIVATE_KEY }}
       - name: Commit files
         run: |
-          eval $(ssh-agent -s)
-          echo "$PUSH_PRIVATE_KEY" | ssh-add -
-          git remote set-url --push git@github.com:picodata/stroppy.git
+          ssh-keyscan -H git.picodata.io >> ~/.ssh/known_hosts
+          git fetch --unshallow old
+          git remote set-url --push origin git@git.picodata.io:picodata/picodata/stroppy.git
           git push
-          ssh-agent -k
+
