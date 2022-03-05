@@ -49,12 +49,10 @@ type transactionResult struct {
 }
 
 type account struct {
-	Bic             string    `json:"bic"`
-	Ban             string    `json:"ban"`
-	Balance         int64     `json:"balance"`
-	PendingAmount   int64     `json:"pending_amount"`
-	PendingTransfer uuid.UUID `json:"pending_transfer"`
-	Found           bool      `json:"found"`
+	Bic     string `json:"bic"`
+	Ban     string `json:"ban"`
+	Balance int64  `json:"balance"`
+	Found   bool   `json:"found"`
 }
 
 type transferMessage struct {
@@ -214,12 +212,10 @@ func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 
 	account := account{
-		Bic:             acc.Bic,
-		Ban:             acc.Ban,
-		Balance:         acc.Balance.UnscaledBig().Int64(),
-		PendingAmount:   acc.PendingAmount.UnscaledBig().Int64(),
-		PendingTransfer: acc.PendingTransfer,
-		Found:           false,
+		Bic:     acc.Bic,
+		Ban:     acc.Ban,
+		Balance: acc.Balance.UnscaledBig().Int64(),
+		Found:   false,
 	}
 
 	account_json, err := json.Marshal(account)
@@ -443,7 +439,7 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 				}
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
-			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId,  resp.StatusCode, response)
+			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId, resp.StatusCode, response)
 
 			if response["error"] == "insufficient funds for transfer" {
 				return ErrInsufficientFunds

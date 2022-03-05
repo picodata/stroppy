@@ -6,8 +6,6 @@ package model
 
 import (
 	"fmt"
-	"time"
-
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 
 	"github.com/google/uuid"
@@ -25,12 +23,10 @@ var NilUuid = uuid.UUID{}
 
 // Some random bank account
 type Account struct {
-	Bic             string
-	Ban             string
-	Balance         *inf.Dec
-	PendingAmount   *inf.Dec
-	PendingTransfer TransferId
-	Found           bool
+	Bic     string
+	Ban     string
+	Balance *inf.Dec
+	Found   bool
 }
 
 func (acc Account) AccountID() string {
@@ -62,9 +58,6 @@ func (t *Transfer) InitAccounts() {
 		t.LockOrder[0] = &t.Acs[1]
 		t.LockOrder[1] = &t.Acs[0]
 	}
-	// Use pending amount as a flag to avoid double transfer on recover
-	acs[0].PendingAmount = new(inf.Dec).Neg(t.Amount)
-	acs[1].PendingAmount = t.Amount
 }
 
 func (t *Transfer) InitRandomTransfer(randSource *fixed_random_source.FixedRandomSource, zipfian bool) {
@@ -92,40 +85,4 @@ func (t *Transfer) String() string {
 		t.Acs[0].Bic, t.Acs[0].Ban, t.Acs[0].Balance,
 		t.Acs[1].Bic, t.Acs[1].Ban, t.Acs[1].Balance,
 		t.Amount)
-}
-
-// A account history item
-type HistoryItem struct {
-	ID            uuid.UUID
-	TransferID    TransferId
-	AccountBic    string
-	AccountBan    string
-	OldBalance    *inf.Dec
-	NewBalance    *inf.Dec
-	OperationTime time.Time
-}
-
-func NewHistoryItem(
-	tranfserID uuid.UUID,
-	bic string,
-	ban string,
-	oldBalance *inf.Dec,
-	newBalance *inf.Dec,
-	operationTime time.Time,
-) HistoryItem {
-	historyID, err := uuid.NewUUID()
-	if err != nil {
-		// TODO: don't panic
-		panic(err)
-	}
-
-	return HistoryItem{
-		ID:            historyID,
-		TransferID:    tranfserID,
-		AccountBic:    bic,
-		AccountBan:    ban,
-		OldBalance:    oldBalance,
-		NewBalance:    newBalance,
-		OperationTime: operationTime,
-	}
 }

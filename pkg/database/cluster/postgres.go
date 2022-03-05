@@ -24,11 +24,11 @@ import (
 	"github.com/jackc/pgx/v4/pgxpool"
 )
 
+const defaultMaxConns = 4
+
 type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
-
-const defaultMaxConns = 4
 
 func NewPostgresCluster(dbURL string, connectionPoolCount int) (*PostgresCluster, error) {
 	llog.Infof("Establishing connection to pg on %v", dbURL)
@@ -54,23 +54,23 @@ func NewPostgresCluster(dbURL string, connectionPoolCount int) (*PostgresCluster
 	}, nil
 }
 
-func (*PostgresCluster) GetClusterType() DBClusterType {
+func (cluster *PostgresCluster) GetClusterType() DBClusterType {
 	return PostgresClusterType
 }
 
-func (self *PostgresCluster) BootstrapDB(count int, seed int) error {
+func (cluster *PostgresCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Creating the tables...")
-	_, err := self.pool.Exec(context.Background(), bootstrapScript)
+	_, err := cluster.pool.Exec(context.Background(), bootstrapScript)
 	if err != nil {
 		return merry.Prepend(err, "failed to execute bootstrap script")
 	}
 	llog.Infof("Populating settings...")
-	_, err = self.pool.Exec(context.Background(), insertSetting, "count", strconv.Itoa(count))
+	_, err = cluster.pool.Exec(context.Background(), insertSetting, "count", strconv.Itoa(count))
 	if err != nil {
 		return merry.Prepend(err, "failed to populate settings")
 	}
 
-	_, err = self.pool.Exec(context.Background(), insertSetting, "seed", strconv.Itoa(seed))
+	_, err = cluster.pool.Exec(context.Background(), insertSetting, "seed", strconv.Itoa(seed))
 	if err != nil {
 		return merry.Prepend(err, "failed to save seed")
 	}
@@ -78,10 +78,10 @@ func (self *PostgresCluster) BootstrapDB(count int, seed int) error {
 	return nil
 }
 
-func (self *PostgresCluster) FetchSettings() (Settings, error) {
+func (cluster *PostgresCluster) FetchSettings() (Settings, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeOutSettings*time.Second)
 	defer cancel()
-	rows, err := self.pool.Query(ctx, fetchSettings)
+	rows, err := cluster.pool.Query(ctx, fetchSettings)
 	if err != nil {
 		return Settings{
 			Count: 0,
@@ -116,39 +116,37 @@ func (self *PostgresCluster) FetchSettings() (Settings, error) {
 	return clusterSettings, nil
 }
 
-func (self *PostgresCluster) InsertAccount(acc model.Account) error {
-	_, err := self.pool.Exec(context.Background(), upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
+func (cluster *PostgresCluster) InsertAccount(acc model.Account) error {
+	_, err := cluster.pool.Exec(context.Background(), upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgErr.Code == pgerrcode.UniqueViolation {
 				return merry.Wrap(ErrDuplicateKey)
 			}
 		}
-
 		return merry.Wrap(err)
 	}
-
 	return nil
 }
 
-func (self *PostgresCluster) FetchAccounts() ([]model.Account, error) {
-	rows, err := self.pool.Query(context.Background(), fetchAccounts)
+func (cluster *PostgresCluster) FetchAccounts() ([]model.Account, error) {
+	rows, err := cluster.pool.Query(context.Background(), fetchAccounts)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	var accs []model.Account
+	var accounts []model.Account
 	for rows.Next() {
-		var acc model.Account
-		if err := rows.Scan(&acc); err != nil {
+		var account model.Account
+		if err := rows.Scan(&account); err != nil {
 			return nil, merry.Prepend(err, "failed to scan account for FetchAccounts")
 		}
-		accs = append(accs, acc)
+		accounts = append(accounts, account)
 	}
-	return accs, nil
+	return accounts, nil
 }
 
-func (self *PostgresCluster) FetchTotal() (*inf.Dec, error) {
-	row := self.pool.QueryRow(context.Background(), fetchTotal)
+func (cluster *PostgresCluster) FetchTotal() (*inf.Dec, error) {
+	row := cluster.pool.QueryRow(context.Background(), fetchTotal)
 
 	var amount inf.Dec
 	err := row.Scan(&amount)
@@ -158,24 +156,22 @@ func (self *PostgresCluster) FetchTotal() (*inf.Dec, error) {
 		}
 		return nil, merry.Wrap(err)
 	}
-
 	return &amount, nil
 }
 
-func (self *PostgresCluster) PersistTotal(total inf.Dec) error {
-	res, err := self.pool.Exec(context.Background(), persistTotal, total.UnscaledBig().Int64())
+func (cluster *PostgresCluster) PersistTotal(total inf.Dec) error {
+	res, err := cluster.pool.Exec(context.Background(), persistTotal, total.UnscaledBig().Int64())
 	if err != nil {
 		return merry.Wrap(err)
 	}
 	if res.RowsAffected() != 1 {
 		return merry.Errorf("PersistTotal() res.RowsAffected is %v", res.RowsAffected())
 	}
-
 	return nil
 }
 
-func (self *PostgresCluster) CheckBalance() (*inf.Dec, error) {
-	row := self.pool.QueryRow(context.Background(), checkBalance)
+func (cluster *PostgresCluster) CheckBalance() (*inf.Dec, error) {
+	row := cluster.pool.QueryRow(context.Background(), checkBalance)
 	var totalBalance int64
 	err := row.Scan(&totalBalance)
 	if err != nil {
@@ -184,206 +180,10 @@ func (self *PostgresCluster) CheckBalance() (*inf.Dec, error) {
 		}
 		return nil, merry.Wrap(err)
 	}
-
 	return inf.NewDec(totalBalance, 0), nil
 }
 
-func (self *PostgresCluster) InsertTransfer(transfer *model.Transfer) error {
-	res, err := self.pool.Exec(
-		context.Background(),
-		insertTransfer,
-		transfer.Id,
-		transfer.Acs[0].Bic,
-		transfer.Acs[0].Ban,
-		transfer.Acs[1].Bic,
-		transfer.Acs[1].Ban,
-		transfer.Amount.UnscaledBig().Int64(),
-	)
-	if res.RowsAffected() != 1 {
-		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
-	}
-	if err != nil {
-		return merry.Wrap(err)
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := self.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
-	res, err := self.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() == 0 {
-		return ErrNoRows
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := self.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		if err == pgx.ErrNoRows {
-			return ErrNoRows
-		}
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := self.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return ErrNoRows
-		}
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
-	t := new(model.Transfer)
-	t.InitEmptyTransfer(transferId)
-	row := self.pool.QueryRow(context.Background(), fetchTransfer, transferId)
-	// Ignore possible error, we will retry
-	var amount int64
-	if err := row.Scan(&t.Acs[0].Bic, &t.Acs[0].Ban, &t.Acs[1].Bic,
-		&t.Acs[1].Ban, &amount, &t.State); err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, ErrNoRows
-		}
-		return nil, merry.Wrap(err)
-	}
-	t.Amount = inf.NewDec(amount, 0)
-	return t, nil
-}
-
-func (self *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
-	row := self.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
-
-	var clientId uuid.UUID
-	err := row.Scan(&clientId)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, ErrNoRows
-		}
-		return nil, merry.Wrap(err)
-	}
-
-	return &clientId, nil
-}
-
-func (self *PostgresCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	row := self.pool.QueryRow(ctx, lockAccount, transferId, pendingAmount.UnscaledBig().Int64(), bic, ban)
-
-	var acc model.Account
-	var resultBalance, resultPendingAmount int64
-	err := row.Scan(&acc.Bic, &acc.Ban, &resultBalance, &acc.PendingTransfer, &resultPendingAmount)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ErrTimeoutExceeded
-		}
-		if err == pgx.ErrNoRows {
-			return nil, ErrNoRows
-		}
-		return nil, merry.Prepend(err, "failed to scan locked account")
-	}
-	acc.Balance = inf.NewDec(resultBalance, 0)
-	acc.PendingAmount = inf.NewDec(resultPendingAmount, 0)
-	return &acc, nil
-}
-
-func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	res, err := self.pool.Exec(ctx, unlockAccount, bic, ban, transferId)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ErrTimeoutExceeded
-		}
-		return merry.Prepend(err, "failed to unlock account")
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-	return nil
-}
-
-func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
-	res, err := self.pool.Exec(context.Background(), updateBalance, balance.UnscaledBig().Int64(), bic, ban, transferId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-
-	return nil
-}
-
-func (self *PostgresCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
-	row := self.pool.QueryRow(context.Background(), fetchBalance, bic, ban)
-	var balance, pendingAmount inf.Dec
-	err := row.Scan(&balance, &pendingAmount)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &balance, &pendingAmount, nil
-}
-
-func (self *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
-	rows, err := self.pool.Query(context.Background(), fetchDeadTransfers)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return []model.TransferId{}, nil
-		}
-
-		return nil, merry.Wrap(err)
-	}
-	var transferIds []model.TransferId
-	for rows.Next() {
-		var tId model.TransferId
-		err = rows.Scan(&tId)
-		// probably should be ignored
-		if err != nil {
-			return nil, merry.Wrap(err)
-		}
-		transferIds = append(transferIds, tId)
-	}
-
-	return transferIds, nil
-}
-
-func WithdrawMoney(
-	ctx context.Context,
-	tx pgx.Tx,
-	acc model.Account,
-	transfer model.Transfer,
-) (*model.HistoryItem, error) {
+func (cluster *PostgresCluster) WithdrawMoney(ctx context.Context, tx pgx.Tx, acc model.Account, transfer model.Transfer) error {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -402,39 +202,23 @@ func WithdrawMoney(
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return nil, ErrTxRollback
+				return ErrTxRollback
 			}
 		}
 		// failed to find account
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNoRows
+			return ErrNoRows
 		}
-		return nil, merry.Prepend(err, "failed to update first balance")
+		return merry.Prepend(err, "failed to update first balance")
 	}
 	if newBalance < 0 {
-		return nil, ErrInsufficientFunds
+		return ErrInsufficientFunds
 	}
-	newBalanceDec := inf.NewDec(newBalance, 0)
-	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model.NewHistoryItem(
-		transfer.Id,
-		acc.Bic,
-		acc.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
-
-	return &history, nil
+	return nil
 }
 
-func TopUpMoney(
-	ctx context.Context,
-	tx pgx.Tx,
-	acc model.Account,
-	transfer model.Transfer,
-) (*model.HistoryItem, error) {
+func (cluster *PostgresCluster) TopUpMoney(ctx context.Context, tx pgx.Tx, acc model.Account, transfer model.Transfer) error {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -453,39 +237,28 @@ func TopUpMoney(
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return nil, ErrTxRollback
+				return ErrTxRollback
 			}
 		}
 		// failed to find account
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNoRows
+			return ErrNoRows
 		}
-		return nil, merry.Prepend(err, "failed to update first balance")
+		return merry.Prepend(err, "failed to update first balance")
 	}
-	newBalanceDec := inf.NewDec(newBalance, 0)
-	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model.NewHistoryItem(
-		transfer.Id,
-		acc.Bic,
-		acc.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
-
-	return &history, nil
+	return nil
 }
 
 // MakeAtomicTransfer inserts new transfer (should be used as history in the future) and
 // update corresponding balances in a single SQL transaction
-func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cluster *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), txTimeout)
 	defer cancel()
 
 	// RepeateableRead is sufficient to provide consistent balance update even though
 	// serialization anomalies are allowed that should not affect us (no dependable transaction, except obviously blocked rows)
-	tx, err := self.pool.BeginTx(ctx, pgx.TxOptions{
+	tx, err := cluster.pool.BeginTx(ctx, pgx.TxOptions{
 		IsoLevel: pgx.RepeatableRead,
 	})
 	if err != nil {
@@ -545,22 +318,22 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 
 	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = cluster.WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = cluster.TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	} else {
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = cluster.TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = cluster.WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
@@ -581,7 +354,158 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 	return nil
 }
 
-func (self *PostgresCluster) StartStatisticsCollect(_ time.Duration) error {
+func (cluster *PostgresCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
+	row := cluster.pool.QueryRow(context.Background(), fetchBalance, bic, ban)
+	var balance, pendingAmount inf.Dec
+	err := row.Scan(&balance, &pendingAmount)
+	if err != nil {
+		return nil, nil, err
+	}
+	return &balance, &pendingAmount, nil
+}
+
+func (cluster *PostgresCluster) StartStatisticsCollect(_ time.Duration) error {
 	llog.Debugln("statistic for postgres not supported, watch grafana metrics, please")
 	return nil
+}
+
+func (cluster *PostgresCluster) InsertTransfer(transfer *model.Transfer) error {
+	res, err := cluster.pool.Exec(
+		context.Background(),
+		insertTransfer,
+		transfer.Id,
+		transfer.Acs[0].Bic,
+		transfer.Acs[0].Ban,
+		transfer.Acs[1].Bic,
+		transfer.Acs[1].Ban,
+		transfer.Amount.UnscaledBig().Int64(),
+	)
+	if res.RowsAffected() != 1 {
+		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
+	}
+	if err != nil {
+		return merry.Wrap(err)
+	}
+
+	return nil
+}
+
+func (cluster *PostgresCluster) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
+	res, err := cluster.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return ErrNoRows
+		}
+		return merry.Wrap(err)
+	}
+	if res.RowsAffected() != 1 {
+		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
+	}
+
+	return nil
+}
+
+func (cluster *PostgresCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+	res, err := cluster.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	if res.RowsAffected() == 0 {
+		return ErrNoRows
+	}
+
+	return nil
+}
+
+func (cluster *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+	row := cluster.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
+
+	var clientId uuid.UUID
+	err := row.Scan(&clientId)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNoRows
+		}
+		return nil, merry.Wrap(err)
+	}
+
+	return &clientId, nil
+}
+
+func (cluster *PostgresCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+	res, err := cluster.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	if res.RowsAffected() != 1 {
+		if err == pgx.ErrNoRows {
+			return ErrNoRows
+		}
+	}
+
+	return nil
+}
+
+func (cluster *PostgresCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+	res, err := cluster.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
+	if err != nil {
+		return merry.Wrap(err)
+	}
+	if res.RowsAffected() != 1 {
+		return ErrNoRows
+	}
+
+	return nil
+}
+
+func (cluster *PostgresCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+	t := new(model.Transfer)
+	t.InitEmptyTransfer(transferId)
+	row := cluster.pool.QueryRow(context.Background(), fetchTransfer, transferId)
+	// Ignore possible error, we will retry
+	var amount int64
+	if err := row.Scan(&t.Acs[0].Bic, &t.Acs[0].Ban, &t.Acs[1].Bic,
+		&t.Acs[1].Ban, &amount, &t.State); err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrNoRows
+		}
+		return nil, merry.Wrap(err)
+	}
+	t.Amount = inf.NewDec(amount, 0)
+	return t, nil
+}
+
+func (cluster *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+	rows, err := cluster.pool.Query(context.Background(), fetchDeadTransfers)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return []model.TransferId{}, nil
+		}
+
+		return nil, merry.Wrap(err)
+	}
+	var transferIds []model.TransferId
+	for rows.Next() {
+		var tId model.TransferId
+		err = rows.Scan(&tId)
+		// probably should be ignored
+		if err != nil {
+			return nil, merry.Wrap(err)
+		}
+		transferIds = append(transferIds, tId)
+	}
+
+	return transferIds, nil
+}
+
+func (cluster *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
+}
+
+func (cluster *PostgresCluster) LockAccount(transferId model.TransferId, bic string, ban string) (*model.Account, error) {
+	panic("implement me")
+}
+
+func (cluster *PostgresCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
 }

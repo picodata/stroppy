@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"os"
 	"sync"
 	"time"
@@ -20,7 +21,6 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 	"gopkg.in/inf.v0"
 )
 
@@ -44,50 +44,6 @@ type mongoModel struct {
 type AggregateResult struct {
 	ID      string `bson:"_id"`
 	Balance int64  `bson:"sum"`
-}
-
-func (cluster *MongoDBCluster) InsertTransfer(_ *model.Transfer) error {
-	return errors.New("implement me")
-}
-
-func (cluster *MongoDBCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
-	return errors.New("implement me")
-}
-
-func (cluster *MongoDBCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) FetchDeadTransfers() ([]model.TransferId, error) {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
-	panic("implement me")
-}
-
-func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
-	panic("implement me")
 }
 
 // NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
@@ -146,39 +102,9 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 		nil
 }
 
-func (cluster *MongoDBCluster) addSharding() error {
-	llog.Debugln("Initialize sharding...")
-
-	enableShardingCmd := bson.D{
-		{Key: "enableSharding", Value: "stroppy"},
-	}
-
-	accountShardingCmd := bson.D{
-		{Key: "shardCollection", Value: "stroppy.accounts"},
-		{Key: "key", Value: bson.D{{Key: "bicBan", Value: 1}}},
-		{Key: "unique", Value: false},
-	}
-
-	transferShardingCmd := bson.D{
-		{Key: "shardCollection", Value: "stroppy.transfers"},
-		{Key: "key", Value: bson.D{{Key: "srcBic", Value: 1}}},
-		{Key: "unique", Value: false},
-	}
-
-	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), enableShardingCmd); singleResult.Err() != nil {
-		return merry.Prepend(singleResult.Err(), "failed to init sharding for stroppy db")
-	}
-
-	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), accountShardingCmd); singleResult.Err() != nil {
-		return merry.Prepend(singleResult.Err(), "failed to create accounts shards")
-	}
-
-	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), transferShardingCmd); singleResult.Err() != nil {
-		return merry.Prepend(singleResult.Err(), "failed to create transfers shards")
-	}
-
-	llog.Debugln("Initialized sharding: success")
-	return nil
+// GetClusterType - получить тип DBCluster.
+func (cluster *MongoDBCluster) GetClusterType() DBClusterType {
+	return MongoDBClusterType
 }
 
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
@@ -240,9 +166,39 @@ func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	return nil
 }
 
-// GetClusterType - получить тип DBCluster.
-func (cluster *MongoDBCluster) GetClusterType() DBClusterType {
-	return MongoDBClusterType
+func (cluster *MongoDBCluster) addSharding() error {
+	llog.Debugln("Initialize sharding...")
+
+	enableShardingCmd := bson.D{
+		{Key: "enableSharding", Value: "stroppy"},
+	}
+
+	accountShardingCmd := bson.D{
+		{Key: "shardCollection", Value: "stroppy.accounts"},
+		{Key: "key", Value: bson.D{{Key: "bicBan", Value: 1}}},
+		{Key: "unique", Value: false},
+	}
+
+	transferShardingCmd := bson.D{
+		{Key: "shardCollection", Value: "stroppy.transfers"},
+		{Key: "key", Value: bson.D{{Key: "srcBic", Value: 1}}},
+		{Key: "unique", Value: false},
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), enableShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to init sharding for stroppy db")
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), accountShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to create accounts shards")
+	}
+
+	if singleResult := cluster.client.Database("admin").RunCommand(context.TODO(), transferShardingCmd); singleResult.Err() != nil {
+		return merry.Prepend(singleResult.Err(), "failed to create transfers shards")
+	}
+
+	llog.Debugln("Initialized sharding: success")
+	return nil
 }
 
 // FetchSettings - получить значения параметров настройки.
@@ -287,6 +243,11 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 
 	llog.Tracef("Inserted account with id %v", insertAccountResult)
 	return nil
+}
+
+// FetchAccounts - получить список аккаунтов
+func (cluster *MongoDBCluster) FetchAccounts() ([]model.Account, error) {
+	return nil, nil
 }
 
 // FetchTotal - получить значение итогового баланса из Settings.
@@ -454,7 +415,6 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 
 }
 
-
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
 func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx := context.Background()
@@ -524,11 +484,6 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clie
 	}
 
 	return nil
-}
-
-// FetchAccounts - получить список аккаунтов
-func (cluster *MongoDBCluster) FetchAccounts() ([]model.Account, error) {
-	return nil, nil
 }
 
 // FetchBalance - получить баланс счета по атрибутам ключа счета.
@@ -628,4 +583,48 @@ func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan
 	})
 
 	time.Sleep(statInterval * time.Second)
+}
+
+func (cluster *MongoDBCluster) InsertTransfer(_ *model.Transfer) error {
+	return errors.New("implement me")
+}
+
+func (cluster *MongoDBCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
+	return errors.New("implement me")
+}
+
+func (cluster *MongoDBCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+	panic("implement me")
+}
+
+func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+	panic("implement me")
 }

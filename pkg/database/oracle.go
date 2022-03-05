@@ -18,7 +18,7 @@ type PredictableCluster interface {
 	FetchAccounts() ([]model.Account, error)
 
 	// FetchBalance returns balance and pending amount for an account for Oracle.
-	FetchBalance(bic string, ban string) (balance *inf.Dec, pendingAmount *inf.Dec, err error)
+	FetchBalance(bic string, ban string) (balance *inf.Dec, err error)
 }
 
 type TrackingAccount struct {
@@ -124,7 +124,7 @@ func (o *Oracle) CompleteTransfer(transferId model.TransferId, acs []model.Accou
 
 func (o *Oracle) FindBrokenAccounts(cluster PredictableCluster) {
 	for _, acc := range o.acs {
-		balance, _, err := cluster.FetchBalance(acc.bic, acc.ban)
+		balance, err := cluster.FetchBalance(acc.bic, acc.ban)
 		if err != nil {
 			llog.Errorf("failed to fetch balance with bic %v, ban %v from cluster", acc.bic, acc.ban)
 			continue

@@ -72,7 +72,7 @@ func (cluster *FDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban strin
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cluster *FDBCluster) LockAccount(transferId model.TransferId, bic string, ban string) (*model.Account, error) {
 	panic("implement me")
 }
 
@@ -380,12 +380,10 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId
 			return nil, err
 		}
 		srcAccount := model.Account{
-			Bic:             transfer.Acs[0].Bic,
-			Ban:             transfer.Acs[0].Ban,
-			Balance:         &inf.Dec{},
-			PendingAmount:   &inf.Dec{},
-			PendingTransfer: [16]byte{},
-			Found:           false,
+			Bic:     transfer.Acs[0].Bic,
+			Ban:     transfer.Acs[0].Ban,
+			Balance: &inf.Dec{},
+			Found:   false,
 		}
 		sourceAccountKey := cluster.getAccountKey(srcAccount)
 		sourceAccountValue, err := getAccountValue(tx, sourceAccountKey)
@@ -405,12 +403,10 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId
 		}
 		tx.Set(sourceAccountKey, setSourceAccountValue)
 		destAccount := model.Account{
-			Bic:             transfer.Acs[1].Bic,
-			Ban:             transfer.Acs[1].Ban,
-			Balance:         &inf.Dec{},
-			PendingAmount:   &inf.Dec{},
-			PendingTransfer: [16]byte{},
-			Found:           false,
+			Bic:     transfer.Acs[1].Bic,
+			Ban:     transfer.Acs[1].Ban,
+			Balance: &inf.Dec{},
+			Found:   false,
 		}
 		destAccountKey := cluster.getAccountKey(destAccount)
 		destAccountValue, err := getAccountValue(tx, destAccountKey)
@@ -499,12 +495,10 @@ func (cluster *FDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.
 	var balances, pendingAmount *inf.Dec
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		fetchAccount := model.Account{
-			Bic:             bic,
-			Ban:             ban,
-			Balance:         balances,
-			PendingAmount:   pendingAmount,
-			PendingTransfer: [16]byte{},
-			Found:           false,
+			Bic:     bic,
+			Ban:     ban,
+			Balance: balances,
+			Found:   false,
 		}
 		var fetchAccountValue accountValue
 		var balance *inf.Dec

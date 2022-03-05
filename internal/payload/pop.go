@@ -21,7 +21,6 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 	"go.mongodb.org/mongo-driver/mongo"
-	"gopkg.in/inf.v0"
 )
 
 type ClusterPopulatable interface {
@@ -66,11 +65,10 @@ func (p *BasePayload) Pop(_ string) (err error) {
 			bic, ban := rand.NewBicAndBan()
 			balance := rand.NewStartBalance()
 			acc := model.Account{
-				Bic:           bic,
-				Ban:           ban,
-				Balance:       balance,
-				PendingAmount: &inf.Dec{},
-				Found:         false,
+				Bic:     bic,
+				Ban:     ban,
+				Balance: balance,
+				Found:   false,
 			}
 
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)

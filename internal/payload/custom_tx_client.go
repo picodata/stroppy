@@ -5,6 +5,7 @@
 package payload
 
 import (
+	"gopkg.in/inf.v0"
 	"math/rand"
 	"runtime"
 	"sync"
@@ -22,7 +23,6 @@ import (
 	"github.com/ansel1/merry"
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
-	"gopkg.in/inf.v0"
 )
 
 // CustomTxTransfer
@@ -46,8 +46,7 @@ type CustomTxTransfer interface {
 	FetchDeadTransfers() ([]model.TransferId, error)
 
 	UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error
-
-	LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error)
+	LockAccount(transferId model.TransferId, bic string, ban string) (*model.Account, error)
 	UnlockAccount(bic string, ban string, transferId model.TransferId) error
 	StartStatisticsCollect(statInterval time.Duration) error
 }
@@ -117,13 +116,12 @@ func (c *ClientCustomTx) ClearTransferClient(transferId model.TransferId) error 
 }
 
 func (c *ClientCustomTx) FetchAccountBalance(acc *model.Account) error {
-	balance, pendingAmount, err := c.cluster.FetchBalance(acc.Bic, acc.Ban)
+	balance, err := c.cluster.FetchBalance(acc.Bic, acc.Ban)
 	if err != nil {
 		return merry.Wrap(err)
 	}
 
 	acc.Balance = balance
-	acc.PendingAmount = pendingAmount
 	acc.Found = true
 
 	llog.Warn("acc.Found")
@@ -164,8 +162,8 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 	i := 0
 	for i < 2 {
 		account := t.LockOrder[i]
-		receivedAccount, err := c.cluster.LockAccount(t.Id, account.PendingAmount, account.Bic, account.Ban)
-		if err != nil || t.Id.String() != receivedAccount.PendingTransfer.String() {
+		receivedAccount, err := c.cluster.LockAccount(t.Id, account.Bic, account.Ban)
+		if err != nil {
 			if err != nil {
 				// Remove the pending transfer from the previously
 				// locked account, do not wait with locks.
@@ -188,32 +186,7 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 					return merry.Prepend(err, "failed to execute lock accounts request")
 				}
 			}
-			if t.Id != receivedAccount.PendingTransfer {
-				// There is a non-empty pending transfer. Check if the
-				// transfer we've conflicted with is orphaned and recover
-				// it, before waiting
-				var clientId *uuid.UUID
-				clientId, err = c.cluster.FetchTransferClient(receivedAccount.PendingTransfer)
-				if err != nil {
-					if err != cluster.ErrNoRows {
-						return merry.Prepend(err, "failed to fetch transfer client")
-					}
-					// Transfer not found, even though it's just aborted
-					// our lock. It is OK, it might just got completed.
-					llog.Tracef("[%v] [%v] Transfer %v which aborted our lock is now gone",
-						c.shortId, t.Id, receivedAccount.PendingTransfer)
-				} else if *clientId == model.NilUuid {
-					// The transfer has no client working on it, recover it.
-					llog.Tracef("[%v] [%v] Adding %v to the recovery queue",
-						c.shortId, t.Id, receivedAccount.PendingTransfer)
-					RecoverTransfer(receivedAccount.PendingTransfer)
-				}
-				atomic.AddUint64(&c.payStats.retries, 1)
 
-				if !wait {
-					return merry.New("failed to lock account: Wait aborted")
-				}
-			}
 			// Restart locking
 			i = 0
 
@@ -237,8 +210,6 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 		} else {
 			account.Found = true
 			account.Balance = receivedAccount.Balance
-			account.PendingAmount = receivedAccount.PendingAmount
-			account.PendingTransfer = receivedAccount.PendingTransfer
 			previousAccount = account
 			i++
 		}
@@ -262,9 +233,6 @@ func (c *ClientCustomTx) CompleteTransfer(t *model.Transfer) error {
 		if acs[0].Found && acs[1].Found {
 			// Calcualte the destination state
 			llog.Tracef("[%v] [%v] Calculating balances for %v", c.shortId, t.Id, t)
-			for i := 0; i < 2; i++ {
-				acs[i].Balance.Add(acs[i].Balance, acs[i].PendingAmount)
-			}
 
 			if acs[0].Balance.Sign() >= 0 {
 				llog.Tracef("[%v] [%v] Moving funds for %v", c.shortId, t.Id, t)
