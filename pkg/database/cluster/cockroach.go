@@ -159,56 +159,15 @@ func (cockroach *CockroachDatabase) FetchDeadTransfers() ([]model.TransferId, er
 }
 
 func (cockroach *CockroachDatabase) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
-	res, err := cockroach.pool.Exec(context.Background(), updateBalance, balance.UnscaledBig().Int64(), bic, ban, transferId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-
-	return nil
+	panic("implement me")
 }
 
-func (cockroach *CockroachDatabase) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec,
-	bic string, ban string) (*model.Account, error) {
-
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	row := cockroach.pool.QueryRow(ctx, lockAccount, transferId, pendingAmount.UnscaledBig().Int64(), bic, ban)
-
-	var acc model.Account
-	var resultBalance, resultPendingAmount int64
-	err := row.Scan(&acc.Bic, &acc.Ban, &resultBalance, &acc.PendingTransfer, &resultPendingAmount)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ErrTimeoutExceeded
-		}
-		if err == pgx.ErrNoRows {
-			return nil, ErrNoRows
-		}
-		return nil, merry.Prepend(err, "failed to scan locked account")
-	}
-	acc.Balance = inf.NewDec(resultBalance, 0)
-	acc.PendingAmount = inf.NewDec(resultPendingAmount, 0)
-	return &acc, nil
+func (cockroach *CockroachDatabase) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+	panic("implement me")
 }
 
 func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	res, err := cockroach.pool.Exec(ctx, unlockAccount, bic, ban, transferId)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ErrTimeoutExceeded
-		}
-		return merry.Prepend(err, "failed to unlock account")
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-	return nil
+	panic("implement me")
 }
 
 func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *CockroachDatabase, err error) {
@@ -431,21 +390,21 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 	//
 	// 	TPS without lock order management is reduced drastically on default PostgreSQL configuration.
 	if sourceAccount.AccountID() > destAccount.AccountID() {
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	} else {
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
