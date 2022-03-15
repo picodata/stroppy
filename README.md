@@ -2,6 +2,7 @@
 - [Main features](#main-features)
 - [Example of usage](#example-of-usage)
 - [Compilation and build](#compilation-and-build)
+- [Deploy stroppy in minikube](#deploy-stroppy-in-minikube)
 - [Commands](#commands)
 - [Test scenario](#test-scenario)
 - [The data model](#the-data-model)
@@ -347,6 +348,88 @@ make all
 ```
 
 4. Then you can continue from step 3 "Build container" in [Build container without compilation](#build-container-without-compilation)
+
+# Deploy stroppy in minikube
+**1. Preparing the environment**
+
+Install minikube
+```sh
+curl -Lo minikube https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64 && chmod +x minikube
+sudo mkdir -p /usr/local/bin/
+sudo install minikube /usr/local/bin/
+minikube version
+```
+
+Install kubectl
+```sh
+curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl
+chmod +x ./kubectl
+sudo mv ./kubectl /usr/local/bin/kubectl
+kubectl version --client
+```
+
+Setup minikube
+```sh
+minikube config set memory 6144
+minikube config set cpus 4
+```
+
+Run minikube
+```sh
+minikube start
+```
+
+**2. download the stroppy repository and build it**
+
+Clone the stroppy repository and prepare for deployment
+```sh
+git clone https://github.com/picodata/stroppy.git && cd stroppy
+make all
+chmod +x ./docs/examples/deploy-minikube-local/databases/postgres/deploy_operator.sh
+```
+
+We start the cluster, in this case we use postgres
+```sh
+kubectl apply -f docs/examples/deploy-minikube-local/cluster/stroppy-secret.yaml
+kubectl apply -f docs/examples/deploy-minikube-local/cluster/stroppy-manifest.yaml
+./docs/examples/deploy-minikube-local/databases/postgres/deploy_operator.sh
+```
+
+We check how the cluster has risen, whether all the pods have switched to the Running state
+```sh
+minikube status && kubectl get pods && kubectl cluster-info
+```
+If the cluster is ok and working, you should see something like this
+```
+minikube
+type: Control Plane
+host: Running
+kubelet: Running
+apiserver: Running
+kubeconfig: Configured
+
+NAME                                READY   STATUS    RESTARTS   AGE
+acid-postgres-cluster-0             1/1     Running   0          15m
+acid-postgres-cluster-1             1/1     Running   0          14m
+acid-postgres-cluster-2             1/1     Running   0          14m
+postgres-operator-c8d5c8649-jqlbf   1/1     Running   0          16m
+stroppy-client                      1/1     Running   0          16m
+Kubernetes control plane is running at https://192.168.49.2:8443
+CoreDNS is running at https://192.168.49.2:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
+
+To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+```
+
+Connect to stroppy container
+```sh
+kubectl exec --stdin --tty stroppy-client -- /bin/bash
+```
+
+Run test
+```sh
+stroppy pop --url postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable --count 5000 --run-as-pod --kube-master-addr=8.8.8.8  --dir .
+stroppy pay --url postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable --check --count=100000 --run-as-pod --kube-master-addr=8.8.8.8  --dir .
+```
 
 ## Commands
 
