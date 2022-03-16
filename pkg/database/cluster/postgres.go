@@ -295,54 +295,15 @@ func (self *PostgresCluster) FetchTransferClient(transferId model.TransferId) (*
 }
 
 func (self *PostgresCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-	row := self.pool.QueryRow(ctx, lockAccount, transferId, pendingAmount.UnscaledBig().Int64(), bic, ban)
-
-	var acc model.Account
-	var resultBalance, resultPendingAmount int64
-	err := row.Scan(&acc.Bic, &acc.Ban, &resultBalance, &acc.PendingTransfer, &resultPendingAmount)
-	if err != nil {
-		if ctx.Err() != nil {
-			return nil, ErrTimeoutExceeded
-		}
-		if err == pgx.ErrNoRows {
-			return nil, ErrNoRows
-		}
-		return nil, merry.Prepend(err, "failed to scan locked account")
-	}
-	acc.Balance = inf.NewDec(resultBalance, 0)
-	acc.PendingAmount = inf.NewDec(resultPendingAmount, 0)
-	return &acc, nil
+	panic("implement me")
 }
 
 func (self *PostgresCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-	defer cancel()
-
-	res, err := self.pool.Exec(ctx, unlockAccount, bic, ban, transferId)
-	if err != nil {
-		if ctx.Err() != nil {
-			return ErrTimeoutExceeded
-		}
-		return merry.Prepend(err, "failed to unlock account")
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-	return nil
+	panic("implement me")
 }
 
 func (self *PostgresCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
-	res, err := self.pool.Exec(context.Background(), updateBalance, balance.UnscaledBig().Int64(), bic, ban, transferId)
-	if err != nil {
-		return merry.Wrap(err)
-	}
-	if res.RowsAffected() != 1 {
-		return ErrNoRows
-	}
-
-	return nil
+	panic("implement me")
 }
 
 func (self *PostgresCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
@@ -378,12 +339,7 @@ func (self *PostgresCluster) FetchDeadTransfers() ([]model.TransferId, error) {
 	return transferIds, nil
 }
 
-func WithdrawMoney(
-	ctx context.Context,
-	tx pgx.Tx,
-	acc model.Account,
-	transfer model.Transfer,
-) (*model.HistoryItem, error) {
+func WithdrawMoney(ctx context.Context, tx pgx.Tx, acc model.Account, transfer model.Transfer) error {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -402,39 +358,23 @@ func WithdrawMoney(
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return nil, ErrTxRollback
+				return ErrTxRollback
 			}
 		}
 		// failed to find account
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNoRows
+			return ErrNoRows
 		}
-		return nil, merry.Prepend(err, "failed to update first balance")
+		return merry.Prepend(err, "failed to update first balance")
 	}
 	if newBalance < 0 {
-		return nil, ErrInsufficientFunds
+		return ErrInsufficientFunds
 	}
-	newBalanceDec := inf.NewDec(newBalance, 0)
-	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model.NewHistoryItem(
-		transfer.Id,
-		acc.Bic,
-		acc.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
-
-	return &history, nil
+	return nil
 }
 
-func TopUpMoney(
-	ctx context.Context,
-	tx pgx.Tx,
-	acc model.Account,
-	transfer model.Transfer,
-) (*model.HistoryItem, error) {
+func TopUpMoney(ctx context.Context, tx pgx.Tx, acc model.Account, transfer model.Transfer) error {
 	// update balance
 	row := tx.QueryRow(
 		ctx,
@@ -453,28 +393,17 @@ func TopUpMoney(
 	if err := row.Scan(&newBalance, &oldBalance, &operationTime); err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgerrcode.IsTransactionRollback(pgErr.Code) {
-				return nil, ErrTxRollback
+				return ErrTxRollback
 			}
 		}
 		// failed to find account
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, ErrNoRows
+			return ErrNoRows
 		}
-		return nil, merry.Prepend(err, "failed to update first balance")
+		return merry.Prepend(err, "failed to update first balance")
 	}
-	newBalanceDec := inf.NewDec(newBalance, 0)
-	oldBalanceDec := inf.NewDec(oldBalance, 0)
 
-	history := model.NewHistoryItem(
-		transfer.Id,
-		acc.Bic,
-		acc.Ban,
-		oldBalanceDec,
-		newBalanceDec,
-		operationTime,
-	)
-
-	return &history, nil
+	return nil
 }
 
 // MakeAtomicTransfer inserts new transfer (should be used as history in the future) and
@@ -545,22 +474,22 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 
 	//nolint:nestif
 	if sourceAccount.AccountID() > destAccount.AccountID() {
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}
 	} else {
-		_, err = TopUpMoney(ctx, tx, destAccount, *transfer)
+		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to withdraw money")
 		}
 
-		_, err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
+		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
 			return merry.Prepend(err, "failed to top up money")
 		}

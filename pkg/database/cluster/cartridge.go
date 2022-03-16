@@ -214,12 +214,10 @@ func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 
 	account := account{
-		Bic:             acc.Bic,
-		Ban:             acc.Ban,
-		Balance:         acc.Balance.UnscaledBig().Int64(),
-		PendingAmount:   acc.PendingAmount.UnscaledBig().Int64(),
-		PendingTransfer: acc.PendingTransfer,
-		Found:           false,
+		Bic:     acc.Bic,
+		Ban:     acc.Ban,
+		Balance: acc.Balance.UnscaledBig().Int64(),
+		Found:   false,
 	}
 
 	account_json, err := json.Marshal(account)
