@@ -17,4 +17,4 @@ jobs:
       - name: Set remote url
         run: git remote set-url --push origin git@git.picodata.io:github/stroppy.git
       - name: Push files
-        run: git push
+        run: git push --force
