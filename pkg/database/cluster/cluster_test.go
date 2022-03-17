@@ -22,25 +22,26 @@ var (
 	rand             fixed_random_source.FixedRandomSource
 )
 
-const (
-	poolSize                  = 128
-	mongoDBUrl                = "mongodb://127.0.0.1:30001,127.0.0.1:30002,127.0.0.1:30003/stroppy"
-	expectedCount             = 10000
-	defaultBanRangeMultiplier = 1.1
-)
-
 func TestNewCluster(t *testing.T) {
 	NewTestMongoDBCluster(t)
+	NewTestCockroachCluster(t)
 }
 
 func TestBootstrapDB(t *testing.T) {
 	MongoBootstrapDB(t)
+	CockroachBootstrapDB(t)
 }
 
 func TestInsertAccount(t *testing.T) {
 	MongoInsertAccount(t)
+	CockroachInsertAccount(t)
 }
 
 func TestMakeAtomicTransfer(t *testing.T) {
 	MongoMakeAtomicTransfer(t)
+	CockroachMakeAtomicTransfer(t)
+}
+
+func TestFetchAccounts(t *testing.T) {
+	CockroachFetchAccounts(t)
 }

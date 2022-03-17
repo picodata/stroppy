@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
-
-	"github.com/google/uuid"
 
 	"gitlab.com/picodata/stroppy/internal/model"
 
@@ -277,7 +276,6 @@ func (cockroach *CockroachDatabase) InsertAccount(acc model.Account) (err error)
 				return merry.Wrap(ErrDuplicateKey)
 			}
 		}
-
 		return merry.Wrap(err)
 	}
 
@@ -392,21 +390,21 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 	if sourceAccount.AccountID() > destAccount.AccountID() {
 		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
-			return merry.Prepend(err, "failed to withdraw money")
+			return merry.Prepend(err, "failed to withdraw money source account")
 		}
 
 		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
-			return merry.Prepend(err, "failed to top up money")
+			return merry.Prepend(err, "failed to top up money destination account")
 		}
 	} else {
 		err = TopUpMoney(ctx, tx, destAccount, *transfer)
 		if err != nil {
-			return merry.Prepend(err, "failed to withdraw money")
+			return merry.Prepend(err, "failed to withdraw money destination account")
 		}
 		err = WithdrawMoney(ctx, tx, sourceAccount, *transfer)
 		if err != nil {
-			return merry.Prepend(err, "failed to top up money")
+			return merry.Prepend(err, "failed to top up money source account")
 		}
 	}
 

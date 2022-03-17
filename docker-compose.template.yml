@@ -20,7 +20,15 @@ services:
       - FDB_COORDINATOR:fdb
     ports:
       - 4500:4500
-  
+
+  cdb:
+    image: cockroachdb/cockroach:latest
+    volumes:
+      - ./data/cockroach/cockroach-data
+    command: start --insecure
+    ports:
+        - "26257:26257"
+
   # initialization job for foundationdb
   init:
     image: foundationdb/foundationdb:6.2.30

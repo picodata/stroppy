@@ -20,9 +20,13 @@ func NewTestMongoDBCluster(t *testing.T) {
 	var err error
 	// пока оставляем так, чтобы потом заменить на конкретный адрес
 	sharded := false
-	mongoCluster, err = NewMongoDBCluster(mongoDBUrl, uint64(poolSize), sharded)
+	mongoUrlString, err := GetEnvDataStore(MongoDB)
 	if err != nil {
-		t.Errorf("TestNewMongoDBCluster() received internal error  %s, but expected nil", err)
+		t.Fatal("Get environment error:", err)
+	}
+	mongoCluster, err = NewMongoDBCluster(mongoUrlString, uint64(poolSize), sharded)
+	if err != nil {
+		t.Fatal("Mongo cluster start fail:", err)
 	}
 
 }

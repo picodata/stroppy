@@ -252,7 +252,7 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 				unknownResponse, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
-					llog.Errorf("failed to insert account in cartridge app because got unknown answer body: %v \n")
+					llog.Errorf("failed to insert account in cartridge app because got unknown answer body: %v \n", err)
 				}
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
@@ -437,7 +437,7 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 				unknownResponse, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
-					llog.Errorf("failed to make custom transfer in cartridge app because got unknown answer body: %v \n")
+					llog.Errorf("failed to make custom transfer in cartridge app because got unknown answer body: %v \n", err)
 				}
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
