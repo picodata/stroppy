@@ -7,15 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"github.com/google/uuid"
 	"gopkg.in/inf.v0"
 )
-
 
 func NewTestMongoDBCluster(t *testing.T) {
 	var err error

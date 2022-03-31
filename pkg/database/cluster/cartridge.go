@@ -441,7 +441,7 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 				}
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
-			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId,  resp.StatusCode, response)
+			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId, resp.StatusCode, response)
 
 			if response["error"] == "insufficient funds for transfer" {
 				return ErrInsufficientFunds

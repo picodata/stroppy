@@ -182,7 +182,7 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 	}*/
 
 	err = yp.reparseAddressMap(nodes)
-	if err != nil{
+	if err != nil {
 		return nil, err
 	}
 	llog.Infoln("вышли из функции GetAddressMap")

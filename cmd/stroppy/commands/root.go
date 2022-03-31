@@ -119,7 +119,7 @@ The default value of banRangeMultipluer is 1.1.`)
 		"enable-profilier", "",
 		false,
 		"specify to use pprof for diagnostic")
-		
+
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),
 		newDeployCommand(settings),

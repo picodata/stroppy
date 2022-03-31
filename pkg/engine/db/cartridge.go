@@ -5,15 +5,15 @@ import (
 
 	"github.com/ansel1/merry"
 	clusterImplementation "gitlab.com/picodata/stroppy/pkg/database/cluster"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 )
 
 const (
-	tarantoolCartridgeOperatorName = "tarantool-operator" 
-	cartridgeCheckPodName = "storage"
-	cartridgeDirectory = "cartridge"
+	tarantoolCartridgeOperatorName = "tarantool-operator"
+	cartridgeCheckPodName          = "storage"
+	cartridgeDirectory             = "cartridge"
 )
 
 func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (cartridge Cluster) {

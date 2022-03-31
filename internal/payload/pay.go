@@ -20,7 +20,7 @@ func IsTransientError(err error) bool {
 	if err == cluster.ErrTimeoutExceeded || err == cluster.ErrInternalServerError {
 		return true
 	}
-	
+
 	return false
 }
 

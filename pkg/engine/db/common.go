@@ -33,8 +33,8 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		clusterSpec: ClusterSpec{
 			Pods: make([]*v1.Pod, 0, 10),
 		},
-		connectionPoolSize:  ConnectionPoolSize,
-		sharded: sharded,
+		connectionPoolSize: ConnectionPoolSize,
+		sharded:            sharded,
 	}
 	return
 }
@@ -50,8 +50,8 @@ type commonCluster struct {
 
 	DBUrl string
 
-	connectionPoolSize  int
-	addPool int
+	connectionPoolSize int
+	addPool            int
 
 	sharded bool
 }
