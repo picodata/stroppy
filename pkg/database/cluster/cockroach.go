@@ -423,16 +423,20 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 }
 
 func (cockroach *CockroachDatabase) FetchAccounts() ([]model.Account, error) {
-	rows, err := cockroach.pool.Query(context.Background(), fetchAccounts)
+	rows, err := cockroach.pool.Query(context.Background(), `SELECT bic, ban, balance FROM account;`)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
 	var accs []model.Account
 	for rows.Next() {
+		var Balance int64
+		dec := new(inf.Dec)
 		var acc model.Account
-		if err := rows.Scan(&acc); err != nil {
+		if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
 			return nil, merry.Prepend(err, "failed to scan account for FetchAccounts")
 		}
+		dec.SetUnscaled(Balance)
+		acc.Balance = dec
 		accs = append(accs, acc)
 	}
 	return accs, nil
