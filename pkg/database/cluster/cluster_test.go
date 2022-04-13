@@ -3,7 +3,6 @@ package cluster
 import (
 	"testing"
 
-	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"go.mongodb.org/mongo-driver/bson"
 )
@@ -19,29 +18,33 @@ var (
 	receivedAccount  bson.M
 	receivedTransfer bson.M
 	receivedAccounts []model.Account
-	rand             fixed_random_source.FixedRandomSource
 )
 
 func TestNewCluster(t *testing.T) {
 	NewTestMongoDBCluster(t)
 	NewTestCockroachCluster(t)
+	NewTestPostgresCluster(t)
 }
 
 func TestBootstrapDB(t *testing.T) {
 	MongoBootstrapDB(t)
 	CockroachBootstrapDB(t)
+	PostgresBootstrapDB(t)
 }
 
 func TestInsertAccount(t *testing.T) {
 	MongoInsertAccount(t)
 	CockroachInsertAccount(t)
+	PostgresInsertAccount(t)
 }
 
 func TestMakeAtomicTransfer(t *testing.T) {
 	MongoMakeAtomicTransfer(t)
 	CockroachMakeAtomicTransfer(t)
+	PostgresMakeAtomicTransfer(t)
 }
 
 func TestFetchAccounts(t *testing.T) {
 	CockroachFetchAccounts(t)
+	PostgresFetchAccounts(t)
 }

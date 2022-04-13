@@ -132,16 +132,20 @@ func (self *PostgresCluster) InsertAccount(acc model.Account) error {
 }
 
 func (self *PostgresCluster) FetchAccounts() ([]model.Account, error) {
-	rows, err := self.pool.Query(context.Background(), fetchAccounts)
+	rows, err := self.pool.Query(context.Background(), `SELECT bic, ban, balance FROM account;`)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
 	var accs []model.Account
 	for rows.Next() {
+		var Balance int64
+		dec := new(inf.Dec)
 		var acc model.Account
-		if err := rows.Scan(&acc); err != nil {
+		if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
 			return nil, merry.Prepend(err, "failed to scan account for FetchAccounts")
 		}
+		dec.SetUnscaled(Balance)
+		acc.Balance = dec
 		accs = append(accs, acc)
 	}
 	return accs, nil

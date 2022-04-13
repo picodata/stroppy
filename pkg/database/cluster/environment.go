@@ -12,6 +12,7 @@ const (
 	expectedCount             = 10000
 	defaultBanRangeMultiplier = 1.1
 	defaultCockroachDBUrl     = "postgresql://root@Raider:26257/defaultdb?sslmode=disable"
+	defaultPostgresDBUrl      = "postgresql://postgresuser:postgrespass@localhost/stroppy?sslmode=disable"
 )
 
 func GetEnvDataStore(opts string) (dbParams string, err error) {
@@ -20,14 +21,17 @@ func GetEnvDataStore(opts string) (dbParams string, err error) {
 	case Foundation:
 		return "", merry.Errorf("unsupported store type %s", opts)
 	case Postgres:
-		return "", merry.Errorf("unsupported store type %s", opts)
+		dbParams, present = os.LookupEnv("TEST_POSTGRES_URL")
+		if !present {
+			dbParams = defaultPostgresDBUrl
+		}
 	case MongoDB:
-		dbParams, present = os.LookupEnv("TEST_MONGODB_STR")
+		dbParams, present = os.LookupEnv("TEST_MONGODB_URL")
 		if !present {
 			dbParams = defaultMongoDBUrl
 		}
 	case Cockroach:
-		dbParams, present = os.LookupEnv("TEST_COCKROACHDB_STR")
+		dbParams, present = os.LookupEnv("TEST_COCKROACHDB_URL")
 		if !present {
 			dbParams = defaultCockroachDBUrl
 		}

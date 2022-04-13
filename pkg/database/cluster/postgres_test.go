@@ -3,32 +3,45 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"gopkg.in/inf.v0"
 	"sort"
 	"testing"
 	"time"
 
+	"gitlab.com/picodata/stroppy/internal/model"
+
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
-	"gitlab.com/picodata/stroppy/internal/model"
-	"gopkg.in/inf.v0"
 )
 
-var cockroachCluster *CockroachDatabase
+var postgresCluster *PostgresCluster
 
-func (cockroach *CockroachDatabase) TruncateTable(tableName string) error {
+func (self *PostgresCluster) CheckTableExist(tableName string) (exist bool, err error) {
+	var name string
+	sqlQuery := fmt.Sprintf("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='%s';", tableName)
+	if err = self.pool.QueryRow(context.TODO(), sqlQuery).Scan(&name); err != nil {
+		return false, err
+	}
+	if tableName != name {
+		return false, nil
+	}
+	return true, nil
+}
+
+func (self *PostgresCluster) TruncateTable(tableName string) error {
 	sqlString := fmt.Sprintf("TRUNCATE %s", tableName)
-	_, err := cockroach.pool.Exec(context.TODO(), sqlString)
+	_, err := self.pool.Exec(context.TODO(), sqlString)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (cockroach *CockroachDatabase) GetAccount(Bic string, Ban string) (Account model.Account, err error) {
+func (self *PostgresCluster) GetAccount(Bic string, Ban string) (Account model.Account, err error) {
 	var Balance int64
 	dec := new(inf.Dec)
 
-	if err := cockroach.pool.QueryRow(
+	if err := self.pool.QueryRow(
 		context.TODO(),
 		`SELECT bic, ban, balance FROM account WHERE bic = $1 and ban = $2;`,
 		Bic,
@@ -44,37 +57,25 @@ func (cockroach *CockroachDatabase) GetAccount(Bic string, Ban string) (Account 
 	return Account, nil
 }
 
-func (cockroach *CockroachDatabase) CheckTableExist(tableName string) (exist bool, err error) {
-	var name string
-	sqlQuery := fmt.Sprintf("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='%s';", tableName)
-	if err = cockroach.pool.QueryRow(context.TODO(), sqlQuery).Scan(&name); err != nil {
-		return false, err
-	}
-	if tableName != name {
-		return false, nil
-	}
-	return true, nil
-}
-
-func NewTestCockroachCluster(t *testing.T) {
+func NewTestPostgresCluster(t *testing.T) {
 	var err error
-	cockroachUrlString, err := GetEnvDataStore(Cockroach)
+	postgresUrlString, err := GetEnvDataStore(Postgres)
 	if err != nil {
 		t.Fatal("Get environment error:", err)
 	}
-	cockroachCluster, err = NewCockroachCluster(cockroachUrlString, poolSize)
+	postgresCluster, err = NewPostgresCluster(postgresUrlString, poolSize)
 	if err != nil {
-		t.Fatal("Cockroach cluster start fail:", err)
+		t.Fatal("Postgres cluster start fail:", err)
 	}
 }
 
-func CockroachBootstrapDB(t *testing.T) {
+func PostgresBootstrapDB(t *testing.T) {
 	expectedSeed := time.Now().UnixNano()
-	if err := cockroachCluster.BootstrapDB(expectedCount, int(expectedSeed)); err != nil {
+	if err := postgresCluster.BootstrapDB(expectedCount, int(expectedSeed)); err != nil {
 		t.Errorf("TestCockroachBootstrapDB() received internal error %s, expected nil", err)
 	}
 
-	ok, err := cockroachCluster.CheckTableExist("account")
+	ok, err := postgresCluster.CheckTableExist("account")
 	if err != nil {
 		t.Fatalf("Check table existing fail: %v", err)
 	}
@@ -82,7 +83,7 @@ func CockroachBootstrapDB(t *testing.T) {
 		t.Fatalf("Table %s not existing", "account")
 	}
 
-	ok, err = cockroachCluster.CheckTableExist("transfer")
+	ok, err = postgresCluster.CheckTableExist("transfer")
 	if err != nil {
 		t.Fatalf("Check table existing fail: %v", err)
 	}
@@ -91,19 +92,19 @@ func CockroachBootstrapDB(t *testing.T) {
 	}
 
 	var count int
-	if err := cockroachCluster.pool.QueryRow(context.TODO(), "SELECT COUNT(*) FROM account;").Scan(&count); err != nil {
+	if err := postgresCluster.pool.QueryRow(context.TODO(), "SELECT COUNT(*) FROM account;").Scan(&count); err != nil {
 		t.Errorf("TestCockroachBootstrapDB() received internal error %s, expected nil", err)
 	}
 	assert.Equal(t, count, 0, "Must be equal")
 
-	if err := cockroachCluster.pool.QueryRow(context.TODO(), "SELECT COUNT(*) FROM transfer;").Scan(&count); err != nil {
+	if err := postgresCluster.pool.QueryRow(context.TODO(), "SELECT COUNT(*) FROM transfer;").Scan(&count); err != nil {
 		t.Errorf("TestCockroachBootstrapDB() received internal error %s, expected nil", err)
 	}
 	assert.Equal(t, count, 0, "Must be equal")
 }
 
-func CockroachInsertAccount(t *testing.T) {
-	err := cockroachCluster.TruncateTable("account")
+func PostgresInsertAccount(t *testing.T) {
+	err := postgresCluster.TruncateTable("account")
 	if err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
@@ -112,11 +113,11 @@ func CockroachInsertAccount(t *testing.T) {
 
 	accounts := GenerateAccounts()
 	for _, expectedAccount := range accounts {
-		if err := cockroachCluster.InsertAccount(expectedAccount); err != nil {
+		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
 			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 		}
 
-		if receivedAccount, err = cockroachCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
+		if receivedAccount, err = postgresCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
 			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 		}
 
@@ -128,8 +129,8 @@ func CockroachInsertAccount(t *testing.T) {
 	}
 }
 
-func CockroachMakeAtomicTransfer(t *testing.T) {
-	err := cockroachCluster.TruncateTable("account")
+func PostgresMakeAtomicTransfer(t *testing.T) {
+	err := postgresCluster.TruncateTable("account")
 	if err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
@@ -140,11 +141,11 @@ func CockroachMakeAtomicTransfer(t *testing.T) {
 	var Balance int64
 	dec := new(inf.Dec)
 	for _, expectedAccount := range accounts {
-		if err := cockroachCluster.InsertAccount(expectedAccount); err != nil {
+		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
 			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 		}
 
-		if receivedAccount, err = cockroachCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
+		if receivedAccount, err = postgresCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
 			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 		}
 
@@ -171,11 +172,11 @@ func CockroachMakeAtomicTransfer(t *testing.T) {
 		State:     "",
 	}
 
-	if err := cockroachCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
+	if err := postgresCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
 
-	if err := cockroachCluster.pool.QueryRow(
+	if err := postgresCluster.pool.QueryRow(
 		context.TODO(),
 		`SELECT src_bic, src_ban, dst_bic, dst_ban, amount FROM transfer WHERE transfer_id = $1;`, expectedTransfer.Id).Scan(
 		&receivedTransfer.Acs[0].Bic,
@@ -202,7 +203,7 @@ func CockroachMakeAtomicTransfer(t *testing.T) {
 		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Ban, receivedTransfer.Acs[1].Ban)
 	}
 
-	if receivedAccount, err = cockroachCluster.GetAccount(expectedTransfer.Acs[0].Bic, expectedTransfer.Acs[0].Ban); err != nil {
+	if receivedAccount, err = postgresCluster.GetAccount(expectedTransfer.Acs[0].Bic, expectedTransfer.Acs[0].Ban); err != nil {
 		t.Errorf("TestInsertAccount() received internal error %v, but expected nil", err)
 	}
 
@@ -211,7 +212,7 @@ func CockroachMakeAtomicTransfer(t *testing.T) {
 		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %v  but received %v", expectedSourceBalance0, receivedAccount.Balance.UnscaledBig().Int64())
 	}
 
-	if receivedAccount, err = cockroachCluster.GetAccount(expectedTransfer.Acs[1].Bic, expectedTransfer.Acs[1].Ban); err != nil {
+	if receivedAccount, err = postgresCluster.GetAccount(expectedTransfer.Acs[1].Bic, expectedTransfer.Acs[1].Ban); err != nil {
 		t.Errorf("TestInsertAccount() received internal error %v, but expected nil", err)
 	}
 
@@ -221,8 +222,8 @@ func CockroachMakeAtomicTransfer(t *testing.T) {
 	}
 }
 
-func CockroachFetchAccounts(t *testing.T) {
-	err := cockroachCluster.TruncateTable("account")
+func PostgresFetchAccounts(t *testing.T) {
+	err := postgresCluster.TruncateTable("account")
 	if err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
@@ -231,11 +232,11 @@ func CockroachFetchAccounts(t *testing.T) {
 
 	accounts := GenerateAccounts()
 	for _, expectedAccount := range accounts {
-		if err := cockroachCluster.InsertAccount(expectedAccount); err != nil {
+		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
 			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 		}
 	}
-	receivedAccounts, err = cockroachCluster.FetchAccounts()
+	receivedAccounts, err = postgresCluster.FetchAccounts()
 	if err != nil {
 		t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
 	}
