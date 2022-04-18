@@ -1,0 +1,86 @@
+name: Workflow
+on: [push]
+env:
+  TEST_FDB_URL: "/var/fdb/fdb.cluster"
+  TEST_POSTGRES_URL: "postgresql://stroppy:stroppy@postgresql:5432/stroppy?sslmode=disable"
+  TEST_MONGODB_URL: "mongodb://mongodb:27017/stroppy"
+  TEST_COCKROACHDB_URL: "postgresql://root@cockroachdb:26257/defaultdb?sslmode=disable"
+jobs:
+  synchronization:
+    name: Sync with picogit
+    runs-on: [self-hosted, stroppy]
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Install SSH Key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.PUSH_PRIVATE_KEY }}
+          name: id_rsa
+          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+          if_key_exists: replace
+      - name: Set remote url
+        run: git remote set-url --push origin git@git.picodata.io:github/stroppy.git
+      - name: Push files
+        run: git push --force
+  tests:
+    name: Run integrations test
+    needs: synchronization
+    runs-on: [self-hosted, stroppy]
+    container:
+      image: docker.binary.picodata.io/stroppy-builder:latest
+      volumes:
+        - foundationdb-volume:/var/fdb/
+      options: --user root:root
+    services:
+      postgresql:
+        image: postgres:13.2-alpine
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_PASSWORD: stroppy
+          POSTGRES_USER: stroppy
+          POSTGRES_DB: stroppy
+          PGDATA: /var/lib/postgresql/data/pgdata
+      foundationdb:
+        image: docker-public.binary.picodata.io/stroppy-foundationdb:6.3.23
+        env:
+          FDB_COORDINATOR: foundationdb
+          FDB_COORDINATOR_PORT: 4500
+        ports:
+          - 4500:4500
+        volumes:
+          - foundationdb-volume:/var/fdb/
+      cockroachdb:
+        image: docker.binary.picodata.io/stroppy-cockroach:latest
+        ports:
+          - 26257:26257
+      mongodb:
+        image: docker.binary.picodata.io/stroppy-mongodb:4.4.7
+        ports:
+          - 27017:27017
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - run: make test
+      - run: rm -rf ..?* .[!.]* *
+        if: always()
+  build:
+    name: Build docker image with cartridge app
+    needs: [synchronization, tests]
+    runs-on: [self-hosted, stroppy]
+    steps:
+      - uses: actions/checkout@v2
+      - name: install dependencies
+        working-directory: third_party/stroppy-test-cartridge
+        run: ./deps.sh
+      - name: build cartridge application
+        working-directory: third_party/stroppy-test-cartridge
+        run: cartridge build
+      - name: build docker image
+        working-directory: third_party/stroppy-test-cartridge
+        run: cartridge pack docker --tag docker.io/picodata/stroppy-test-cartridge:latest
+      - name: push image
+        run: docker push docker.io/picodata/stroppy-test-cartridge:latest
+

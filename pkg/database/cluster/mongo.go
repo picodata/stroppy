@@ -91,7 +91,7 @@ func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId 
 }
 
 // NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
-func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBCluster, error) {
+func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool, setDirect bool) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
 
 	llog.Debugln("sharded state:", sharded)
@@ -102,6 +102,8 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 	clientOptions.SetMaxConnIdleTime(maxConnIdleTimeout)
 	clientOptions.SetHeartbeatInterval(heartBeatInterval)
 	clientOptions.SetSocketTimeout(socketTimeout)
+
+	clientOptions.SetDirect(setDirect)
 
 	llog.Debugln("connecting to mongodb...")
 	client, err := mongo.NewClient(&clientOptions)

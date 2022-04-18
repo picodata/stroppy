@@ -13,13 +13,17 @@ const (
 	defaultBanRangeMultiplier = 1.1
 	defaultCockroachDBUrl     = "postgresql://root@Raider:26257/defaultdb?sslmode=disable"
 	defaultPostgresDBUrl      = "postgresql://postgresuser:postgrespass@localhost/stroppy?sslmode=disable"
+	defaultFoundationDBUrl    = "/etc/foundationdb/fdb.cluster"
 )
 
 func GetEnvDataStore(opts string) (dbParams string, err error) {
 	var present bool
 	switch opts {
 	case Foundation:
-		return "", merry.Errorf("unsupported store type %s", opts)
+		dbParams, present = os.LookupEnv("TEST_FDB_URL")
+		if !present {
+			dbParams = defaultFoundationDBUrl
+		}
 	case Postgres:
 		dbParams, present = os.LookupEnv("TEST_POSTGRES_URL")
 		if !present {

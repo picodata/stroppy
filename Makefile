@@ -47,5 +47,8 @@ lint:
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
 
-test:
+configure_fdb:
+	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
+
+test: configure_fdb
 	go test ./...

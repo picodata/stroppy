@@ -24,7 +24,7 @@ func NewTestMongoDBCluster(t *testing.T) {
 	if err != nil {
 		t.Fatal("Get environment error:", err)
 	}
-	mongoCluster, err = NewMongoDBCluster(mongoUrlString, uint64(poolSize), sharded)
+	mongoCluster, err = NewMongoDBCluster(mongoUrlString, uint64(poolSize), sharded, true)
 	if err != nil {
 		t.Fatal("Mongo cluster start fail:", err)
 	}

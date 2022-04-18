@@ -54,7 +54,7 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 		mongo.DBUrl = "mongodb://stroppy:stroppy@127.0.0.1:27017;127.0.0.1:27017;127.0.0.1:27017/admin?ssl=false"
 	}
 
-	cluster, err = clusterImplementation.NewMongoDBCluster(mongo.DBUrl, uint64(mongo.connectionPoolSize), mongo.commonCluster.sharded)
+	cluster, err = clusterImplementation.NewMongoDBCluster(mongo.DBUrl, uint64(mongo.connectionPoolSize), mongo.commonCluster.sharded, false)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to  mongo cluster")
 	}
