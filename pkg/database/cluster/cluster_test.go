@@ -9,11 +9,6 @@ import (
 
 var mongoCluster *MongoDBCluster
 
-type testSettings struct {
-	Count int
-	Seed  int
-}
-
 var (
 	receivedAccount  bson.M
 	receivedTransfer bson.M

@@ -28,8 +28,6 @@ type PostgresCluster struct {
 	pool *pgxpool.Pool
 }
 
-const defaultMaxConns = 4
-
 func NewPostgresCluster(dbURL string, connectionPoolCount int) (*PostgresCluster, error) {
 	llog.Infof("Establishing connection to pg on %v", dbURL)
 
@@ -508,7 +506,7 @@ func (self *PostgresCluster) MakeAtomicTransfer(transfer *model.Transfer, client
 		}
 		return merry.Prepend(err, "failed to commit tx")
 	}
-
+	//nolint:golint,errcheck
 	merry.Prepend(err, "failed to insert new history item")
 
 	return nil

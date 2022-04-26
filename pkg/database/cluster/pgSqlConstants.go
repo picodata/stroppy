@@ -43,8 +43,6 @@ TRUNCATE checksum;
 const (
 	fetchTotal = `SELECT amount FROM checksum WHERE name = 'total;'`
 
-	fetchAccounts = `SELECT * FROM account`
-
 	fetchSettings = `SELECT value FROM setting WHERE KEY in ('count', 'seed');`
 
 	checkBalance = `SELECT SUM(balance) FROM account`

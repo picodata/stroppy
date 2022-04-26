@@ -24,28 +24,12 @@ import (
 )
 
 // CartridgeCluster - объявление соединения к FDB и ссылки на модель данных.
+//nolint:golint,structcheck
 type CartridgeCluster struct {
-	client      *http.Client
+	client *http.Client
+	//nolint:golint,unused
 	binary_conn *tarantool.Connection
 	url         string
-}
-
-type settingsParams struct {
-	Key   string
-	Value int
-}
-
-type totalBalance struct {
-	Name  string
-	Total int64
-}
-
-type finalBalance struct {
-	Balance int64
-}
-
-type transactionResult struct {
-	Result string
 }
 
 type account struct {
@@ -133,6 +117,7 @@ func NewCartridgeCluster(dbURL string, poolSize uint64, sharded bool) (*Cartridg
 	}, nil
 }
 
+//nolint:golint,unused
 func (cluster *CartridgeCluster) addSharding() error {
 	return nil
 }
@@ -407,6 +392,7 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 
 	transferJson, err := json.Marshal(sendingTransfer)
 	if err != nil {
+		//nolint:golint,errcheck
 		merry.Prepend(err, "failed to marshal transfer to json to make custom transfer in cartridge app")
 	}
 

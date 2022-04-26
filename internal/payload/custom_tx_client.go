@@ -374,7 +374,7 @@ func payCustomTx(settings *config.DatabaseSettings,
 	remainder := settings.Count - transfersPerWorker*settings.Workers
 
 	RecoveryStart(cluster, oracle, &payStats)
-
+	//nolint:golint,gosimple
 	clusterCustomTx, ok := cluster.(CustomTxTransfer)
 	if !ok {
 		llog.Fatalf("Custom transactions are not implemented for %s", cluster.GetClusterType())
