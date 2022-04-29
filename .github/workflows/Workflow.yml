@@ -63,6 +63,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
+        with:
+          repository: picodata/stroppy
+          path: stroppy
+          ref: develop
+          fetch-depth: 0
+      - run: rm -rf stroppy
+      - run: current_branch=$(git rev-parse --abbrev-ref HEAD) && git checkout --track origin/develop && git checkout $current_branch
       - run: make test
       - run: rm -rf ..?* .[!.]* *
         if: always()
