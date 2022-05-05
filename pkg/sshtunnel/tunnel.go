@@ -44,16 +44,20 @@ func newConnectionWaiter(listener net.Listener, c chan net.Conn) {
 
 func (tunnel *SSHTunnel) Start() (err error) {
 	var listener net.Listener
+
 	if listener, err = net.Listen("tcp", tunnel.Local.String()); err != nil {
 		return merry.Prepend(err, "net listen failed")
 	}
 
 	tunnel.isOpen = true
+	// nolint:forcetypeassert
 	tunnel.Local.Port = listener.Addr().(*net.TCPAddr).Port
 
 	var serverConn *ssh.Client
+
 	if serverConn, err = ssh.Dial("tcp", tunnel.Server.String(), tunnel.Config); err != nil {
 		tunnel.logf("server dial error: %s", err)
+
 		return merry.Prepend(err, "server dial error")
 	}
 
@@ -61,6 +65,7 @@ func (tunnel *SSHTunnel) Start() (err error) {
 	tunnel.serverConn = serverConn
 
 	go tunnel.tunnelProcess(listener)
+
 	return
 }
 
@@ -81,18 +86,23 @@ func (tunnel *SSHTunnel) tunnelProcess(listener net.Listener) {
 		case conn := <-c:
 			tunnel.Conns = append(tunnel.Conns, conn)
 			tunnel.logf("accepted connection")
+
 			go tunnel.forward(conn)
 		}
 	}
 
 	var err error
+
 	total := len(tunnel.Conns)
+
 	for i, conn := range tunnel.Conns {
 		tunnel.logf("closing the netConn (%d of %d)", i+1, total)
+
 		if err = conn.Close(); err != nil {
 			tunnel.logf(err.Error())
 		}
 	}
+
 	if err = tunnel.serverConn.Close(); err != nil {
 		tunnel.logf("failed to ssh connection to remote: %s", err)
 	}
@@ -100,24 +110,29 @@ func (tunnel *SSHTunnel) tunnelProcess(listener net.Listener) {
 	if err = listener.Close(); err != nil {
 		tunnel.logf("failed to close listener: %s", err)
 	}
+
 	tunnel.logf("tunnel closed")
 }
 
-// TODO: add net.Conn pool
+// TODO: add net.Conn pool.
 func (tunnel *SSHTunnel) forward(localConn net.Conn) {
 	remoteConn, err := tunnel.serverConn.Dial("tcp", tunnel.Remote.String())
 	if err != nil {
 		tunnel.logf("remote dial error: %s", err)
+
 		return
 	}
+
 	tunnel.Conns = append(tunnel.Conns, remoteConn)
 	tunnel.logf("connected to %s\n", tunnel.Remote.String())
+
 	copyConn := func(writer, reader net.Conn) {
 		_, err := io.Copy(writer, reader)
 		if err != nil {
 			tunnel.logf("io.Copy error: %s", err)
 		}
 	}
+
 	go copyConn(localConn, remoteConn)
 	go copyConn(remoteConn, localConn)
 }
@@ -127,13 +142,14 @@ func (tunnel *SSHTunnel) Close() {
 }
 
 // NewSSHTunnel creates a new single-use tunnel. Supplying "0" for localport will use a random port.
-func NewSSHTunnel(tunnel string, destination string, localport int, sshTunnelAuth ssh.AuthMethod) (*SSHTunnel, error) {
+func NewSSHTunnel(tunnel, destination string, localport int, sshTunnelAuth ssh.AuthMethod) (*SSHTunnel, error) {
 	localEndpoint := NewLocalEndpoint(localport, "")
 
 	serverEndpoint, err := NewEndpoint(tunnel)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create server endpoint")
 	}
+
 	if serverEndpoint.Port == 0 {
 		serverEndpoint.Port = 22
 	}
@@ -142,7 +158,7 @@ func NewSSHTunnel(tunnel string, destination string, localport int, sshTunnelAut
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create remote endpoint")
 	}
-	//nolint:exhaustivestruct
+
 	sshTunnel := &SSHTunnel{
 		Config: &ssh.ClientConfig{
 			User: serverEndpoint.User,

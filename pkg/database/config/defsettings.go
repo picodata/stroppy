@@ -66,6 +66,7 @@ func DefaultSettings() (s *Settings) {
 	default:
 		s.ChaosParameter = ""
 	}
+
 	return
 }
 
@@ -107,7 +108,7 @@ type DatabaseSettings struct {
 }
 
 // DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию
-// линтер требует указания всех полей структуры при присвоении переменной
+// линтер требует указания всех полей структуры при присвоении переменной.
 func DatabaseDefaults() *DatabaseSettings {
 	return &DatabaseSettings{
 		DBType:             cluster.Postgres,
@@ -141,5 +142,6 @@ func deployDefaults() *DeploymentSettings {
 		Flavor:   "small",
 		Nodes:    3,
 	}
+
 	return &d
 }

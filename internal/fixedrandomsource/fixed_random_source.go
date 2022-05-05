@@ -2,7 +2,7 @@
  * Use of this source code is governed by the 2-Clause BSD License *
  * that can be found in the LICENSE file.                          */
 
-package fixed_random_source
+package fixedrandomsource
 
 import (
 	"math"
@@ -13,36 +13,43 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-// Generate a string which looks like a real bank identifier code
+// Generate a string which looks like a real bank identifier code.
 func createRandomBic(rand *mathrand.Rand) string {
 	letters := []rune("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
 	digits := []rune("0123456789")
 
 	bic := make([]rune, 8)
 	i := 0
+
 	for ; i < 4; i++ {
 		bic[i] = letters[rand.Intn(len(letters))]
 	}
+
 	cc := ISO3166[rand.Intn(len(ISO3166))]
+
 	for _, c := range cc {
 		bic[i] = c
 		i++
 	}
+
 	for ; i < len(bic); i++ {
 		bic[i] = digits[rand.Intn(len(digits))]
 	}
+
 	return string(bic)
 }
 
-// Generate a string which looks like a bank account number
+// Generate a string which looks like a bank account number.
 func createRandomBan(rand int) string {
 	digits := []rune("0123456789")
 	ban := make([]rune, 14)
+
 	for i := range ban {
 		next := rand / 10
 		ban[i] = digits[rand-next*10]
 		rand = next
 	}
+
 	return string(ban)
 }
 
@@ -58,8 +65,7 @@ var (
 	rs   *RandomSettings
 )
 
-//nolint:gosec
-func randomSettings(count int, seed int, banRangeMultiplier float64) *RandomSettings {
+func randomSettings(count, seed int, banRangeMultiplier float64) *RandomSettings {
 	generateBics := func(rs *RandomSettings) {
 		rand := mathrand.New(mathrand.NewSource(rs.seed))
 		for i := 0; i < len(rs.bics); i++ {
@@ -76,15 +82,17 @@ func randomSettings(count int, seed int, banRangeMultiplier float64) *RandomSett
 		if bics > 500 {
 			bics = 500
 		}
+
 		if bics > rs.accounts {
 			bics = rs.accounts
 		}
-		// nolint:gosimple
+
 		rs.bics = make([]string, bics, bics)
 		generateBics(rs)
 		rs.bansPerBic = int(float64(rs.accounts) * banRangeMultiplier / float64(bics))
 	}
 	once.Do(fetchSettings)
+
 	return rs
 }
 
@@ -106,78 +114,75 @@ type FixedRandomSource struct {
 	zipf *mathrand.Zipf
 }
 
-func (r *FixedRandomSource) Init(count int, seed int, random float64) {
-	// Each worker gorotuine uses its own instance of FixedRandomSource,
-	// but they share the data about existing BICs.
+// Each worker gorotuine uses its own instance of FixedRandomSource,
+// but they share the data about existing BICs.
+func (r *FixedRandomSource) Init(count, seed int, random float64) {
 	r.rs = randomSettings(count, seed, random)
-	//nolint:gosec
 	r.rand = mathrand.New(mathrand.NewSource(mathrand.Int63()))
 	r.zipf = mathrand.NewZipf(r.rand, 3, 1, uint64(r.rs.bansPerBic))
 }
 
-// Return a globally unique identifier
-// to ensure no client id conflicts
+// NewClientID Return a globally unique identifier to ensure no client id conflicts.
 func (r *FixedRandomSource) NewClientID() gocql.UUID {
 	return gocql.TimeUUID()
 }
 
-// Return a globally unique identifier, each transfer
-// is unique
+// NewTransferID Return a globally unique identifier, each transfer is unique.
 func (r *FixedRandomSource) NewTransferID() gocql.UUID {
 	return gocql.TimeUUID()
 }
 
-// Create a new BIC and BAN pair
-func (r *FixedRandomSource) NewBicAndBan() (string, string) {
-	bic := r.rs.bics[r.rand.Intn(len(r.rs.bics))]
-	ban := createRandomBan(r.rand.Intn(r.rs.bansPerBic))
+// NewBicAndBan Create a new BIC and BAN pair.
+func (r *FixedRandomSource) NewBicAndBan() (bic, ban string) {
+	bic = r.rs.bics[r.rand.Intn(len(r.rs.bics))]
+	ban = createRandomBan(r.rand.Intn(r.rs.bansPerBic))
+
 	return bic, ban
 }
 
-// for linter
+// for linter.
 const rangeBalance = 1000000
 
-// Create a new random start balance
-//nolint:gosec
+// NewStartBalance Create a new random start balance.
+// use 1 million because it gives bigger range for balances and
+// reduce overdraft errors.
 func (r *FixedRandomSource) NewStartBalance() *inf.Dec {
-	// use 1 million because it gives bigger range for balances and
-	// reduce overdraft errors
 	return inf.NewDec(mathrand.Int63n(rangeBalance), 0)
 }
 
-const rangeTransfer = 10000
+const (
+	rangeTransfer      = 10000
+	rangeTransferScale = 3
+)
 
-const rangeTransferScale = 3
-
-// Create a new random transfer
-//nolint:gosec
+// NewTransferAmount Create a new random transfer.
 func (r *FixedRandomSource) NewTransferAmount() *inf.Dec {
 	return inf.NewDec(mathrand.Int63n(rangeTransfer), inf.Scale(mathrand.Int63n(rangeTransferScale)))
 }
 
-// Find an existing BIC and BAN pair for transaction.
-// To avoid yielding a duplicate pair when called
-// twice in a row, pass pointers to previous BIC and BAN,
+// BicAndBan Find an existing BIC and BAN pair for transaction.
+// To avoid yielding a duplicate pair when called twice in a row, pass pointers to previous BIC and BAN,
 // in this case the new pair is guaranteed to be distinct.
-func (r *FixedRandomSource) BicAndBan(src ...string) (string, string) {
+func (r *FixedRandomSource) BicAndBan(src ...string) (bic, ban string) {
 	for {
-		bic := r.rs.bics[r.rand.Intn(len(r.rs.bics))]
-		ban := createRandomBan(r.rand.Intn(r.rs.bansPerBic))
+		bic = r.rs.bics[r.rand.Intn(len(r.rs.bics))]
+		ban = createRandomBan(r.rand.Intn(r.rs.bansPerBic))
+
 		if len(src) < 1 || bic != src[0] || len(src) < 2 || ban != src[1] {
 			return bic, ban
 		}
 	}
 }
 
-// Find an existing BIC and BAN pair for transaction.
+// HotBicAndBan Find an existing BIC and BAN pair for transaction.
 // Uses a normal distribution to return "hot" pairs.
-// To avoid yielding a duplicate pair when called
-// twice in a row, pass pointers to previous BIC and BAN,
+// To avoid yielding a duplicate pair when called twice in a row, pass pointers to previous BIC and BAN,
 // in this case the new pair is guaranteed to be distinct.
-func (r *FixedRandomSource) HotBicAndBan(src ...string) (string, string) {
+func (r *FixedRandomSource) HotBicAndBan(src ...string) (bic, ban string) {
 	for {
-		bic := r.rs.bics[r.rand.Intn(len(r.rs.bics))]
-		ban := createRandomBan(int(r.zipf.Uint64()))
+		bic = r.rs.bics[r.rand.Intn(len(r.rs.bics))]
+		ban = createRandomBan(int(r.zipf.Uint64()))
+
 		if len(src) < 1 || bic != src[0] || len(src) < 2 || ban != src[1] {
 			return bic, ban
 		}

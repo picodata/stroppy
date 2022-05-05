@@ -25,12 +25,13 @@ import (
 )
 
 func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error) {
-	if err = e.installSshKeyFileOnMaster(); err != nil {
+	if err = e.installSSHKeyFileOnMaster(); err != nil {
 		return
 	}
 
 	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
 	var clientSSHConfig ssh.ClientConfig
+
 	clientSSHConfig, err = auth.PrivateKey("ubuntu", e.sshKeyFilePath, ssh.InsecureIgnoreHostKey())
 	if err != nil {
 		return
@@ -39,16 +40,19 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	masterFullAddress := fmt.Sprintf("%v:22", e.AddressMap["external"]["master"])
 
 	client := scp.NewClient(masterFullAddress, &clientSSHConfig)
+
 	if err = client.Connect(); err != nil {
 		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
 	}
 
 	var sourceFile *os.File
+
 	if sourceFile, err = os.Open(sourceFilePath); err != nil {
 		return merry.Prependf(err, "failed to open local file '%s'", sourceFilePath)
 	}
+
 	defer func() {
-		if err := sourceFile.Close(); err != nil {
+		if err = sourceFile.Close(); err != nil {
 			llog.Warnf("failed to close local '%s' descriptor: %v",
 				sourceFilePath, err)
 		}
@@ -59,14 +63,17 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	}
 
 	client.Close()
+
 	return
 }
 
 func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
 	if err = e.ExecuteF(`mkdir -p "%s"`, destinationPath); err != nil {
 		err = fmt.Errorf("path creation failed: %v", err)
+
 		return
 	}
+
 	destinationPath = fmt.Sprintf("ubuntu@%s:%s", e.AddressMap["external"]["master"], destinationPath)
 
 	copyDirectoryCmd := exec.Command("scp", "-r", "-i", e.sshKeyFilePath, "-o", "StrictHostKeyChecking=no",
@@ -76,6 +83,7 @@ func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err
 		directorySourcePath, destinationPath, e.sshKeyFilePath, copyDirectoryCmd.Dir)
 
 	var output []byte
+
 	if output, err = copyDirectoryCmd.CombinedOutput(); err != nil {
 		return merry.Prependf(err, "error while copying directory to k8 master: %v, output: '%s'",
 			err, string(output))
@@ -84,25 +92,29 @@ func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err
 	return
 }
 
-func (e Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err error) {
+func (e *Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err error) {
 	return
 }
 
 func (e *Engine) LoadFileToPod(podName, containerName, sourcePath, destinationPath string) (err error) {
 	var restConfig *rest.Config
+
 	if restConfig, err = e.GetKubeConfig(); err != nil {
 		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
+
 		return
 	}
 
 	restConfig.Host = "localhost:6444"
 
 	var coreClient *corev1client.CoreV1Client
+
 	if coreClient, err = corev1client.NewForConfig(restConfig); err != nil {
 		return merry.Prepend(err, "failed to get client")
 	}
 
 	var reader io.Reader
+
 	if reader, err = os.Open(sourcePath); err != nil {
 		return merry.Prependf(err, "source file '%s'", sourcePath)
 	}
@@ -130,11 +142,13 @@ func (e *Engine) LoadFileToPod(podName, containerName, sourcePath, destinationPa
 		}, scheme.ParameterCodec)
 
 	var _exec remotecommand.Executor
+
 	if _exec, err = remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL()); err != nil {
 		return merry.Prepend(err, "exec get")
 	}
 
 	var stderr bytes.Buffer
+
 	err = _exec.Stream(remotecommand.StreamOptions{
 		Stdin:  reader,
 		Stderr: &stderr,

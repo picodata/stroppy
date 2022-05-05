@@ -15,7 +15,8 @@ import (
 )
 
 func recoveryWorker(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats,
-	wg *sync.WaitGroup) {
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
 	c := ClientCustomTx{}
@@ -23,16 +24,16 @@ func recoveryWorker(cluster CustomTxTransfer, oracle *database.Oracle, payStats 
 
 loop:
 	for {
-		transferId, more := <-q.queue
+		transferID, more := <-q.queue
 		if !more {
 			break loop
 		}
-		c.RecoverTransfer(transferId)
+		c.RecoverTransfer(transferID)
 	}
 }
 
 type RecoveryQueue struct {
-	queue    chan model.TransferId
+	queue    chan model.TransferID
 	wg       sync.WaitGroup
 	cluster  CustomTxTransfer
 	oracle   *database.Oracle
@@ -47,11 +48,12 @@ func (q *RecoveryQueue) Init(cluster CustomTxTransfer, oracle *database.Oracle, 
 	// Recovery is recursive, create the channels first
 	// what kind of magic number 4096000 is?
 	const queueCapacity = 4096000
-	q.queue = make(chan model.TransferId, queueCapacity)
+	q.queue = make(chan model.TransferID, queueCapacity)
 }
 
 func (q *RecoveryQueue) StartRecoveryWorker() {
 	q.wg.Add(1)
+
 	go recoveryWorker(q.cluster, q.oracle, q.payStats, &q.wg)
 }
 
@@ -62,8 +64,8 @@ func (q *RecoveryQueue) Stop() {
 
 var q RecoveryQueue
 
-func RecoverTransfer(transferId model.TransferId) {
-	q.queue <- transferId
+func RecoverTransfer(transferID model.TransferID) {
+	q.queue <- transferID
 }
 
 func Recover() {
@@ -72,14 +74,16 @@ func Recover() {
 
 	llog.Infof("Fetching dead transfers")
 
-	transferIds, err := q.cluster.FetchDeadTransfers()
+	transferIDs, err := q.cluster.FetchDeadTransfers()
 	if err != nil {
 		llog.Errorf("Failed to fetch dead transfers: %v", err)
 	}
-	if len(transferIds) != 0 {
-		llog.Infof("Found %v outstanding transfers, recovering...", len(transferIds))
-		for _, transferId := range transferIds {
-			c.RecoverTransfer(transferId)
+
+	if len(transferIDs) != 0 {
+		llog.Infof("Found %v outstanding transfers, recovering...", len(transferIDs))
+
+		for _, transferID := range transferIDs {
+			c.RecoverTransfer(transferID)
 		}
 	}
 }

@@ -18,6 +18,7 @@ const (
 
 func GetEnvDataStore(opts string) (dbParams string, err error) {
 	var present bool
+
 	switch opts {
 	case Foundation:
 		dbParams, present = os.LookupEnv("TEST_FDB_URL")
@@ -44,5 +45,6 @@ func GetEnvDataStore(opts string) (dbParams string, err error) {
 	default:
 		return "", merry.Errorf("unsupported store type %s", opts)
 	}
+
 	return dbParams, nil
 }

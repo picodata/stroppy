@@ -28,6 +28,7 @@ func createShell(config *config.Settings) (d *shell) {
 		stdinScanner:     bufio.NewScanner(os.Stdin),
 		workingDirectory: config.WorkingDirectory,
 	}
+
 	return
 }
 
@@ -56,21 +57,25 @@ func (sh *shell) gracefulShutdown() (err error) {
 			return merry.Prepend(err, "failed to destroy terraform")
 		}
 	}
+
 	return
 }
 
 func (sh *shell) Shutdown() (err error) {
 	err = sh.gracefulShutdown()
+
 	return
 }
 
 func Deploy(settings *config.Settings) (shell Shell, err error) {
 	sh := createShell(settings)
+
 	if err = sh.deploy(); err != nil {
 		return
 	}
 
 	shell = sh
+
 	return
 }
 
@@ -86,16 +91,19 @@ func (sh *shell) prepareTerraform() (err error) {
 	if ok := sh.tf.Provider.IsPrivateKeyExist(sh.tf.WorkDirectory); !ok {
 		return merry.Errorf("failed to check private key exist")
 	}
+
 	return
 }
 
 func (sh *shell) prepareEngine() (err error) {
 	var addressMap map[string]map[string]string
+
 	if addressMap, err = sh.tf.GetAddressMap(); err != nil {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
 	commandClientType := engineSsh.RemoteClient
+
 	if sh.settings.Local {
 		commandClientType = engineSsh.LocalClient
 	}
@@ -131,6 +139,7 @@ func (sh *shell) preparePayload() (err error) {
 		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
 		err = nil
 	}
+
 	return
 }
 
@@ -140,6 +149,7 @@ func (sh *shell) deploy() (err error) {
 	if err = sh.prepareTerraform(); err != nil {
 		return
 	}
+
 	if err = sh.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}
@@ -151,6 +161,7 @@ func (sh *shell) deploy() (err error) {
 	if err = sh.k.Deploy(); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
+
 	if err = sh.k.OpenPortForwarding(); err != nil {
 		return
 	}
@@ -168,20 +179,20 @@ func (sh *shell) deploy() (err error) {
 	if err = sh.preparePayload(); err != nil {
 		return
 	}
+
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(err, "'%s' database deploy failed", sh.settings.DatabaseSettings.DBType)
 	}
 
+	// return merry.Prepend(err, "cluster connect")
+	// \todo: временно необращаем внимание на эту ошибку
 	if err = sh.payload.Connect(); err != nil {
-		// return merry.Prepend(err, "cluster connect")
-		// \todo: временно необращаем внимание на эту ошибку
-
 		llog.Errorf("cluster connect: %v", err)
 		err = nil
 	}
 
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
-
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
+
 	return
 }

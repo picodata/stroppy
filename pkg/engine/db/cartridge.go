@@ -28,6 +28,7 @@ func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 			false,
 		),
 	}
+
 	return
 }
 
@@ -42,10 +43,12 @@ func (cartridge *cartridgeCluster) Connect() (cluster interface{}, err error) {
 	}
 
 	connectionPool := uint64(cartridge.commonCluster.connectionPoolSize) + uint64(cartridge.commonCluster.addPool)
+
 	cluster, err = clusterImplementation.NewCartridgeCluster(cartridge.DBUrl, connectionPool, cartridge.commonCluster.sharded)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to cartridge cluster")
 	}
+
 	return
 }
 
@@ -61,6 +64,7 @@ func (cartridge *cartridgeCluster) Deploy() (err error) {
 	if err != nil {
 		return
 	}
+
 	return nil
 }
 

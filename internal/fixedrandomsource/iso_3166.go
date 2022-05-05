@@ -2,7 +2,7 @@
  * Use of this source code is governed by the 2-Clause BSD License *
  * that can be found in the LICENSE file.                          */
 
-package fixed_random_source
+package fixedrandomsource
 
 var ISO3166 = [...]string{
 	"AA", "AB", "AC", "AD", "AE", "AF", "AG", "AH", "AI", "AJ",

@@ -21,72 +21,70 @@ import (
 const waitTimeQuantum = 10 * time.Second
 
 const (
-	workerTypeKey = "worker-type"
-
+	workerTypeKey     = "worker-type"
 	workerTypeStroppy = "stroppy-worker"
 	workerTypeDBMS    = "dbms-worker"
 )
 
 func (e *Engine) waitPodCreation(clientSet *kubernetes.Clientset,
-	creationWait bool, waitTime time.Duration, podName, namespace string) (targetPod *v1.Pod, err error) {
-
+	creationWait bool, waitTime time.Duration, podName, namespace string,
+) (targetPod *v1.Pod, err error) {
 	targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
 		podName,
 		metav1.GetOptions{
 			TypeMeta:        metav1.TypeMeta{},
 			ResourceVersion: "",
 		})
-	if err == nil {
-		return
-	}
-	if k8s_errors.IsNotFound(err) && creationWait {
+	if err != nil {
+		if k8s_errors.IsNotFound(err) && creationWait {
+			llog.Infof("WaitPod: go wait '%s/%s' pod creation...", namespace, podName)
 
-		llog.Infof("WaitPod: go wait '%s/%s' pod creation...",
-			namespace, podName)
+			creationWaitTime := waitTime
+			for k8s_errors.IsNotFound(err) && creationWaitTime > 0 {
+				creationWaitTime -= waitTimeQuantum
+				time.Sleep(waitTimeQuantum)
 
-		creationWaitTime := waitTime
-		for k8s_errors.IsNotFound(err) && creationWaitTime > 0 {
+				targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
+					podName,
+					metav1.GetOptions{
+						TypeMeta:        metav1.TypeMeta{},
+						ResourceVersion: "",
+					})
+			}
 
-			creationWaitTime -= waitTimeQuantum
-			time.Sleep(waitTimeQuantum)
+			if err != nil {
+				err = merry.Prependf(err, "'%s/%s' pod creation failed", namespace, podName)
 
-			targetPod, err = clientSet.CoreV1().Pods(namespace).Get(context.TODO(),
-				podName,
-				metav1.GetOptions{
-					TypeMeta:        metav1.TypeMeta{},
-					ResourceVersion: "",
-				})
-		}
+				return
+			}
 
-		if err != nil {
-			err = merry.Prependf(err, "'%s/%s' pod creation failed", namespace, podName)
+			if targetPod == nil {
+				err = fmt.Errorf("pod '%s/%s' still not created", namespace, podName)
+
+				return
+			}
+		} else {
+			err = merry.Prepend(err, "get pod")
+
 			return
 		}
-
-		if targetPod == nil {
-			err = fmt.Errorf("pod '%s/%s' still not created", namespace, podName)
-			return
-		}
-
-	} else {
-		err = merry.Prepend(err, "get pod")
-		return
 	}
 
 	return
 }
 
-func (e *Engine) WaitPodPhase(podName, namespace string,
-	creationWait bool, waitTime time.Duration, phase v1.PodPhase) (targetPod *v1.Pod, err error) {
-
+func (e *Engine) WaitPodPhase(podName, namespace string, creationWait bool, waitTime time.Duration, phase v1.PodPhase) (targetPod *v1.Pod, err error) {
 	if waitTime < waitTimeQuantum {
 		err = fmt.Errorf("input wait time %v (s) is less than quantum 10 seconds", waitTime.Seconds())
+
 		return
 	}
 
 	var clientSet *kubernetes.Clientset
+
 	if clientSet, err = e.GetClientSet(); err != nil {
 		err = merry.Prepend(err, "get client set")
+
 		return
 	}
 
@@ -97,6 +95,7 @@ func (e *Engine) WaitPodPhase(podName, namespace string,
 
 	if targetPod.Status.Phase == phase {
 		llog.Debugf("WaitPod: pod '%s/%s' already in status '%s'", namespace, podName, phase)
+
 		return
 	}
 
@@ -109,8 +108,10 @@ func (e *Engine) WaitPodPhase(podName, namespace string,
 			})
 		if err != nil {
 			llog.Warnf("WaitPod: failed to update information: %v", err)
+
 			continue
 		}
+
 		waitTime -= waitTimeQuantum
 		time.Sleep(waitTimeQuantum)
 
@@ -120,20 +121,20 @@ func (e *Engine) WaitPodPhase(podName, namespace string,
 	if targetPod.Status.Phase != phase {
 		err = merry.Errorf("pod still not in status '%s', %d minutes left, current status: '%v'",
 			phase, waitTime/time.Minute, targetPod.Status.Phase)
+
 		return
 	}
 
 	return
 }
 
-func (e *Engine) WaitPod(podName, namespace string,
-	creationWait bool, waitTime time.Duration) (targetPod *v1.Pod, err error) {
-
+func (e *Engine) WaitPod(podName, namespace string, creationWait bool, waitTime time.Duration) (targetPod *v1.Pod, err error) {
 	targetPod, err = e.WaitPodPhase(podName, namespace, creationWait, waitTime, v1.PodRunning)
+
 	return
 }
 
-// AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
+// AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД.
 func (e Engine) AddNodeLabels(_ string) (err error) {
 	llog.Infoln("Starting of add labels to cluster nodes")
 
@@ -145,9 +146,11 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 	// используем получения списка нод ради точного кол-ва нод кластера.
 	// deploySettings.nodes не используем из-за разного кол-ва nodes для одинакового кол-ва воркеров в yc и oc
 	var nodesList *v1.NodeList
+
 	err = tools.Retry("get nodes list",
 		func() (err error) {
 			nodesList, err = clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+
 			return
 		},
 		tools.RetryStandardRetryCount,
@@ -160,11 +163,11 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 	workerNodeList := nodesList.Items[1:]
 
 	for i := 0; i < len(workerNodeList); i++ {
-
 		currentLabels := workerNodeList[i].GetLabels()
 
 		if _, ok := currentLabels[workerTypeKey]; ok {
 			llog.Infoln("this node already been marked")
+
 			continue
 		}
 
@@ -173,7 +176,6 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 
 		// последний воркер оставляем для stroppy
 		if i == len(workerNodeList)-1 {
-
 			currentLabels[workerTypeKey] = workerTypeStroppy
 			workerNodeList[i].SetLabels(currentLabels)
 		}
@@ -182,6 +184,7 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 		err = tools.Retry("adding labels to nodes",
 			func() (err error) {
 				_, err = clientSet.CoreV1().Nodes().Update(context.TODO(), &workerNodeList[i], metav1.UpdateOptions{})
+
 				return
 			},
 			tools.RetryStandardRetryCount,
@@ -192,5 +195,6 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 	}
 
 	llog.Infoln("Add labels to cluster nodes: success")
+
 	return
 }

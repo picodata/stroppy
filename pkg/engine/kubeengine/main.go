@@ -22,9 +22,11 @@ import (
 func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
 	commandClientType := ssh.RemoteClient
+
 	if settings.TestSettings.UseCloudStroppy {
 		if kubernetesMasterAddress == "" {
 			err = fmt.Errorf("kubernetes master address is empty")
+
 			return
 		}
 	} else {
@@ -44,8 +46,8 @@ func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 
 func createKubernetesObject(settings *config.Settings,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (pObj *Engine) {
-
+	sshClient ssh.Client,
+) (pObj *Engine) {
 	pObj = &Engine{
 		WorkingDirectory:  settings.WorkingDirectory,
 		clusterConfigFile: filepath.Join(settings.WorkingDirectory, "config"),
@@ -54,20 +56,22 @@ func createKubernetesObject(settings *config.Settings,
 		sc:         sshClient,
 
 		UseLocalSession:      settings.Local,
-		isSshKeyFileOnMaster: false,
+		isSSHKeyFileOnMaster: false,
 	}
+
 	return
 }
 
 func CreateEngine(settings *config.Settings,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (e *Engine, err error) {
-
+	sshClient ssh.Client,
+) (e *Engine, err error) {
 	e = createKubernetesObject(settings, terraformAddressMap, sshClient)
 	e.sshKeyFileName, e.sshKeyFilePath = e.sc.GetPrivateKeyInfo()
 
 	llog.Infof("kubernetes engine init successfully on directory '%s' and ssh key file '%s'",
 		e.WorkingDirectory, e.sshKeyFilePath)
+
 	return
 }
 
@@ -81,14 +85,16 @@ type Engine struct {
 	sshKeyFilePath string
 	sc             ssh.Client
 
-	isSshKeyFileOnMaster bool
+	isSSHKeyFileOnMaster bool
 	UseLocalSession      bool
 }
 
 func (e *Engine) GetClientSet() (clientSet *kubernetes.Clientset, err error) {
 	var _config *rest.Config
+
 	if _config, err = e.GetKubeConfig(); err != nil {
 		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
+
 		return
 	}
 
@@ -102,6 +108,7 @@ func (e *Engine) GetClientSet() (clientSet *kubernetes.Clientset, err error) {
 
 func (e *Engine) GetResourceURL(resource, namespace, name, subresource string) (url *url.URL, err error) {
 	var clientSet *kubernetes.Clientset
+
 	if clientSet, err = e.GetClientSet(); err != nil {
 		return
 	}
@@ -112,5 +119,6 @@ func (e *Engine) GetResourceURL(resource, namespace, name, subresource string) (
 		Namespace(namespace).
 		Name(name).
 		SubResource(subresource).URL()
+
 	return
 }

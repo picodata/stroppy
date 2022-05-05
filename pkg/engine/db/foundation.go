@@ -20,8 +20,7 @@ import (
 )
 
 const (
-	foundationDbDirectory = "foundationdb"
-
+	foundationDBDirectory       = "foundationdb"
 	foundationClusterName       = "sample-cluster"
 	foundationClusterClientName = "sample-cluster-client"
 )
@@ -31,13 +30,14 @@ func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, 
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, dbWorkingDirectory, foundationDbDirectory),
-			foundationDbDirectory,
+			filepath.Join(wd, dbWorkingDirectory, foundationDBDirectory),
+			foundationDBDirectory,
 			dbURL,
 			0,
 			false,
 		),
 	}
+
 	return
 }
 
@@ -51,6 +51,7 @@ func (fc *foundationCluster) Connect() (cluster interface{}, err error) {
 	}
 
 	cluster, err = cluster2.NewFoundationCluster(fc.DBUrl)
+
 	return
 }
 
@@ -66,9 +67,11 @@ func (fc *foundationCluster) Deploy() (err error) {
 	if err != nil {
 		return
 	}
+
 	llog.Infof("Now perform additional foundation deployment steps")
 
 	var session engineSsh.Session
+
 	if session, err = fc.sc.GetNewSession(); err != nil {
 		return merry.Prepend(err, "fix_client_version session")
 	}
@@ -76,18 +79,21 @@ func (fc *foundationCluster) Deploy() (err error) {
 	const fdbFixCommand = "chmod +x foundationdb/fix_client_version.sh && ./foundationdb/fix_client_version.sh"
 
 	var textb []byte
+
 	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
 		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
 	}
+
 	llog.Debugf("fix_client_version.sh applyed successfully")
 
 	// \todo: Прокидываем порт foundationdb на локальную машину
-	if err := fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
+	if err = fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
 		llog.Warnf("foundationdb failed to open port forwarding: %v", err)
 	}
 
 	if fc.k.StroppyPod != nil {
 		var contName string
+
 		if contName, err = fc.k.StroppyPod.ContainerName(0); err != nil {
 			return
 		}
@@ -95,6 +101,7 @@ func (fc *foundationCluster) Deploy() (err error) {
 		sourceConfigPath := fmt.Sprintf("%s/%s://var/dynamic-conf/fdb.cluster",
 			foundationClusterClientName, fc.clusterSpec.MainPod.Name)
 		destinationConfigPath := fmt.Sprintf("stroppy-client/%s://bin", contName)
+
 		if _err := fc.k.Engine.CopyFileFromPodToPod(sourceConfigPath, destinationConfigPath); _err != nil {
 			llog.Errorln(merry.Prepend(_err, "fdb.cluster file copying"))
 		}
@@ -105,5 +112,6 @@ func (fc *foundationCluster) Deploy() (err error) {
 
 func (fc *foundationCluster) GetSpecification() (spec ClusterSpec) {
 	spec = fc.clusterSpec
+
 	return
 }

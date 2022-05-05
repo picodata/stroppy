@@ -20,7 +20,9 @@ func createLocalClient(wd string) (cc Client, err error) {
 	}
 
 	llog.Infof("local shell client created")
+
 	cc = c
+
 	return
 }
 
@@ -30,19 +32,21 @@ type localClient struct {
 
 func (dc *localClient) GetNewSession() (session Session, _ error) {
 	session = createLocalSession(dc.wd)
+
 	return
 }
 
-func (dc *localClient) GetPrivateKeyInfo() (string, string) {
+func (dc *localClient) GetPrivateKeyInfo() (result1, result2 string) {
 	return "no-object", "/no/object"
 }
 
-// createLocalSession создает фиктивную (локальную) сессию
+// createLocalSession создает фиктивную (локальную) сессию.
 func createLocalSession(wd string) (session *localSession) {
 	session = &localSession{
 		wd:      wd,
 		cmdLock: sync.Mutex{},
 	}
+
 	return
 }
 
@@ -65,10 +69,12 @@ func (ds *localSession) CombinedOutput(text string) (output []byte, err error) {
 
 	if err = ds.cmd.Start(); err != nil {
 		err = merry.Prepend(err, "failed to start")
+
 		return
 	}
 
 	output, err = ds.cmd.CombinedOutput()
+
 	return
 }
 
@@ -78,10 +84,12 @@ func (ds *localSession) StdoutPipe() (stdout io.Reader, err error) {
 
 	if ds.cmd == nil {
 		err = errors.New("no process")
+
 		return
 	}
 
 	stdout, err = ds.cmd.StdoutPipe()
+
 	return
 }
 
@@ -90,6 +98,7 @@ func (ds *localSession) Close() (_ error) {
 	defer ds.cmdLock.Unlock()
 
 	_ = ds.close()
+
 	return
 }
 

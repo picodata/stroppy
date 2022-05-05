@@ -21,13 +21,11 @@ import (
 )
 
 const (
-	defaultMasterCPU = 2
-	defaultMasterRAM = 4
-
+	defaultMasterCPU  = 2
+	defaultMasterRAM  = 4
 	defaultMasterDisk = 15
 
-	zoneName = "ru-central1-a"
-
+	zoneName              = "ru-central1-a"
 	subnetAddressTemplate = "172.16.%d.0/24"
 )
 
@@ -38,13 +36,15 @@ func randStringID() string {
 
 	const idLength = 5
 	b := make([]rune, idLength)
+
 	for i := range b {
 		b[i] = letters[rand.Intn(len(letters))]
 	}
+
 	return string(b)
 }
 
-// setTerraformBlock - задать блок требований к провайдеру
+// setTerraformBlock - задать блок требований к провайдеру.
 func (yp *Provider) setTerraformBlock(providerFileBody *hclwrite.Body) {
 	terraformBlock := providerFileBody.AppendNewBlock("terraform", nil)
 	terraformBody := terraformBlock.Body()
@@ -54,7 +54,7 @@ func (yp *Provider) setTerraformBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setIamServiceAccountBlock - задать блок настроек управления сервисными аккаунтами (IAM)
+// setIamServiceAccountBlock - задать блок настроек управления сервисными аккаунтами (IAM).
 func (yp *Provider) setIamServiceAccountBlock(providerFileBody *hclwrite.Body) {
 	yp.serviceAccountName = fmt.Sprintf("instances8%s", strings.ToLower(randStringID()))
 
@@ -74,8 +74,7 @@ func (yp *Provider) setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 	resourceManagerBlock := providerFileBody.AppendNewBlock("resource", resourceManagerParams)
 	resourceManagerBody := resourceManagerBlock.Body()
 
-	/* здесь и далее структура hcl.Traversal используется для хранения переменных самого cloud вместо варианта с ${},
-	где это возможно*/
+	// здесь и далее структура hcl.Traversal используется для хранения переменных самого cloud вместо варианта с ${}, где это возможно.
 	folderID := hcl.Traversal{
 		hcl.TraverseRoot{Name: "var"},
 		hcl.TraverseAttr{Name: "yc_folder_id"},
@@ -102,7 +101,7 @@ func (yp *Provider) setResourceManagerBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setVpcNetworkBody - задать блок управления сетью cloud
+// setVpcNetworkBody - задать блок управления сетью cloud.
 func (yp *Provider) setVpcNetworkBody(providerFileBody *hclwrite.Body) {
 	networkID := strings.ToLower(randStringID())
 	yp.vpcSubnetBlockName = fmt.Sprintf("internal-a-%s", networkID)
@@ -115,7 +114,7 @@ func (yp *Provider) setVpcNetworkBody(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setVpcSubnetBody - задать блок управления подсетью cloud
+// setVpcSubnetBody - задать блок управления подсетью cloud.
 func (yp *Provider) setVpcSubnetBody(providerFileBody *hclwrite.Body) {
 	vpcSubnetBlock := providerFileBody.AppendNewBlock("resource", []string{"yandex_vpc_subnet", yp.vpcSubnetBlockName})
 	vpcSubnetBody := vpcSubnetBlock.Body()
@@ -134,7 +133,7 @@ func (yp *Provider) setVpcSubnetBody(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setComputeImageBlock - задать блок управления образами cloud
+// setComputeImageBlock - задать блок управления образами cloud.
 func (yp *Provider) setComputeImageBlock(providerFileBody *hclwrite.Body) {
 	computeImageBlock := providerFileBody.AppendNewBlock("data", []string{"yandex_compute_image", "ubuntu_image"})
 	computeImageBody := computeImageBlock.Body()
@@ -142,9 +141,10 @@ func (yp *Provider) setComputeImageBlock(providerFileBody *hclwrite.Body) {
 	providerFileBody.AppendNewline()
 }
 
-// setWorkersBlock - задать блок управления настройками worker-машин
+// setWorkersBlock - задать блок управления настройками worker-машин.
 func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal,
-	cpu int, ram int, disk int, platform string, nodes int) {
+	cpu int, ram int, disk int, platform string, nodes int,
+) {
 	workersBlockName := fmt.Sprintf("workers-1%s", strings.ToLower(randStringID()))
 
 	workersBlock := providerFileBody.AppendNewBlock("resource",
@@ -162,18 +162,18 @@ func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKe
 	instanceTemplateWorkersBody := instanceTemplateWorkersBlock.Body()
 	instanceTemplateWorkersBody.SetAttributeValue("platform_id", cty.StringVal(platform))
 
-	// Здесь задаются параметры cpu/count для worker-машин
+	// Здесь задаются параметры cpu/count для worker-машин.
 	resourcesWorkersBlock := instanceTemplateWorkersBody.AppendNewBlock("resources", nil)
 	resourcesWorkersBody := resourcesWorkersBlock.Body()
 	resourcesWorkersBody.SetAttributeValue("memory", cty.NumberIntVal(int64(ram)))
 	resourcesWorkersBody.SetAttributeValue("cores", cty.NumberIntVal(int64(cpu)))
 
-	// Здесь задается режим жесткого диска worker-машин
+	// Здесь задается режим жесткого диска worker-машин.
 	bootDiskWorkersBlock := instanceTemplateWorkersBody.AppendNewBlock("boot_disk", nil)
 	bootDiskWorkersBody := bootDiskWorkersBlock.Body()
 	bootDiskWorkersBody.SetAttributeValue("mode", cty.StringVal("READ_WRITE"))
 
-	// Здесь задаются параметры инициализации жесткого диска
+	// Здесь задаются параметры инициализации жесткого диска.
 	initParamsDiskWorkersBlock := bootDiskWorkersBody.AppendNewBlock("initialize_params", nil)
 	initParamsWorkersBody := initParamsDiskWorkersBlock.Body()
 
@@ -183,7 +183,7 @@ func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKe
 	}
 	initParamsWorkersBody.SetAttributeTraversal("image_id", imageWorkersID)
 
-	// Здесь задается размер диска worker-машин
+	// Здесь задается размер диска worker-машин.
 	initParamsWorkersBody.SetAttributeValue("size", cty.NumberIntVal(int64(disk)))
 	initParamsWorkersBody.SetAttributeValue("type", cty.StringVal("network-ssd"))
 
@@ -210,7 +210,7 @@ func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKe
 	fixedScaleWorkersBlock := scalePolicyWorkersBlock.Body().AppendNewBlock("fixed_scale", nil)
 	fixedScaleBody := fixedScaleWorkersBlock.Body()
 
-	// здесь задается кол-во workers
+	// здесь задается кол-во workers.
 	fixedScaleBody.SetAttributeValue("size", cty.NumberIntVal(int64(nodes)))
 	providerFileBody.AppendNewline()
 
@@ -226,11 +226,11 @@ func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKe
 	deployPolicyWorkersBody := deployPolicyWorkersBlock.Body()
 	deployPolicyWorkersBody.SetAttributeValue("max_unavailable", cty.NumberIntVal(1))
 
-	// максимальное кол-во создаваемых воркеров
+	// максимальное кол-во создаваемых воркеров.
 	deployPolicyWorkersBody.SetAttributeValue("max_creating", cty.NumberIntVal(int64(nodes)))
 	deployPolicyWorkersBody.SetAttributeValue("max_expansion", cty.NumberIntVal(1))
 
-	// максимальное кол-во удаляемых воркеров
+	// максимальное кол-во удаляемых воркеров.
 	deployPolicyWorkersBody.SetAttributeValue("max_deleting", cty.NumberIntVal(int64(nodes)))
 
 	dependsOn := hcl.Traversal{
@@ -245,7 +245,7 @@ func (yp *Provider) setWorkersBlock(providerFileBody *hclwrite.Body, stringSSHKe
 	providerFileBody.AppendNewline()
 }
 
-// setMasterBlock - задать блок управления настройками master-машин
+// setMasterBlock - задать блок управления настройками master-машин.
 func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKeys hcl.Traversal, platform string) {
 	const computeInstanceNameTemplate = "master%s"
 	computeInstanceName := fmt.Sprintf(computeInstanceNameTemplate, strings.ToLower(randStringID()))
@@ -257,7 +257,7 @@ func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKey
 	masterBody.SetAttributeValue("hostname", cty.StringVal(computeInstanceName))
 	masterBody.SetAttributeValue("platform_id", cty.StringVal(platform))
 
-	// Здесь задаются параметры cpu/count для master-машины
+	// Здесь задаются параметры cpu/count для master-машины.
 	resourcesMasterBlock := masterBody.AppendNewBlock("resources", nil)
 	resourceMasterBody := resourcesMasterBlock.Body()
 	resourceMasterBody.SetAttributeValue("memory", cty.NumberIntVal(defaultMasterRAM))
@@ -266,7 +266,7 @@ func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKey
 	bootDiskMasterBlock := masterBody.AppendNewBlock("boot_disk", nil)
 	bootDiskMasterBody := bootDiskMasterBlock.Body()
 
-	// Здесь задаются параметры инициализации жесткого диска master-машины
+	// Здесь задаются параметры инициализации жесткого диска master-машины.
 	initParamsDiskMasterBlock := bootDiskMasterBody.AppendNewBlock("initialize_params", nil)
 	initParamsDiskBody := initParamsDiskMasterBlock.Body()
 
@@ -275,7 +275,7 @@ func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKey
 		hcl.TraverseAttr{Name: "id"},
 	}
 	initParamsDiskBody.SetAttributeTraversal("image_id", imageMasterID)
-	// Здесь задается размер жесткого диска master-машины
+	// Здесь задается размер жесткого диска master-машины.
 	initParamsDiskBody.SetAttributeValue("size", cty.NumberIntVal(defaultMasterDisk))
 	initParamsDiskBody.SetAttributeValue("type", cty.StringVal("network-ssd"))
 
@@ -292,7 +292,7 @@ func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKey
 }
 
 // prepare формирует файл конфигурации для провайдера,
-// для Yandex.Cloud поддерживается запуск нескольких конфигураций от разных пользователей
+// для Yandex.Cloud поддерживается запуск нескольких конфигураций от разных пользователей.
 func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd string) (err error) {
 	llog.Infoln("Starting generation provider configuration file")
 
@@ -300,8 +300,7 @@ func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd 
 	providerFileBody := providerFile.Body()
 	providerFileBody.AppendNewline()
 
-	/* формируем строку вида { ssh-keys = "ubuntu:${file("id_rsa.pub")}"},
-	чтобы не усложнять код преобразованиями из hcl в cty*/
+	// формируем строку вида { ssh-keys = "ubuntu:${file("id_rsa.pub")}"}, чтобы не усложнять код преобразованиями из hcl в cty.
 	stringSSHKeys := hcl.Traversal{
 		hcl.TraverseRoot{Name: "{ \n ssh-keys = \"ubuntu:${file(\"id_rsa"},
 		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
@@ -322,5 +321,6 @@ func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd 
 	}
 
 	llog.Infoln("Generation provider configuration file: success")
+
 	return
 }

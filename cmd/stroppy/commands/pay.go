@@ -6,6 +6,7 @@ package commands
 
 import (
 	"net/http"
+	// Register pprof.
 	_ "net/http/pprof"
 	"time"
 

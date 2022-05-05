@@ -39,6 +39,7 @@ func CreatePayload(cluster db.Cluster, settings *config.Settings, chaos chaos.Co
 		predictableCluster, ok := bp.Cluster.(database.PredictableCluster)
 		if !ok {
 			err = merry.Errorf("oracle is not supported for %s cluster", bp.config.DBType)
+
 			return
 		}
 
@@ -51,10 +52,12 @@ func CreatePayload(cluster db.Cluster, settings *config.Settings, chaos chaos.Co
 	} else {
 		bp.payFunc = payBuiltinTx
 	}
+
 	llog.Infof("payload object constructed for database '%s', url '%s'",
 		bp.config.DBType, bp.config.DBURL)
 
 	p = bp
+
 	return
 }
 
@@ -92,10 +95,13 @@ func (p *BasePayload) StartStatisticsCollect(statInterval time.Duration) (err er
 func (p *BasePayload) Connect() (err error) {
 	// \todo: необходим большой рефакторинг
 	var c interface{}
+
 	if c, err = p.cluster.Connect(); err != nil {
 		return
 	}
 
+	// nolint:forcetypeassert
 	p.Cluster = c.(CustomTxTransfer)
+
 	return
 }

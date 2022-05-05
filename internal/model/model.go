@@ -6,28 +6,29 @@ package model
 
 import (
 	"fmt"
-	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
+
+	"gitlab.com/picodata/stroppy/internal/fixedrandomsource"
 
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
 	"gopkg.in/inf.v0"
 )
 
-type TransferId = uuid.UUID
+type TransferID = uuid.UUID
 
-func NewTransferId() TransferId {
+func NewTransferID() TransferID {
 	return uuid.New()
 }
 
-var NilUuid = uuid.UUID{}
+var NilUUID = uuid.UUID{}
 
-// Some random bank account
+// Account Some random bank account.
 type Account struct {
 	Bic             string
 	Ban             string
 	Balance         *inf.Dec
 	PendingAmount   *inf.Dec
-	PendingTransfer TransferId
+	PendingTransfer TransferID
 	Found           bool
 }
 
@@ -35,9 +36,9 @@ func (acc Account) AccountID() string {
 	return acc.Bic + acc.Ban
 }
 
-// A record with data about money transfer from acc1 -> acc2
+// Transfer A record with data about money transfer from acc1 -> acc2.
 type Transfer struct {
-	Id        TransferId
+	ID        TransferID
 	Acs       []Account
 	LockOrder []*Account
 	Amount    *inf.Dec
@@ -46,8 +47,9 @@ type Transfer struct {
 
 func (t *Transfer) InitAccounts() {
 	if t.Amount == nil {
-		llog.Fatalf("[%v] Found transfer with nil amount", t.Id)
+		llog.Fatalf("[%v] Found transfer with nil amount", t.ID)
 	}
+
 	acs := t.Acs
 	t.LockOrder = make([]*Account, 2)
 	// Always lock accounts in lexicographical order to avoid livelocks
@@ -65,9 +67,10 @@ func (t *Transfer) InitAccounts() {
 	acs[1].PendingAmount = t.Amount
 }
 
-func (t *Transfer) InitRandomTransfer(randSource *fixed_random_source.FixedRandomSource, zipfian bool) {
+func (t *Transfer) InitRandomTransfer(randSource *fixedrandomsource.FixedRandomSource, zipfian bool) {
 	t.Amount = randSource.NewTransferAmount()
 	t.Acs = make([]Account, 2)
+
 	if zipfian {
 		t.Acs[0].Bic, t.Acs[0].Ban = randSource.HotBicAndBan()
 		t.Acs[1].Bic, t.Acs[1].Ban = randSource.HotBicAndBan(t.Acs[0].Bic, t.Acs[0].Ban)
@@ -75,13 +78,14 @@ func (t *Transfer) InitRandomTransfer(randSource *fixed_random_source.FixedRando
 		t.Acs[0].Bic, t.Acs[0].Ban = randSource.BicAndBan()
 		t.Acs[1].Bic, t.Acs[1].Ban = randSource.BicAndBan(t.Acs[0].Bic, t.Acs[0].Ban)
 	}
-	t.Id = NewTransferId()
+
+	t.ID = NewTransferID()
 	t.State = "new"
 	t.InitAccounts()
 }
 
-func (t *Transfer) InitEmptyTransfer(id TransferId) {
-	t.Id = id
+func (t *Transfer) InitEmptyTransfer(id TransferID) {
+	t.ID = id
 	t.Acs = make([]Account, 2)
 }
 

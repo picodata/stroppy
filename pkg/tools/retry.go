@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ansel1/merry"
-
 	llog "github.com/sirupsen/logrus"
 )
 
@@ -21,13 +20,14 @@ const (
 	RetryStandardNoWaitTime  = 0
 )
 
-// Retry - выполнить переповтор функции с возвратом ошибки
+// Retry - выполнить переповтор функции с возвратом ошибки.
 func Retry(tag string, fClos func() error, retryCount, sleepTimeout int) (err error) {
 	for i := 0; i < retryCount; i++ {
 		err = fClos()
 		if err == nil {
-			return
+			return nil
 		}
+
 		llog.Warnf("Retry '%s', run %d/%d: %v", tag, i, retryCount, err)
 
 		if sleepTimeout > 0 {
@@ -35,11 +35,12 @@ func Retry(tag string, fClos func() error, retryCount, sleepTimeout int) (err er
 		}
 	}
 
-	return
+	return err
 }
 
 func RemovePathList(list []string, rootDir string) {
 	var err error
+
 	for _, file := range list {
 		path := filepath.Join(rootDir, file)
 		if err = os.RemoveAll(path); err != nil {

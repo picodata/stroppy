@@ -36,17 +36,20 @@ func createPayload(settings *config.Settings) (_payload payload.Payload) {
 	}
 
 	var addressMap map[string]map[string]string
+
 	if addressMap, err = tf.GetAddressMap(); err != nil {
 		llog.Fatalf("failed to get address map: %v", err)
 	}
 
 	var k *kubernetes.Kubernetes
+
 	k, err = kubernetes.CreateKubernetes(settings, tf.Provider, addressMap, sc)
 	if err != nil {
 		llog.Fatalf("init kubernetes failed")
 	}
 
 	var _cluster db.Cluster
+
 	if _cluster, err = db.CreateCluster(settings.DatabaseSettings, sc, k, settings.WorkingDirectory); err != nil {
 		llog.Fatalf("failed to create cluster: %v", err)
 	}
@@ -55,6 +58,7 @@ func createPayload(settings *config.Settings) (_payload payload.Payload) {
 	if _payload, err = payload.CreatePayload(_cluster, settings, _chaos); err != nil {
 		return
 	}
+
 	return
 }
 
@@ -65,16 +69,20 @@ func initLogFacility(settings *config.Settings) (err error) {
 	formatter.TimestampFormat = "Jan _2 15:04:05.000"
 	formatter.FullTimestamp = true
 	formatter.ForceColors = true
+
 	llog.SetFormatter(formatter)
 
 	var l llog.Level
+
 	if l, err = llog.ParseLevel(settings.LogLevel); err != nil {
 		return merry.Prependf(err, "'%s' log level parse", settings.LogLevel)
 	}
+
 	llog.SetLevel(l)
 
 	if len(os.Args) < 2 {
 		err = fmt.Errorf("not enough arguments")
+
 		return
 	}
 
@@ -85,14 +93,15 @@ func initLogFacility(settings *config.Settings) (err error) {
 	var logFileDescriptor *os.File
 	// по умолчанию файл создается без прав вообще, нужны права на чтение
 	var modePerm fs.FileMode = 444
-	logFileDescriptor, err = os.OpenFile(filepath.Join(settings.WorkingDirectory, logFileName),
-		os.O_CREATE|os.O_APPEND|os.O_RDWR,
-		modePerm)
+
+	logFileDescriptor, err = os.OpenFile(filepath.Join(settings.WorkingDirectory, logFileName), os.O_CREATE|os.O_APPEND|os.O_RDWR, modePerm)
 	if err != nil {
 		err = merry.Prependf(err, "open log file '%s' in '%s' directory", logFileName, settings.WorkingDirectory)
+
 		return
 	}
 
 	llog.SetOutput(io.MultiWriter(os.Stdout, logFileDescriptor))
+
 	return
 }

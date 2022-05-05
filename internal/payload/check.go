@@ -10,10 +10,9 @@ import (
 	"gopkg.in/inf.v0"
 )
 
+// Check Only persist the balance if it is not persisted yet
+// Only calculate the balance if it's necessary to persist it, or it is necessary for a Check (prev != nil).
 func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
-	// Only persist the balance if it is not persisted yet
-	// Only calculate the balance if it's necessary to persist
-	// it, or it is necessary for a Check (prev != nil)
 	persistBalance := false
 
 	if prev == nil {
@@ -22,6 +21,7 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 			if err != cluster.ErrNoRows {
 				llog.Fatalf("Failed to fetch the stored total: %v", err)
 			}
+
 			sum = nil
 			persistBalance = true
 		}
@@ -29,6 +29,7 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 
 	if sum == nil {
 		llog.Infof("Calculating the total balance...")
+
 		if sum, err = p.Cluster.CheckBalance(); err != nil {
 			llog.Fatalf("Failed to calculate the total: %v", err)
 		}
@@ -40,9 +41,9 @@ func (p *BasePayload) Check(prev *inf.Dec) (sum *inf.Dec, err error) {
 		}
 	}
 
-	if persistBalance {
-		// Do not overwrite the total balance if it is already persisted.
+	if persistBalance { // Do not overwrite the total balance if it is already persisted.
 		llog.Infof("Persisting the total balance...")
+
 		if err := p.Cluster.PersistTotal(*sum); err != nil {
 			llog.Fatalf("Failed to persist total balance: error %v, sum: %v", err, sum)
 		}

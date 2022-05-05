@@ -1,7 +1,6 @@
 fdb.cluster
 .vagrant
 *.log
-
 *.pub 
 private_key
 private_key.pem

@@ -6,7 +6,6 @@ package ssh
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,7 +23,7 @@ type Result struct {
 	Err    error
 }
 
-func getPrivateKeyFileName(provider string, workingDirectory string) (privateKeyFileName string, err error) {
+func getPrivateKeyFileName(provider, workingDirectory string) (privateKeyFileName string, err error) {
 	// проверяем наличие приватного ключа
 	switch provider {
 	case "yandex":
@@ -39,12 +38,14 @@ func getPrivateKeyFileName(provider string, workingDirectory string) (privateKey
 		if os.IsNotExist(err) {
 			return privateKeyFileName, merry.Prepend(err, "private key file not found. Create it, please.")
 		}
+
 		return privateKeyFileName, merry.Prepend(err, "failed to find private key file")
 	}
+
 	return
 }
 
-func createSshClient(wd, address, provider string) (cc Client, err error) {
+func createSSHClient(wd, address, provider string) (cc Client, err error) {
 	c := &client{
 		workingDirectory: wd,
 		provider:         provider,
@@ -53,19 +54,23 @@ func createSshClient(wd, address, provider string) (cc Client, err error) {
 	if c.keyFileName, err = getPrivateKeyFileName(provider, wd); err != nil {
 		return
 	}
+
 	c.keyFilePath = filepath.Join(wd, c.keyFileName)
 
-	if c.keyFileBytes, err = ioutil.ReadFile(c.keyFilePath); err != nil {
+	if c.keyFileBytes, err = os.ReadFile(c.keyFilePath); err != nil {
 		err = merry.Prependf(err, "failed to read '%s' key file content", c.keyFilePath)
+
 		return
 	}
 
 	if c.internalClient, err = c.getClientInstance(address); err != nil {
 		return
 	}
+
 	llog.Infof("remote secure shell client created")
 
 	cc = c
+
 	return
 }
 
@@ -82,13 +87,16 @@ type client struct {
 
 func (sc *client) GetNewSession() (session Session, err error) {
 	session, err = sc.internalClient.NewSession()
+
 	return
 }
 
 func (sc *client) getClientInstance(address string) (client *ssh.Client, err error) {
 	var signer ssh.Signer
+
 	if signer, err = ssh.ParsePrivateKey(sc.keyFileBytes); err != nil {
 		err = merry.Prepend(err, "failed to parse private key for ssh client")
+
 		return
 	}
 
@@ -97,7 +105,6 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
-		//nolint:gosec
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
 
@@ -105,14 +112,15 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 	if client, err = ssh.Dial("tcp", addr, config); err != nil {
 		err = merry.Prepend(err, "failed to start ssh connection for ssh client")
 	}
+
 	return
 }
 
-func (sc *client) GetPrivateKeyInfo() (string, string) {
+func (sc *client) GetPrivateKeyInfo() (keyFileName, keyFilePath string) {
 	return sc.keyFileName, sc.keyFilePath
 }
 
-// ExecuteCommandWorker - выполнить команду на определенном воркере с сохранением результата
+// ExecuteCommandWorker - выполнить команду на определенном воркере с сохранением результата.
 func ExecuteCommandWorker(workingDirectory, address, text, provider string) (result []byte, err error) {
 	client, err := CreateClient(workingDirectory, address, provider, RemoteClient)
 	if err != nil {
@@ -141,22 +149,26 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 	return
 }
 
-func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {
+func IsExistEntity(address, checkCommand, checkString, workingDirectory, provider string) (checkResult bool, err error) {
 	llog.Debugf("executing of commands %v for check \n", checkCommand)
+
 	var CmdResult []byte
+
 	if CmdResult, err = ExecuteCommandWorker(workingDirectory, address, checkCommand, provider); err != nil {
 		if err != nil {
 			errorMessage := fmt.Sprintf("failed to execute command on worker %v", address)
+
 			return false, merry.Prepend(err, errorMessage)
 		}
 	}
 
 	if strings.Contains(string(CmdResult), checkString) {
-
 		llog.Infoln("entity already exist or parted")
+
 		return true, nil
 	}
 
 	llog.Infoln("entity has not been exist yet")
+
 	return false, nil
 }

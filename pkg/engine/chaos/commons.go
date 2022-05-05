@@ -18,5 +18,6 @@ func CreateController(k *kubeengine.Engine, wd string, isChaosEnabled bool) (c C
 	} else {
 		c = createDummyChaos()
 	}
+
 	return
 }

@@ -15,12 +15,15 @@ import (
 
 func (e *Engine) ListPods(namespace string) (pods []v1.Pod, err error) {
 	var clientSet *kubernetes2.Clientset
+
 	if clientSet, err = e.GetClientSet(); err != nil {
 		err = merry.Prepend(err, "get client set")
+
 		return
 	}
 
 	var podList *v1.PodList
+
 	podList, err = clientSet.CoreV1().
 		Pods(namespace).
 		List(context.TODO(),
@@ -29,9 +32,11 @@ func (e *Engine) ListPods(namespace string) (pods []v1.Pod, err error) {
 			})
 	if err != nil {
 		err = merry.Prepend(err, "get pod list")
+
 		return
 	}
 
 	pods = podList.Items
+
 	return
 }

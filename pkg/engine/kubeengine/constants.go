@@ -6,7 +6,7 @@ package kubeengine
 
 import "time"
 
-// Externally avail constants
+// Externally avail constants.
 const (
 	ResourcePodName           = "pods"
 	ResourceService           = "svc"
@@ -16,14 +16,14 @@ const (
 	PodWaitingWaitCreation    = true
 	PodWaitingNotWaitCreation = false
 
-	PodWaitingTimeTenMinutes = 10 * time.Minute
+	PodWaitingTime = 10 * time.Minute
 
-	SshEntity  = "kubernetes"
+	SSHEntity  = "kubernetes"
 	ConfigPath = ".kube/config"
 
-	// задержка для случаев ожидания переповтора или соблюдения порядка запуска
+	// задержка для случаев ожидания переповтора или соблюдения порядка запуска.
 	ExecTimeout = 5
 
-	// кол-во попыток подключения при ошибке
+	// кол-во попыток подключения при ошибке.
 	ConnectionRetryCount = 3
 )

@@ -6,7 +6,7 @@ package db
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,11 +22,9 @@ import (
 )
 
 const (
-	mongoDirectory = "mongodb"
-
+	mongoDirectory    = "mongodb"
 	mongoOperatorName = "percona-server-mongodb-operator"
-
-	mongoClusterName = "sample-cluster"
+	mongoClusterName  = "sample-cluster"
 )
 
 func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int, sharded bool) (mongo Cluster) {
@@ -41,6 +39,7 @@ func createMongoCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL
 			sharded,
 		),
 	}
+
 	return
 }
 
@@ -48,8 +47,8 @@ type mongoCluster struct {
 	*commonCluster
 }
 
+// Connect подключение к локально развернутому mongo без реплики.
 func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
-	// подключение к локально развернутому mongo без реплики
 	if mongo.DBUrl == "" {
 		mongo.DBUrl = "mongodb://stroppy:stroppy@127.0.0.1:27017;127.0.0.1:27017;127.0.0.1:27017/admin?ssl=false"
 	}
@@ -58,6 +57,7 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to  mongo cluster")
 	}
+
 	return
 }
 
@@ -67,8 +67,9 @@ func (mongo *mongoCluster) Deploy() (err error) {
 	}
 
 	llog.Infof("Waiting 5 minutes for mongo deploy...")
-	// за 5 минут укладывается развертывание кластера из трех шардов
+	// за 5 минут укладывается развертывание кластера из трех шардов.
 	time.Sleep(5 * time.Minute)
+
 	err = mongo.examineCluster("MongoDB",
 		kubeengine.ResourceDefaultNamespace,
 		mongoOperatorName,
@@ -78,7 +79,7 @@ func (mongo *mongoCluster) Deploy() (err error) {
 	}
 
 	var portForwardPodName *v1.Pod
-	// выбираем либо балансер, либо мастер-реплику, в зависимости от конфигурации БД
+	// выбираем либо балансер, либо мастер-реплику, в зависимости от конфигурации БД.
 	for i := range mongo.clusterSpec.Pods {
 		switch {
 		case mongo.sharded:
@@ -97,6 +98,7 @@ func (mongo *mongoCluster) Deploy() (err error) {
 	}
 
 	llog.Debugln("Opening port-forward to pod ", portForwardPodName.Name, "for mongo")
+
 	if err = mongo.openPortForwarding(portForwardPodName.Name, []string{"27017:27017"}); err != nil {
 		return merry.Prepend(err, "failed to open port forward for mongo")
 	}
@@ -112,9 +114,10 @@ func (mongo *mongoCluster) GetSpecification() (spec ClusterSpec) {
 	return
 }
 
-// addStroppyUser - добавить пользователя с необходимыми правами для выполнения тестов
+// addStroppyUser - добавить пользователя с необходимыми правами для выполнения тестов.
 func (mongo *mongoCluster) addStroppyUser(executePodName string) error {
 	success := false
+
 	var podName string
 	// техдолг - заменить имя и пароль на данные из secrets. Нужен отдельный метод.
 	// https://gitlab.com/picodata/openway/stroppy/-/issues/66
@@ -128,7 +131,7 @@ func (mongo *mongoCluster) addStroppyUser(executePodName string) error {
 db.createUser({user: "stroppy",pwd: "stroppy",roles: [ {role:"readWriteAnyDatabase", db:"admin"}, {role:"dbAdminAnyDatabase", db:"admin"},{role:"clusterAdmin", db:"admin"} ]})`,
 	}
 
-	// проходим по всем, т.к. узнавать, кто из ним мастер - долго и дорого, а для mongos должно сработать на первом
+	// проходим по всем, т.к. узнавать, кто из ним мастер - долго и дорого, а для mongos должно сработать на первом.
 	for i := 0; i < 2; i++ {
 		if mongo.sharded {
 			podNameTemplate := strings.Split(executePodName, "-")
@@ -136,13 +139,16 @@ db.createUser({user: "stroppy",pwd: "stroppy",roles: [ {role:"readWriteAnyDataba
 		} else {
 			podName = executePodName
 		}
+
 		llog.Debugf("execute command to pod %v", podName)
+
 		if _, _, err := mongo.k.ExecuteRemoteCommand(podName, "mongod", createUserCmd, "addStroppyUser.log"); err != nil {
 			llog.Errorln(merry.Errorf("failed to add stroppy user to mongo: %v, try %v", err, i))
 
 			// читаем файл с результатом выполнения, чтобы проверить ошибку внутри mongo shell
 			resultFilePath := filepath.Join(mongo.k.Engine.WorkingDirectory, "addStroppyUser.log")
-			result, err := ioutil.ReadFile(resultFilePath)
+
+			result, err := os.ReadFile(resultFilePath)
 			if err != nil {
 				return merry.Prepend(err, "failed to analyze add stroppy user error")
 			}
@@ -150,11 +156,15 @@ db.createUser({user: "stroppy",pwd: "stroppy",roles: [ {role:"readWriteAnyDataba
 			// если пользователь уже есть, выходим
 			if strings.Contains(string(result), "already exists") {
 				success = true
+
 				break
 			}
+
 			continue
 		}
+
 		success = true
+
 		break
 	}
 
@@ -163,5 +173,6 @@ db.createUser({user: "stroppy",pwd: "stroppy",roles: [ {role:"readWriteAnyDataba
 	}
 
 	llog.Debugln("Adding of stroppy user: success")
+
 	return nil
 }

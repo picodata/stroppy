@@ -25,100 +25,113 @@ type TrackingAccount struct {
 	bic        string
 	ban        string
 	balance    *inf.Dec
-	transferId model.TransferId
+	transferID model.TransferID
 }
 
-func (acc *TrackingAccount) setTransfer(transferId model.TransferId) {
-	if acc.transferId != model.NilUuid && acc.transferId != transferId {
+func (acc *TrackingAccount) setTransfer(transferID model.TransferID) {
+	if acc.transferID != model.NilUUID && acc.transferID != transferID {
 		llog.Fatalf("setTransfer() on %v:%v: current transfer id %v, setting %v",
-			acc.bic, acc.ban, acc.transferId, transferId)
+			acc.bic, acc.ban, acc.transferID, transferID)
 	}
-	acc.transferId = transferId
+
+	acc.transferID = transferID
 }
 
-func (acc *TrackingAccount) clearTransfer(transferId model.TransferId) {
-	if acc.transferId != model.NilUuid && acc.transferId != transferId {
+func (acc *TrackingAccount) clearTransfer(transferID model.TransferID) {
+	if acc.transferID != model.NilUUID && acc.transferID != transferID {
 		llog.Fatalf("clearTransfer() on %v:%v: current transfer id %v, clearing %v",
-			acc.bic, acc.ban, acc.transferId, transferId)
+			acc.bic, acc.ban, acc.transferID, transferID)
 	}
-	acc.transferId = model.NilUuid
+
+	acc.transferID = model.NilUUID
 }
 
-func (acc *TrackingAccount) BeginDebit(transferId model.TransferId, amount *inf.Dec) {
-	acc.setTransfer(transferId)
+func (acc *TrackingAccount) BeginDebit(transferID model.TransferID, amount *inf.Dec) {
+	acc.setTransfer(transferID)
 }
 
-func (acc *TrackingAccount) CompleteDebit(transferId model.TransferId, amount *inf.Dec) {
-	acc.clearTransfer(transferId)
+func (acc *TrackingAccount) CompleteDebit(transferID model.TransferID, amount *inf.Dec) {
+	acc.clearTransfer(transferID)
 	acc.balance.Sub(acc.balance, amount)
 }
 
-func (acc *TrackingAccount) BeginCredit(transferId model.TransferId, amount *inf.Dec) {
-	acc.setTransfer(transferId)
+func (acc *TrackingAccount) BeginCredit(transferID model.TransferID, amount *inf.Dec) {
+	acc.setTransfer(transferID)
 }
 
-func (acc *TrackingAccount) CompleteCredit(transferId model.TransferId, amount *inf.Dec) {
-	acc.clearTransfer(transferId)
+func (acc *TrackingAccount) CompleteCredit(transferID model.TransferID, amount *inf.Dec) {
+	acc.clearTransfer(transferID)
 	acc.balance.Add(acc.balance, amount)
 }
 
 type Oracle struct {
 	acs       map[string]*TrackingAccount
-	transfers map[model.TransferId]bool
+	transfers map[model.TransferID]bool
 	mux       sync.Mutex
 }
 
 func (o *Oracle) Init(cluster PredictableCluster) {
 	llog.Infof("Oracle enabled, loading account balances")
+
 	o.acs = make(map[string]*TrackingAccount)
-	o.transfers = make(map[model.TransferId]bool)
+	o.transfers = make(map[model.TransferID]bool)
+
 	accounts, err := cluster.FetchAccounts()
 	if err != nil {
 		llog.Fatalf("%v", err)
 	}
+
 	for _, acc := range accounts {
 		o.acs[acc.Bic+acc.Ban] = &TrackingAccount{
-			bic:     acc.Bic,
-			ban:     acc.Ban,
-			balance: acc.Balance,
+			bic:        acc.Bic,
+			ban:        acc.Ban,
+			balance:    acc.Balance,
+			transferID: model.TransferID{},
 		}
 	}
 }
 
-func (o *Oracle) lookupAccounts(acs []model.Account) (*TrackingAccount, *TrackingAccount) {
-	from, fromFound := o.acs[acs[0].Bic+acs[0].Ban]
-	to, toFound := o.acs[acs[1].Bic+acs[1].Ban]
+func (o *Oracle) lookupAccounts(acs []model.Account) (from, to *TrackingAccount) {
+	var fromFound, toFound bool
+	from, fromFound = o.acs[acs[0].Bic+acs[0].Ban]
+	to, toFound = o.acs[acs[1].Bic+acs[1].Ban]
+
 	if (!fromFound || !toFound) && acs[0].Found && acs[1].Found {
 		llog.Fatalf("One of the accounts is found, while it's missing")
 	}
+
 	return from, to
 }
 
-func (o *Oracle) BeginTransfer(transferId model.TransferId, acs []model.Account, amount *inf.Dec) {
+func (o *Oracle) BeginTransfer(transferID model.TransferID, acs []model.Account, amount *inf.Dec) {
 	o.mux.Lock()
 	defer o.mux.Unlock()
-	if _, exists := o.transfers[transferId]; exists {
-		llog.Tracef("Double execution of the same transfer %v", transferId)
+
+	if _, exists := o.transfers[transferID]; exists {
+		llog.Tracef("Double execution of the same transfer %v", transferID)
 		// Have processed this transfer already
 		return
 	}
+
 	if from, to := o.lookupAccounts(acs); from != nil && to != nil && amount.Cmp(from.balance) <= 0 {
-		from.BeginDebit(transferId, amount)
-		to.BeginCredit(transferId, amount)
+		from.BeginDebit(transferID, amount)
+		to.BeginCredit(transferID, amount)
 	}
 }
 
-func (o *Oracle) CompleteTransfer(transferId model.TransferId, acs []model.Account, amount *inf.Dec) {
+func (o *Oracle) CompleteTransfer(transferID model.TransferID, acs []model.Account, amount *inf.Dec) {
 	o.mux.Lock()
 	defer o.mux.Unlock()
-	if _, exists := o.transfers[transferId]; exists {
+
+	if _, exists := o.transfers[transferID]; exists {
 		// Have processed this transfer already
 		return
 	}
-	o.transfers[transferId] = true
+
+	o.transfers[transferID] = true
 	if from, to := o.lookupAccounts(acs); from != nil && to != nil && amount.Cmp(from.balance) <= 0 {
-		from.CompleteDebit(transferId, amount)
-		to.CompleteCredit(transferId, amount)
+		from.CompleteDebit(transferID, amount)
+		to.CompleteCredit(transferID, amount)
 	}
 }
 
@@ -127,8 +140,10 @@ func (o *Oracle) FindBrokenAccounts(cluster PredictableCluster) {
 		balance, _, err := cluster.FetchBalance(acc.bic, acc.ban)
 		if err != nil {
 			llog.Errorf("failed to fetch balance with bic %v, ban %v from cluster", acc.bic, acc.ban)
+
 			continue
 		}
+
 		if balance.Cmp(acc.balance) != 0 {
 			llog.Errorf("%v:%v balance is %v should be %v", acc.bic, acc.ban, balance, acc.balance)
 		}

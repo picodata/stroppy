@@ -15,13 +15,14 @@ import (
 func CreateKubernetes(settings *config.Settings,
 	provider provider.Provider,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (k *Kubernetes, err error) {
-
+	sshClient ssh.Client,
+) (k *Kubernetes, err error) {
 	k = &Kubernetes{
 		provider: provider,
 	}
 
 	k.Engine, err = kubeengine.CreateEngine(settings, terraformAddressMap, sshClient)
+
 	return
 }
 

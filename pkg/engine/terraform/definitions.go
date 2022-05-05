@@ -15,7 +15,7 @@ const installableTerraformVersion = "0.15.4"
 
 const stateFileName = "terraform.tfstate"
 
-// Длина ответа terraform show при незапущенном кластере
+// Длина ответа terraform show при незапущенном кластере.
 const linesNotInitTerraformShow = 13
 
 var errVersionParsed = errors.New("failed to parse version")

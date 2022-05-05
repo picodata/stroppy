@@ -10,8 +10,7 @@ import (
 )
 
 const (
-	cockroachWorkDir = "cockroach"
-
+	cockroachWorkDir           = "cockroach"
 	cockroachClusterName       = "cockroachdb"
 	cockroachClientName        = "cockroachdb-client-secure"
 	cockroachPublicServiceName = "service/cockroachdb-public"
@@ -29,6 +28,7 @@ func createCockroachCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, d
 			false,
 		),
 	}
+
 	return
 }
 
@@ -38,6 +38,7 @@ type cockroachCluster struct {
 
 func (cc *cockroachCluster) Connect() (cluster interface{}, err error) {
 	cluster, err = cluster2.NewCockroachCluster(cc.DBUrl, cc.connectionPoolSize)
+
 	return
 }
 
@@ -57,10 +58,12 @@ func (cc *cockroachCluster) Deploy() (err error) {
 	if err = cc.openPortForwarding(cockroachPublicServiceName, []string{""}); err != nil {
 		return
 	}
+
 	return
 }
 
 func (cc *cockroachCluster) GetSpecification() (spec ClusterSpec) {
 	spec = cc.clusterSpec
+
 	return
 }

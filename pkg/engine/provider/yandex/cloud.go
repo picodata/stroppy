@@ -31,6 +31,7 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provide
 	clusterDeploymentDirectory := filepath.Join(wd, "cluster", "provider", "yandex")
 
 	var templatesConfig *provider.ClusterConfigurations
+
 	if templatesConfig, err = provider.LoadClusterTemplate(clusterDeploymentDirectory); err != nil {
 		return nil, merry.Prepend(err, "failed to read templates for create yandex provider")
 	}
@@ -43,6 +44,7 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provide
 	}
 
 	yp = &_provider
+
 	return
 }
 
@@ -61,9 +63,10 @@ type Provider struct {
 	addressMapLock sync.Mutex
 }
 
-// Prepare - подготовить файл конфигурации кластера terraform
+// Prepare - подготовить файл конфигурации кластера terraform.
 func (yp *Provider) Prepare() (err error) {
 	var clusterParameters provider.ClusterParameters
+
 	if clusterParameters, err = provider.DispatchTemplate(yp.templatesConfig, yp.settings.Flavor); err != nil {
 		return
 	}
@@ -76,7 +79,7 @@ func (yp *Provider) Prepare() (err error) {
 	return
 }
 
-// PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
+// PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально).
 func (yp *Provider) PerformAdditionalOps(nodes int) error {
 	iqnMap, err := yp.getIQNStorage(nodes, yp.workingDirectory)
 	if err != nil {
@@ -86,6 +89,7 @@ func (yp *Provider) PerformAdditionalOps(nodes int) error {
 	llog.Debugln(iqnMap)
 
 	llog.Infoln("Storages adding for yandex is not used now")
+
 	return nil
 }
 
@@ -93,6 +97,7 @@ func (yp *Provider) RemoveProviderSpecificFiles() {
 	yandexFilesToClear := []string{
 		providerFileName,
 	}
+
 	tools.RemovePathList(yandexFilesToClear, yp.workingDirectory)
 }
 
@@ -103,6 +108,7 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 func (yp *Provider) reparseAddressMap(nodes int) (err error) {
 	if yp.tfStateData == nil {
 		err = errors.New("tf state data empty")
+
 		return
 	}
 
@@ -157,43 +163,34 @@ func (yp *Provider) reparseAddressMap(nodes int) (err error) {
 	yp.addressMap["internal"] = internalAddress
 
 	llog.Infoln(yp.addressMap)
+
 	return
 }
 
+// GetAddressMap Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
+// своя пара - внешний (NAT) и внутренний ip.
+// Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
+// т.к. использование encoding/json
+// влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
+// по переданному тегу json, который можно преобразовать в том числе в строку.
 func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
-	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-	 * своя пара - внешний (NAT) и внутренний ip.
-	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-	 * т.к. использование encoding/json
-	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
-
-	/*defer func() {
-		llog.Infoln("зашли в defer")
-		mapIPAddresses = provider.DeepCopyAddressMap(yp.addressMap)
-		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
-	}()
-
-	yp.addressMapLock.Lock()
-	defer yp.addressMapLock.Lock()
-
-	if yp.addressMap != nil {
-		return
-	}*/
-
 	err = yp.reparseAddressMap(nodes)
 	if err != nil {
 		return nil, err
 	}
+
 	llog.Infoln("вышли из функции GetAddressMap")
+
 	return yp.addressMap, err
 }
 
 func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {
 	var isFoundPrivateKey bool
+
 	var isFoundPublicKey bool
 
 	llog.Infoln("checking of private key for yandex provider...")
+
 	isFoundPrivateKey = engine.IsFileExists(workingDirectory, yandexPrivateKeyFile)
 	if !isFoundPrivateKey {
 		llog.Infoln("checking of private key for yandex provider: unsuccess")
@@ -202,16 +199,19 @@ func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {
 	}
 
 	llog.Infoln("checking of public key for yandex provider...")
+
 	if isFoundPublicKey = engine.IsFileExists(workingDirectory, yandexPublicKeyFile); !isFoundPublicKey {
 		llog.Infoln("checking of public key for yandex provider: unsuccess")
 	}
 
 	if isFoundPrivateKey && isFoundPublicKey {
 		llog.Infoln("checking of authtorized keys for yandex provider: success")
+
 		return true
 	}
 
 	llog.Errorln("checking of authtorized keys for yandex provider: unsuccess")
+
 	return false
 }
 
@@ -222,10 +222,11 @@ func (yp *Provider) Name() string {
 func (yp *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	firstStep = "./cluster/provider/yandex/deploy_base_components.sh"
 	thirdStep = "./cluster/provider/yandex/deploy_monitoring.sh"
+
 	return
 }
 
-// --- private methods ---------------
+// --- private methods ---------------.
 
 func (yp *Provider) getIQNStorage(_ int, _ string) (_ map[string]string, _ error) {
 	return

@@ -28,7 +28,7 @@ var (
 
 	ErrInternalServerError = errors.New("cluster: internal server error")
 
-	// ErrDuplicateKey is returned then there already such unique key
+	// ErrDuplicateKey is returned then there already such unique key.
 	ErrDuplicateKey = errors.New("cluster: duplicate unique key")
 
 	ErrCockroachTxClosed      = errors.New("tx is closed")
@@ -60,6 +60,7 @@ func (e DBClusterType) String() string {
 	case CockroachClusterType:
 		return "CocroachDB"
 	}
+
 	panic("unknown DBClusterType")
 }
 
@@ -79,7 +80,7 @@ const (
 	socketTimeout      = 10 * time.Second
 )
 
-// Settings returns the test run settings
+// Settings returns the test run settings.
 type Settings struct {
 	Count int
 	Seed  int

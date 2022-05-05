@@ -6,7 +6,6 @@ package sshtunnel
 
 import (
 	"errors"
-	"io/ioutil"
 	"os"
 
 	"github.com/ansel1/merry"
@@ -20,11 +19,12 @@ func PrivateKeyFile(file string) (ssh.AuthMethod, error) {
 	if os.IsNotExist(err) {
 		return nil, os.ErrNotExist
 	}
+
 	if info.IsDir() {
 		return nil, errExpectedFile
 	}
 
-	buffer, err := ioutil.ReadFile(file)
+	buffer, err := os.ReadFile(file)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read private key file")
 	}

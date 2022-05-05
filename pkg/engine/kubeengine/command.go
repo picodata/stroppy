@@ -17,14 +17,17 @@ import (
 
 func (e *Engine) ExecuteCommand(text string) (err error) {
 	var commandSessionObject engineSsh.Session
+
 	if commandSessionObject, err = e.sc.GetNewSession(); err != nil {
 		return merry.Prepend(err, "failed to open ssh connection")
 	}
 
 	llog.Debugf("launch command `%s`", text)
+
 	if result, err := commandSessionObject.CombinedOutput(text); err != nil {
 		return merry.Prependf(err, "command exec failed with output `%s`", string(result))
 	}
+
 	llog.Debugf("`%s` command complete", text)
 
 	return
@@ -32,11 +35,13 @@ func (e *Engine) ExecuteCommand(text string) (err error) {
 
 func (e *Engine) DebugCommand(text string, waitComplete bool) (err error) {
 	var sshSession engineSsh.Session
+
 	if sshSession, err = e.sc.GetNewSession(); err != nil {
 		return merry.Prepend(err, "failed to open ssh connection")
 	}
 
 	var stdout io.Reader
+
 	if stdout, err = sshSession.StdoutPipe(); err != nil {
 		return merry.Prepend(err, "failed creating command stdout pipe")
 	}
@@ -46,6 +51,7 @@ func (e *Engine) DebugCommand(text string, waitComplete bool) (err error) {
 	llog.Debugf("debug command `%s", text)
 
 	var textOut []byte
+
 	if textOut, err = sshSession.CombinedOutput(text); err != nil {
 		return merry.Prependf(err, "command execution failed, return text `%s`", string(textOut))
 	}
@@ -53,6 +59,7 @@ func (e *Engine) DebugCommand(text string, waitComplete bool) (err error) {
 	if waitComplete {
 		<-waitCh
 	}
+
 	llog.Debugf("`%s` command debug complete", text)
 
 	return
@@ -60,5 +67,6 @@ func (e *Engine) DebugCommand(text string, waitComplete bool) (err error) {
 
 func (e *Engine) ExecuteF(text string, args ...interface{}) (err error) {
 	err = e.ExecuteCommand(fmt.Sprintf(text, args...))
+
 	return
 }

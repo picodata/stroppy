@@ -20,8 +20,10 @@ var fdbCluster *FDBCluster
 func (cluster *FDBCluster) CheckTableExist(tableName string) (exist bool, err error) {
 	_, err = cluster.pool.ReadTransact(func(tr fdb.ReadTransaction) (interface{}, error) {
 		exist, err = directory.Exists(tr, []string{tableName})
+		//nolint:nilnil
 		return nil, nil
 	})
+
 	return exist, err
 }
 
@@ -29,26 +31,33 @@ func (cluster *FDBCluster) TruncateTable() error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		tx.ClearRange(cluster.model.accounts)
 		tx.ClearRange(cluster.model.transfers)
+		//nolint:nilnil
 		return nil, nil
 	})
+
 	return err
 }
 
 func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Account, err error) {
 	var value accountValue
+
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.accounts.Pack(tuple.Tuple{Bic, Ban})
+
 		valueSrc, err := tx.Get(key).Get()
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		if len(valueSrc) == 0 {
 			return nil, ErrNoRows
 		}
+
 		err = json.Unmarshal(valueSrc, &value)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+		//nolint:nilnil
 		return nil, nil
 	})
 
@@ -65,25 +74,31 @@ func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Acc
 
 func (cluster *FDBCluster) GetTransfer(expectedTransfer model.Transfer) (transfer model.Transfer, err error) {
 	var value transferValue
+
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.transfers.Pack(
-			tuple.Tuple{tuple.UUID(expectedTransfer.Id),
+			tuple.Tuple{
+				tuple.UUID(expectedTransfer.ID),
 				expectedTransfer.Acs[0].Bic,
 				expectedTransfer.Acs[0].Ban,
 				expectedTransfer.Acs[1].Bic,
 				expectedTransfer.Acs[1].Ban,
 			})
+
 		valueSrc, err := tx.Get(key).Get()
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		if len(valueSrc) == 0 {
 			return nil, ErrNoRows
 		}
+
 		err = json.Unmarshal(valueSrc, &value)
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+		//nolint:nilnil
 		return nil, nil
 	})
 
@@ -92,17 +107,19 @@ func (cluster *FDBCluster) GetTransfer(expectedTransfer model.Transfer) (transfe
 	}
 
 	transfer = model.Transfer{
-		Id:        expectedTransfer.Id,
+		ID:        expectedTransfer.ID,
 		Acs:       expectedTransfer.Acs,
 		LockOrder: nil,
 		Amount:    value.Amount,
 		State:     "",
 	}
+
 	return transfer, nil
 }
 
 func (cluster *FDBCluster) isEmpty(tableName string) bool {
 	var sw directory.DirectorySubspace
+
 	switch tableName {
 	case "accounts":
 		sw = cluster.model.accounts
@@ -111,27 +128,37 @@ func (cluster *FDBCluster) isEmpty(tableName string) bool {
 	default:
 		return false
 	}
+
 	var r []fdb.KeyValue
+
 	_, _ = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		r = tx.GetRange(sw, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceOrPanic()
+		//nolint:nilnil
 		return nil, nil
 	})
+
 	return len(r) == 0
 }
 
 func NewTestFDBCluster(t *testing.T) {
+	t.Helper()
+
 	var err error
-	fdbUrlString, err := GetEnvDataStore(Foundation)
+
+	fdbURLString, err := GetEnvDataStore(Foundation)
 	if err != nil {
 		t.Fatal("Get environment error:", err)
 	}
-	fdbCluster, err = NewFoundationCluster(fdbUrlString)
+
+	fdbCluster, err = NewFoundationCluster(fdbURLString)
 	if err != nil {
 		t.Fatal("FDB cluster start fail:", err)
 	}
 }
 
 func FDBBootstrapDB(t *testing.T) {
+	t.Helper()
+
 	expectedSeed := time.Now().UnixNano()
 	if err := fdbCluster.BootstrapDB(expectedCount, int(expectedSeed)); err != nil {
 		t.Errorf("TestFDBBootstrapDB() received internal error %s, expected nil", err)
@@ -141,6 +168,7 @@ func FDBBootstrapDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check table existing fail: %v", err)
 	}
+
 	if !ok {
 		t.Fatalf("Table %s not existing", "accounts")
 	}
@@ -149,6 +177,7 @@ func FDBBootstrapDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Check table existing fail: %v", err)
 	}
+
 	if !ok {
 		t.Fatalf("Table %s not existing", "transfers")
 	}
@@ -156,12 +185,15 @@ func FDBBootstrapDB(t *testing.T) {
 	if !fdbCluster.isEmpty("accounts") {
 		t.Fail()
 	}
+
 	if !fdbCluster.isEmpty("transfers") {
 		t.Fail()
 	}
 }
 
 func FDBInsertAccount(t *testing.T) {
+	t.Helper()
+
 	err := fdbCluster.TruncateTable()
 	if err != nil {
 		t.Errorf("TestFDBInsertAccount() received internal error %v, but expected nil", err)
@@ -188,12 +220,15 @@ func FDBInsertAccount(t *testing.T) {
 }
 
 func FDBMakeAtomicTransfer(t *testing.T) {
+	t.Helper()
+
 	err := fdbCluster.TruncateTable()
 	if err != nil {
 		t.Errorf("TestFDBMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
 
 	var receivedAccount model.Account
+
 	accounts := GenerateAccounts()
 
 	for _, expectedAccount := range accounts {
@@ -213,7 +248,7 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	}
 
 	expectedTransfer := model.Transfer{
-		Id:        model.NewTransferId(),
+		ID:        model.NewTransferID(),
 		Acs:       accounts,
 		LockOrder: []*model.Account{},
 		Amount:    rand.NewTransferAmount(),
@@ -221,7 +256,7 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	}
 
 	receivedTransfer := model.Transfer{
-		Id:        model.TransferId{},
+		ID:        model.TransferID{},
 		Acs:       accounts,
 		LockOrder: nil,
 		Amount:    &inf.Dec{},
@@ -231,11 +266,16 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	if err := fdbCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
+
 	receivedTransfer, err = fdbCluster.GetTransfer(expectedTransfer)
+	if err != nil {
+		t.Fail()
+	}
 
 	if receivedTransfer.Acs[0].Bic != expectedTransfer.Acs[0].Bic {
 		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Bic, receivedTransfer.Acs[0].Bic)
 	}
+
 	if receivedTransfer.Acs[0].Ban != expectedTransfer.Acs[0].Ban {
 		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Ban, receivedTransfer.Acs[0].Ban)
 	}
@@ -243,6 +283,7 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	if receivedTransfer.Acs[1].Bic != expectedTransfer.Acs[1].Bic {
 		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Bic, receivedTransfer.Acs[1].Bic)
 	}
+
 	if receivedTransfer.Acs[1].Ban != expectedTransfer.Acs[1].Ban {
 		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Ban, receivedTransfer.Acs[1].Ban)
 	}
@@ -252,6 +293,7 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	}
 
 	var res inf.Dec
+
 	expectedSourceBalance0 := res.Sub(expectedTransfer.Acs[0].Balance, expectedTransfer.Amount).UnscaledBig().Int64()
 	if receivedAccount.Balance.UnscaledBig().Int64() != expectedSourceBalance0 {
 		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %d  but received %d", expectedSourceBalance0, receivedAccount.Balance.UnscaledBig().Int64())

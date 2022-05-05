@@ -33,10 +33,10 @@ type Cluster interface {
 }
 
 // ClusterTunnel
-/* структура хранит результат открытия port-forward туннеля к кластеру:
- * Command - структура, которая хранит атрибуты команды, которая запустила туннель
- * Error - возможная ошибка при открытии туннеля
- * LocalPort - порт локальной машины для туннеля */
+// структура хранит результат открытия port-forward туннеля к кластеру:
+// Command - структура, которая хранит атрибуты команды, которая запустила туннель
+// Error - возможная ошибка при открытии туннеля
+// LocalPort - порт локальной машины для туннеля.
 type ClusterTunnel struct {
 	Command   *exec.Cmd
 	Error     error
@@ -44,8 +44,8 @@ type ClusterTunnel struct {
 }
 
 func CreateCluster(dbConfig *config.DatabaseSettings,
-	sc ssh.Client, k *kubernetes.Kubernetes, wd string) (_cluster Cluster, err error) {
-
+	sc ssh.Client, k *kubernetes.Kubernetes, wd string,
+) (_cluster Cluster, err error) {
 	// если кол-во соединений не задано, приравниваем к кол-ву воркеров
 	if dbConfig.ConnectPoolSize == 0 {
 		dbConfig.ConnectPoolSize = dbConfig.Workers

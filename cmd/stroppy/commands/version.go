@@ -30,6 +30,7 @@ func newVersionCommand() *cobra.Command {
 		Run: func(_ *cobra.Command, _ []string) {
 			if short {
 				fmt.Println(build.Version)
+
 				return
 			}
 			fmt.Println(build)

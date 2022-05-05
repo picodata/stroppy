@@ -24,6 +24,7 @@ func (chaos *workableController) Deploy() (err error) {
 	if err = chaos.k.ExecuteCommand(deployChaosMesh); err != nil {
 		return merry.Prepend(err, "chaos-mesh deployment failed")
 	}
+
 	llog.Debugln("chaos-mesh prepared successfully")
 
 	if err = chaos.enumChaosParts(); err != nil {
@@ -34,8 +35,10 @@ func (chaos *workableController) Deploy() (err error) {
 		chaosConfigDirName = "_config"
 		rbacFileName       = "rbac.yaml"
 	)
+
 	rbacFileSourcePath := filepath.Join(chaos.wd, chaosConfigDirName, rbacFileName)
 	rbacFileKubemasterPath := filepath.Join("/home/ubuntu", rbacFileName)
+
 	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath); err != nil {
 		return merry.Prepend(err, "rbac.yaml copying")
 	}
@@ -44,6 +47,7 @@ func (chaos *workableController) Deploy() (err error) {
 	if err = chaos.k.ExecuteF(rbacApplyCommand, rbacFileKubemasterPath); err != nil {
 		return merry.Prepend(err, "rbac.yaml applying")
 	}
+
 	llog.Warnf("to access chaos dashboard please login to cloud master machine and run command\n%s\n",
 		"kubectl -n chaos-testing describe secret account-cluster-manager-picodata")
 
@@ -52,6 +56,7 @@ func (chaos *workableController) Deploy() (err error) {
 	}
 
 	llog.Infoln("chaos-mesh deployed successfully")
+
 	return
 }
 
@@ -59,6 +64,7 @@ func (chaos *workableController) Deploy() (err error) {
 
 func (chaos *workableController) enumChaosParts() (err error) {
 	var pods []v1.Pod
+
 	if pods, err = chaos.k.ListPods(chaosNamespace); err != nil {
 		return
 	}
@@ -79,6 +85,7 @@ func (chaos *workableController) enumChaosParts() (err error) {
 	if chaos.dashboardPod == nil {
 		return errors.New("chaos dashboard pod not found")
 	}
+
 	if chaos.controllerPod == nil {
 		return errors.New("chaos control manager pod not found")
 	}
@@ -87,12 +94,9 @@ func (chaos *workableController) enumChaosParts() (err error) {
 }
 
 func (chaos *workableController) establishDashboardAvailability() (err error) {
-	// прокидываем порты, что бы можно было открыть веб-интерфейс
 	var reqURL *url.URL
-	reqURL, err = chaos.k.GetResourceURL(kubeengine.ResourceService,
-		chaosNamespace,
-		chaos.dashboardPod.Name,
-		kubeengine.SubresourcePortForwarding)
+	// прокидываем порты, что бы можно было открыть веб-интерфейс
+	reqURL, err = chaos.k.GetResourceURL(kubeengine.ResourceService, chaosNamespace, chaos.dashboardPod.Name, kubeengine.SubresourcePortForwarding)
 	if err != nil {
 		return merry.Prepend(err, "failed to get url")
 	}
@@ -104,9 +108,11 @@ func (chaos *workableController) establishDashboardAvailability() (err error) {
 	if err != nil {
 		// return merry.Prepend(err, "port-forward is not established")
 		llog.Errorf("chaos dashboard pf fail: %v", err)
+
 		err = nil
 	}
 
 	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333)
+
 	return
 }

@@ -7,7 +7,7 @@ package commands
 import (
 	"math/rand"
 	"net/http"
-	_ "net/http/pprof"
+	_ "net/http/pprof" // Register pprof.
 	"time"
 
 	"gitlab.com/picodata/stroppy/internal/deployment"

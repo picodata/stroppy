@@ -16,7 +16,7 @@ import (
 	"github.com/ansel1/merry"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
+	"gitlab.com/picodata/stroppy/internal/fixedrandomsource"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
@@ -24,7 +24,7 @@ import (
 )
 
 type ClusterPopulatable interface {
-	// BootstrapDB creates correspondig tables and truncates them if they already exists.
+	// BootstrapDB creates corresponding tables and truncates them if they already exists.
 	// The general DB model is described here:
 	// https://docs.google.com/document/d/10tCrLd56ZkPifSlpRF4LPE0yWAc5W2bxN9b5RUhfKss/edit
 	//
@@ -49,6 +49,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 	}
 
 	var clusterSettings cluster.Settings
+
 	if clusterSettings, err = p.Cluster.FetchSettings(); err != nil {
 		return merry.Prepend(err, "cluster settings fetch failed")
 	}
@@ -56,10 +57,12 @@ func (p *BasePayload) Pop(_ string) (err error) {
 	worker := func(id, nAccounts int, wg *sync.WaitGroup) {
 		defer wg.Done()
 
-		var rand fixed_random_source.FixedRandomSource
+		var rand fixedrandomsource.FixedRandomSource
+
 		rand.Init(clusterSettings.Count, clusterSettings.Seed, p.config.BanRangeMultiplier)
 
 		llog.Tracef("Worker %d inserting %d accounts", id, nAccounts)
+
 		for i := 0; i < nAccounts; {
 			cookie := statistics.StatsRequestStart()
 			bic, ban := rand.NewBicAndBan()
@@ -72,13 +75,16 @@ func (p *BasePayload) Pop(_ string) (err error) {
 			}
 
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
+
 			for {
-				err := p.Cluster.InsertAccount(acc)
+				err = p.Cluster.InsertAccount(acc)
 				if err != nil {
 					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
+
 						break
 					}
+
 					atomic.AddUint64(&stats.errors, 1)
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
 					// description of fdb.error with code 1009 -  "Request for future version". May be because lagging of storages
@@ -104,12 +110,15 @@ func (p *BasePayload) Pop(_ string) (err error) {
 						llog.Errorf("Retrying after request error: %v", err)
 						// workaround to finish populate test when account insert gets retryable error
 						time.Sleep(time.Millisecond)
+
 						continue
 					}
+
 					llog.Fatalf("Fatal error: %+v", err)
 				} else {
 					i++
 					statistics.StatsRequestEnd(cookie)
+
 					break
 				}
 			}
@@ -127,6 +136,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 	remainder := p.config.Count - accountsPerWorker*p.config.Workers
 
 	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
+
 	if err = p.chaos.ExecuteCommand(chaosCommand); err != nil {
 		llog.Errorf("failed to execute chaos command: %v", err)
 	}
@@ -136,15 +146,20 @@ func (p *BasePayload) Pop(_ string) (err error) {
 		if i < remainder {
 			nAccounts++
 		}
+
 		wg.Add(1)
+
 		go worker(i+1, nAccounts, &wg)
 	}
 
 	wg.Wait()
+
 	llog.Infof("Done %v accounts, %v errors, %v duplicates",
 		p.config.Count, stats.errors, stats.duplicates)
 
 	p.chaos.Stop()
+
 	statistics.StatsReportSummary()
+
 	return
 }

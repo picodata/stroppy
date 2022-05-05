@@ -24,7 +24,7 @@ import (
 	"gopkg.in/inf.v0"
 )
 
-const mongoStatJsonFileTemplate = "serverStatus_%v.json"
+const mongoStatJSONFileTemplate = "serverStatus_%v.json"
 
 // MongoDBCluster - объявление соединения к FDB и ссылки на модель данных.
 type MongoDBCluster struct {
@@ -50,62 +50,63 @@ func (cluster *MongoDBCluster) InsertTransfer(_ *model.Transfer) error {
 	return errors.New("implement me")
 }
 
-func (cluster *MongoDBCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
+func (cluster *MongoDBCluster) DeleteTransfer(_ model.TransferID, _ uuid.UUID) error {
 	return errors.New("implement me")
 }
 
-func (cluster *MongoDBCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+func (cluster *MongoDBCluster) SetTransferClient(clientID uuid.UUID, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+func (cluster *MongoDBCluster) FetchTransferClient(transferID model.TransferID) (*uuid.UUID, error) {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *MongoDBCluster) ClearTransferClient(transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *MongoDBCluster) SetTransferState(state string, transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+func (cluster *MongoDBCluster) FetchTransfer(transferID model.TransferID) (*model.Transfer, error) {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+func (cluster *MongoDBCluster) FetchDeadTransfers() ([]model.TransferID, error) {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+func (cluster *MongoDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cluster *MongoDBCluster) LockAccount(transferID model.TransferID, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	panic("implement me")
 }
 
-func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-// NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
+// NewMongoDBCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
 func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool, setDirect bool) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
 
 	llog.Debugln("sharded state:", sharded)
-	// задаем максимальный размер пула соединений равный переданному пулу или кол-ву воркеров (по умолчанию)
+
+	// задаем максимальный размер пула соединений равный переданному пулу или кол-ву воркеров (по умолчанию).
 	clientOptions.SetMaxPoolSize(poolSize)
 	clientOptions.ApplyURI(dbURL)
-	// This parameters was increased for garantee of success test finish and calculating of total balance
+	// This parameters was increased for guarantee of success test finish and calculating of total balance.
 	clientOptions.SetMaxConnIdleTime(maxConnIdleTimeout)
 	clientOptions.SetHeartbeatInterval(heartBeatInterval)
 	clientOptions.SetSocketTimeout(socketTimeout)
-
 	clientOptions.SetDirect(setDirect)
 
 	llog.Debugln("connecting to mongodb...")
+
 	client, err := mongo.NewClient(&clientOptions)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create mongoDB client")
@@ -116,7 +117,7 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool, setDirect bo
 		return nil, merry.Prepend(err, "failed to connect mongoDB database")
 	}
 
-	// проверяем успешность соединения
+	// проверяем успешность соединения.
 	err = client.Ping(context.TODO(), nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to ping mongoDB database")
@@ -180,34 +181,42 @@ func (cluster *MongoDBCluster) addSharding() error {
 	}
 
 	llog.Debugln("Initialized sharding: success")
+
 	return nil
 }
 
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
+
 	var insertResult *mongo.InsertOneResult
+
 	var indexName string
+
 	var err error
 
 	if err = cluster.mongoModel.accounts.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean accounts")
 	}
+
 	llog.Debugf("Cleaned accounts collection\n")
 
 	if err = cluster.mongoModel.transfers.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean transfers")
 	}
+
 	llog.Debugf("Cleaned transfers collection \n")
 
 	if err = cluster.mongoModel.settings.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean settings")
 	}
+
 	llog.Debugf("Cleaned settings collection \n")
 
 	if err = cluster.mongoModel.checksum.Drop(context.TODO()); err != nil {
 		return merry.Prepend(err, "failed to clean checksum")
 	}
+
 	llog.Debugf("Cleaned checksum collection \n")
 
 	if insertResult, err = cluster.mongoModel.settings.InsertOne(context.TODO(), bson.D{primitive.E{Key: "count", Value: count}}, &options.InsertOneOptions{}); err != nil {
@@ -249,14 +258,16 @@ func (cluster *MongoDBCluster) GetClusterType() DBClusterType {
 
 // FetchSettings - получить значения параметров настройки.
 func (cluster *MongoDBCluster) FetchSettings() (Settings, error) {
+	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.M{"_id": 0})
 	// добавляем явную сортировку, чтобы брать записи в порядке добавления и ходить в БД один раз
 	// также убираем из вывода поле _id
-	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.M{"_id": 0})
+
 	cursor, err := cluster.mongoModel.settings.Find(context.TODO(), bson.D{}, opts)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return Settings{}, ErrNoRows
 		}
+
 		return Settings{}, merry.Prepend(err, "failed to fetch settings")
 	}
 
@@ -276,6 +287,7 @@ func (cluster *MongoDBCluster) FetchSettings() (Settings, error) {
 // InsertAccount - сохранить новый счет.
 func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 	var insertAccountResult *mongo.InsertOneResult
+
 	var account mongo.InsertOneModel
 
 	account.Document = bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}, {Key: "balance", Value: acc.Balance.UnscaledBig().Int64()}}
@@ -284,25 +296,31 @@ func (cluster *MongoDBCluster) InsertAccount(acc model.Account) (err error) {
 		if mongo.IsDuplicateKeyError(err) {
 			return merry.Wrap(ErrDuplicateKey)
 		}
+
 		return merry.Prepend(err, "failed to insert account")
 	}
 
 	llog.Tracef("Inserted account with id %v", insertAccountResult)
+
 	return nil
 }
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *MongoDBCluster) FetchTotal() (*inf.Dec, error) {
 	var balance inf.Dec
+
 	var result map[string][]byte
+
 	// добавляем явную сортировку, чтобы брать записи в порядке добавления и ходить в БД один раз
-	// также убираем из вывода поле _id
+	// также убираем из вывода поле _id.
 	opts := options.FindOne().SetProjection(bson.M{"_id": 0})
+
 	err := cluster.mongoModel.checksum.FindOne(context.TODO(), bson.D{}, opts).Decode(&result)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Prepend(err, "failed to fetch total balance")
 	}
 
@@ -316,10 +334,13 @@ func (cluster *MongoDBCluster) FetchTotal() (*inf.Dec, error) {
 // PersistTotal - сохранить значение итогового баланса в settings.
 func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 	var updateResult *mongo.UpdateResult
+
 	var totalBalanceRaw []byte
+
 	var err error
 
 	llog.Debugf("upsent total balance %v", total)
+
 	if totalBalanceRaw, err = total.GobEncode(); err != nil {
 		return merry.Prepend(err, "failed to encode total balance for checksum")
 	}
@@ -338,6 +359,7 @@ func (cluster *MongoDBCluster) PersistTotal(total inf.Dec) error {
 	}
 
 	llog.Debugf("inserted total balance in checksum with id %v", updateResult)
+
 	return nil
 }
 
@@ -366,6 +388,7 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	cursor, err := cluster.mongoModel.accounts.Aggregate(context.TODO(), pipe, opts)
 	if err != nil {
 		llog.Errorf("Getting error by mongo aggreration: %v, recalculating again by internal loop", err)
+
 		for i := 0; i < settings.Count; i = i + iterRange {
 			opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(
 				bson.D{{Key: "_id", Value: 0}, {Key: "bicBan", Value: 0}})
@@ -383,6 +406,7 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 				if errors.Is(err, mongo.ErrNoDocuments) {
 					return nil, ErrNoRows
 				}
+
 				return nil, merry.Prepend(err, "failed to get accounts array")
 			}
 
@@ -398,9 +422,10 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 			for _, balancesMap := range results {
 				totalBalance += balancesMap["balance"]
 			}
-			results = nil
 
+			results = nil
 		}
+
 		return inf.NewDec(totalBalance, 0), nil
 	}
 
@@ -412,21 +437,23 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	}
 
 	return inf.NewDec(result.Balance, 0), nil
-
 }
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
+
 	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
 		primitive.E{Key: "_id", Value: 0},
 		{Key: "bicBan", Value: 0},
 	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: amount}}}}
+
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return ErrNoRows
 		}
+
 		return merry.Prepend(err, "failed to update destination account balance")
 	}
 
@@ -435,16 +462,19 @@ func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc mode
 
 func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
 	var updatedDocument map[string]int64
+
 	updateOpts := options.FindOneAndUpdate().SetUpsert(false).SetProjection(bson.D{
 		primitive.E{Key: "_id", Value: 0},
 		{Key: "bicBan", Value: 0},
 	})
 	filter := bson.D{primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", acc.Bic, acc.Ban)}}
 	update := bson.D{primitive.E{Key: "$inc", Value: bson.D{{Key: "balance", Value: -amount}}}}
+
 	if err := accounts.FindOneAndUpdate(sessCtx, filter, update, updateOpts).Decode(&updatedDocument); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return ErrNoRows
 		}
+
 		return merry.Prepend(err, "failed to update destination account balance")
 	}
 
@@ -453,24 +483,23 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 	}
 
 	return nil
-
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientID uuid.UUID) error {
 	ctx := context.Background()
 	transfers := cluster.mongoModel.transfers
 	srcAccounts := cluster.mongoModel.accounts
 	destAccounts := cluster.mongoModel.accounts
+
 	var err error
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
 
-		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks
+		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks.
 
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
-
 			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
 				return nil, merry.Prepend(err, "failed to to withdraw money")
 			}
@@ -478,9 +507,7 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clie
 			if err = cluster.TopUpMoney(sessCtx, transfer.Acs[1], transfer.Amount.UnscaledBig().Int64(), destAccounts); err != nil {
 				return nil, merry.Prepend(err, "failed to top up money")
 			}
-
 		} else {
-
 			if err = cluster.TopUpMoney(sessCtx, transfer.Acs[1], transfer.Amount.UnscaledBig().Int64(), destAccounts); err != nil {
 				return nil, merry.Prepend(err, "failed to top up money")
 			}
@@ -488,11 +515,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clie
 			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
 				return nil, merry.Prepend(err, "failed to to withdraw money")
 			}
-
 		}
 
 		docs := bson.D{
-			{Key: "id", Value: transfer.Id},
+			{Key: "id", Value: transfer.ID},
 			{Key: "srcBic", Value: transfer.Acs[0].Bic},
 			{Key: "srcBan", Value: transfer.Acs[0].Ban},
 			{Key: "destBic", Value: transfer.Acs[1].Bic},
@@ -502,32 +528,34 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clie
 			{Key: "State", Value: transfer.State},
 		}
 
-		// вставляем запись о переводе
+		// вставляем запись о переводе.
 		if insertResult, err = transfers.InsertOne(sessCtx, docs); err != nil {
-
 			return nil, merry.Prepend(err, "failed to insert transfer")
 		}
-		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)
 
-		return nil, nil
+		llog.Tracef("Inserted transfer with %v and document ID %v", transfer.ID, insertResult)
+
+		return nil, err
 	}
 
 	session, err := cluster.client.StartSession()
 	if err != nil {
 		return merry.Prepend(err, "failed to start session for transaction")
 	}
+
 	defer session.EndSession(ctx)
 
 	_, err = session.WithTransaction(ctx, callback)
 	if err != nil {
 		llog.Debugf("failed to execute transaction: %v", err)
+
 		return merry.Wrap(err)
 	}
 
 	return nil
 }
 
-// FetchAccounts - получить список аккаунтов
+// FetchAccounts - получить список аккаунтов.
 func (cluster *MongoDBCluster) FetchAccounts() ([]model.Account, error) {
 	return nil, nil
 }
@@ -542,11 +570,13 @@ func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *
 		{Key: "bic", Value: 0},
 	})
 	filter := bson.D{primitive.E{Key: "bic", Value: bic}, {Key: "ban", Value: ban}}
+
 	cursor, err := cluster.mongoModel.accounts.Find(context.TODO(), filter, opts)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil, ErrNoRows
 		}
+
 		return nil, nil, merry.Prepend(err, "failed to fetch checksum")
 	}
 
@@ -565,15 +595,13 @@ func (cluster *MongoDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *
 }
 
 func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration) error {
-
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")
+
 	go cluster.getStatistics(statInterval, errChan)
 
-	errorCheck := <-errChan
-
-	if errorCheck != nil {
+	if errorCheck := <-errChan; errorCheck != nil {
 		return merry.Prepend(errorCheck, "failed to get statistic")
 	}
 
@@ -581,15 +609,18 @@ func (cluster *MongoDBCluster) StartStatisticsCollect(statInterval time.Duration
 }
 
 func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan chan error) {
-
 	var once sync.Once
+
 	var commandResult bson.M
+
 	var serverStatus []byte
 
 	const dateFormat = "02-01-2006_15:04:05"
 
-	statFileName := fmt.Sprintf(mongoStatJsonFileTemplate, time.Now().Format(dateFormat))
+	statFileName := fmt.Sprintf(mongoStatJSONFileTemplate, time.Now().Format(dateFormat))
+
 	llog.Debugln("Opening statistic file...")
+
 	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		errChan <- merry.Prepend(err, "failed to open statistic file")
@@ -615,6 +646,7 @@ func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan
 	}
 
 	separateString := fmt.Sprintf("\n %v \n", time.Now().Format(dateFormat))
+
 	if _, err = statFile.Write([]byte(separateString)); err != nil {
 		errChan <- merry.Prepend(err, "failed to write separate string to statistic file")
 	}
@@ -623,10 +655,10 @@ func (cluster *MongoDBCluster) getStatistics(statInterval time.Duration, errChan
 		errChan <- merry.Prepend(err, "failed to write data to statistic file")
 	}
 
-	// если ошибки нет, то отправляем nil, чтобы продолжить работу
+	// если ошибки нет, то отправляем nil, чтобы продолжить работу.
 	once.Do(func() {
 		errChan <- nil
 	})
-
+	// nolint:durationcheck
 	time.Sleep(statInterval * time.Second)
 }

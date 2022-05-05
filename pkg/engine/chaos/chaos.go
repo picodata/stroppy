@@ -27,6 +27,7 @@ func createWorkableController(k *kubeengine.Engine, wd string) (c Controller) {
 
 		portForwardStopChan: make(chan struct{}),
 	}
+
 	return
 }
 
@@ -45,19 +46,20 @@ type workableController struct {
 func (chaos *workableController) executeAtomicCommand(scenarioName string) (err error) {
 	llog.Infof("now starting chaos '%s' scenario", scenarioName)
 
-	scenario := createScenario(scenarioName, chaos.wd)
-	if err = chaos.k.LoadFile(scenario.sourcePath, scenario.destinationPath); err != nil {
+	plan := createScenario(scenarioName, chaos.wd)
+	if err = chaos.k.LoadFile(plan.sourcePath, plan.destinationPath); err != nil {
 		return merry.Prepend(err, "load file failed")
 	}
-	llog.Debugf("full chaos command object is '%v'", scenario)
 
-	if err = chaos.k.ExecuteF("kubectl apply -f %s", scenario.destinationPath); err != nil {
+	llog.Debugf("full chaos command object is '%v'", plan)
+
+	if err = chaos.k.ExecuteF("kubectl apply -f %s", plan.destinationPath); err != nil {
 		return merry.Prepend(err, "scenario run failed")
 	}
 
 	chaos.runningScenariosLock.Lock()
 	defer chaos.runningScenariosLock.Unlock()
-	chaos.runningScenarios[scenario.scenarioName] = scenario
+	chaos.runningScenarios[plan.scenarioName] = plan
 
 	return
 }
@@ -78,9 +80,11 @@ func (chaos *workableController) Stop() {
 	defer chaos.runningScenariosLock.Unlock()
 
 	var err error
+
 	for _, s := range chaos.runningScenarios {
 		if s.isRunning {
 			llog.Infof("stopping chaos scenario '%s'\n", s.scenarioName)
+
 			if err = chaos.k.ExecuteF("kubectl delete -f %s", s.destinationPath); err != nil {
 				llog.Warnf("'%s' scenario not stopped: %v", s.destinationPath, err)
 			}

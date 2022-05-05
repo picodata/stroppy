@@ -28,6 +28,7 @@ func CreateStroppyPod(e *engine.Engine) (pod *Pod) {
 	pod = &Pod{
 		e: e,
 	}
+
 	return
 }
 
@@ -38,6 +39,7 @@ type Pod struct {
 
 func (pod *Pod) Name() (name string) {
 	name = pod.internalPod.Name
+
 	return
 }
 
@@ -45,21 +47,24 @@ func (pod *Pod) ContainerName(containerNum int) (contName string, err error) {
 	contList := pod.internalPod.Spec.Containers
 	if contList == nil {
 		err = errors.New("not initialized")
+
 		return
 	}
 
-	contCount := len(contList)
-	if contCount < containerNum {
+	if contCount := len(contList); contCount < containerNum {
 		err = fmt.Errorf("container num %d does not exists: %d", containerNum, contCount)
+
 		return
 	}
 
 	contName = contList[containerNum].Name
+
 	return
 }
 
 func (pod *Pod) Deploy() (err error) {
 	var clientSet *kubernetes.Clientset
+
 	if clientSet, err = pod.e.GetClientSet(); err != nil {
 		return merry.Prepend(err, "failed to get clientset for stroppy secret")
 	}
@@ -71,6 +76,7 @@ func (pod *Pod) Deploy() (err error) {
 	deployConfigStroppyPath := filepath.Join(pod.e.WorkingDirectory, "cluster", deployConfigFile)
 
 	var deployConfigBytes []byte
+
 	if deployConfigBytes, err = ioutil.ReadFile(deployConfigStroppyPath); err != nil {
 		return merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
@@ -97,6 +103,7 @@ func (pod *Pod) Deploy() (err error) {
 		if err != nil {
 			err = fmt.Errorf("failed to create stroppy pod: %v", err)
 		}
+
 		return
 	}
 
@@ -108,10 +115,12 @@ func (pod *Pod) Deploy() (err error) {
 			err = fmt.Errorf("failed to delete stroppy pod: %v", err)
 			llog.Warn(err)
 		}
+
 		return
 	}
 
 	llog.Infoln("Applying stroppy pod...")
+
 	err = tools.Retry("deploy stroppy pod",
 		func() (err error) {
 			if err = createPod(); err != nil {
@@ -137,7 +146,7 @@ func (pod *Pod) Deploy() (err error) {
 	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
 	if pod.internalPod.Status.Phase != v1.PodRunning {
 		pod.internalPod, err = pod.e.WaitPod(PodName, engine.ResourceDefaultNamespace,
-			engine.PodWaitingNotWaitCreation, engine.PodWaitingTimeTenMinutes)
+			engine.PodWaitingNotWaitCreation, engine.PodWaitingTime)
 		if err != nil {
 			retryErr := tools.Retry("stroppy pod recreation",
 				func() (err error) {
@@ -148,6 +157,7 @@ func (pod *Pod) Deploy() (err error) {
 
 					time.Sleep(5 * time.Second)
 					err = createPod()
+
 					return
 				},
 
@@ -160,6 +170,7 @@ func (pod *Pod) Deploy() (err error) {
 	}
 
 	llog.Infoln("Applying the stroppy pod: success")
+
 	return
 }
 
@@ -169,14 +180,17 @@ func (pod *Pod) prepareDeploy(clientSet *kubernetes.Clientset) (err error) {
 	if err = pod.e.ExecuteCommand(dockerRepLoginCmd); err != nil {
 		return merry.Prepend(err, "failed to login in prvivate repository")
 	}
+
 	llog.Infoln("logging in private repository: success")
 
 	secretFilePath := filepath.Join(pod.e.WorkingDirectory, "cluster", secretFile)
 
 	var secretFile []byte
+
 	if secretFile, err = ioutil.ReadFile(secretFilePath); err != nil {
 		return merry.Prepend(err, "failed to read config file for stroppy secret")
 	}
+
 	secret := applyconfig.Secret("stroppy-secret", "default")
 
 	// используем github.com/ghodss/yaml, т.к она поддерживает работу с зашифрованными строками
@@ -185,6 +199,7 @@ func (pod *Pod) prepareDeploy(clientSet *kubernetes.Clientset) (err error) {
 	}
 
 	llog.Infoln("Applying the stroppy secret...")
+
 	err = tools.Retry("apply stroppy secret",
 		func() (err error) {
 			_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
@@ -193,6 +208,7 @@ func (pod *Pod) prepareDeploy(clientSet *kubernetes.Clientset) (err error) {
 				Force:        false,
 				FieldManager: fieldManagerName,
 			})
+
 			return
 		},
 		tools.RetryStandardRetryCount,
@@ -202,5 +218,6 @@ func (pod *Pod) prepareDeploy(clientSet *kubernetes.Clientset) (err error) {
 	}
 
 	llog.Infoln("applying of k8s secret: success")
+
 	return
 }

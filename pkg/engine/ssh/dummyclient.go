@@ -16,6 +16,7 @@ func createDummyClient() (cc Client, _ error) {
 	cc = &dummyClient{}
 
 	llog.Debugf("dummy shell client created")
+
 	return
 }
 
@@ -23,7 +24,9 @@ type dummyClient struct{}
 
 func (dc *dummyClient) GetNewSession() (session Session, _ error) {
 	session = &dummySession{}
+
 	llog.Debug("new dummy session successfully created")
+
 	return
 }
 
@@ -35,12 +38,14 @@ type dummySession struct{}
 
 func (ds *dummySession) CombinedOutput(text string) (output []byte, _ error) {
 	output = []byte(fmt.Sprintf("dummy output for '%s' command", text))
+
 	return
 }
 
 func (ds *dummySession) StdoutPipe() (stdout io.Reader, _ error) {
 	m := "dummy session stdout pipe content"
 	stdout = bytes.NewBufferString(m)
+
 	return
 }
 

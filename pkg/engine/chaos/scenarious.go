@@ -18,6 +18,7 @@ func createScenario(name, wd string) (s scenario) {
 
 		isRunning: false,
 	}
+
 	return
 }
 

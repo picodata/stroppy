@@ -17,33 +17,43 @@ import (
 )
 
 func NewTestMongoDBCluster(t *testing.T) {
+	t.Helper()
+
 	var err error
-	// пока оставляем так, чтобы потом заменить на конкретный адрес
+
+	// пока оставляем так, чтобы потом заменить на конкретный адрес.
 	sharded := false
-	mongoUrlString, err := GetEnvDataStore(MongoDB)
+
+	mongoURLString, err := GetEnvDataStore(MongoDB)
 	if err != nil {
 		t.Fatal("Get environment error:", err)
 	}
-	mongoCluster, err = NewMongoDBCluster(mongoUrlString, uint64(poolSize), sharded, true)
+
+	mongoCluster, err = NewMongoDBCluster(mongoURLString, uint64(poolSize), sharded, true)
 	if err != nil {
 		t.Fatal("Mongo cluster start fail:", err)
 	}
-
 }
 
 func MongoBootstrapDB(t *testing.T) {
+	t.Helper()
+
 	var err error
+
 	var collNames []string
-	// используем значения по умолчанию
+
+	// используем значения по умолчанию.
 	expectedSeed := time.Now().UnixNano()
+
 	if err = mongoCluster.BootstrapDB(expectedCount, int(expectedSeed)); err != nil {
 		t.Errorf("TestBootstrapDB() received internal error %s, expected nil", err)
 	}
+
 	if collNames, err = mongoCluster.client.Database("stroppy").ListCollectionNames(context.TODO(), bson.D{{}}); err != nil {
 		t.Errorf("TestBootstrapDB() received error %s, expected list of collections", err)
 	}
 
-	// проверяем, что коллекции трансферов и контрольных сумм удалены
+	// проверяем, что коллекции трансферов и контрольных сумм удалены.
 	for _, coll := range collNames {
 		if coll == "transfers" {
 			t.Error("transfers collection found after drop. Expected collection not found")
@@ -52,24 +62,28 @@ func MongoBootstrapDB(t *testing.T) {
 		}
 	}
 
-	// проверяем, что коллекция счетов есть, но пустая
+	// проверяем, что коллекция счетов есть, но пустая.
 	count, err := mongoCluster.mongoModel.accounts.CountDocuments(context.TODO(), bson.D{{}})
 	if count != 0 {
 		t.Errorf("Expected 0 documents in accounts, but received %v", err)
 	}
+
 	// проверяем корректность заполнения настроек
 	opts := options.Find().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.M{"_id": 0})
+
 	cursor, err := mongoCluster.mongoModel.settings.Find(context.TODO(), bson.D{}, opts)
 	if err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			t.Error("Expected count and seed values, but nothing documents found")
 		}
+
 		t.Errorf("TestBootstrapDB() received error %s, but expected cursor from settings collection", err)
 	}
 
 	defer cursor.Close(context.TODO())
 
 	var results []map[string]int
+
 	if err = cursor.All(context.TODO(), &results); err != nil {
 		t.Errorf("TestBootstrapDB() received error %s, but expected result of decode cursor from settings collection", err)
 	}
@@ -88,7 +102,9 @@ func MongoBootstrapDB(t *testing.T) {
 	}
 
 	var indexList []bson.M
+
 	expectedIndex := bson.M{}
+
 	if err = indexes.All(context.TODO(), &indexList); err != nil {
 		t.Errorf("Expected opening cursor, received %v", err)
 	}
@@ -98,14 +114,16 @@ func MongoBootstrapDB(t *testing.T) {
 			expectedIndex = index
 		}
 	}
+
 	if len(expectedIndex) == 0 {
 		t.Error("Expected index accountIndex, but index not found")
 	}
 }
 
 func MongoInsertAccount(t *testing.T) {
-	for i := 0; i < 2; i++ {
+	t.Helper()
 
+	for i := 0; i < 2; i++ {
 		rand.Init(expectedCount, int(time.Now().UnixNano()), defaultBanRangeMultiplier)
 		bic, ban := rand.NewBicAndBan()
 		balance := rand.NewStartBalance()
@@ -127,6 +145,7 @@ func MongoInsertAccount(t *testing.T) {
 		getOpts := options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
 			primitive.E{Key: "_id", Value: 0},
 		})
+
 		// получаем баланс счета-источника
 		if err := mongoCluster.mongoModel.accounts.FindOne(context.TODO(), bson.D{
 			primitive.E{Key: "bicBan", Value: expectedABicBan},
@@ -134,6 +153,7 @@ func MongoInsertAccount(t *testing.T) {
 			if errors.Is(err, mongo.ErrNoDocuments) {
 				t.Error("TestInsertAccount() expected 1 document, but received 0 document")
 			}
+
 			t.Errorf("TestInsertAccount() expected 1 document, but received error %v", err)
 		}
 
@@ -153,14 +173,14 @@ func MongoInsertAccount(t *testing.T) {
 			PendingTransfer: [16]byte{},
 			Found:           false,
 		})
-
 	}
 }
 
 func MongoMakeAtomicTransfer(t *testing.T) {
+	t.Helper()
 
 	expectedTransfer := model.Transfer{
-		Id:        model.NewTransferId(),
+		ID:        model.NewTransferID(),
 		Acs:       receivedAccounts,
 		LockOrder: []*model.Account{},
 		Amount:    rand.NewTransferAmount(),
@@ -175,12 +195,11 @@ func MongoMakeAtomicTransfer(t *testing.T) {
 		primitive.E{Key: "_id", Value: 0},
 	})
 
-	if err := mongoCluster.mongoModel.transfers.FindOne(context.TODO(), bson.D{
-		primitive.E{Key: "id", Value: expectedTransfer.Id},
-	}, getOpts).Decode(&receivedTransfer); err != nil {
+	if err := mongoCluster.mongoModel.transfers.FindOne(context.TODO(), bson.D{primitive.E{Key: "id", Value: expectedTransfer.ID}}, getOpts).Decode(&receivedTransfer); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			t.Error("TestMakeAtomicTransfer() expected 1 document of transfer, but received 0 document")
 		}
+
 		t.Errorf("TestMakeAtomicTransfer() expected 1 document of transfer, but received error %v", err)
 	}
 
@@ -205,15 +224,14 @@ func MongoMakeAtomicTransfer(t *testing.T) {
 	}
 
 	// проверяем, что баланс изменился у обоих счетов
-	getOpts = options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{
-		primitive.E{Key: "_id", Value: 0},
-	})
+	getOpts = options.FindOne().SetSort(bson.D{primitive.E{Key: "_id", Value: 1}}).SetProjection(bson.D{primitive.E{Key: "_id", Value: 0}})
 	if err := mongoCluster.mongoModel.accounts.FindOne(context.TODO(), bson.D{
 		primitive.E{Key: "bicBan", Value: fmt.Sprintf("%v%v", expectedTransfer.Acs[0].Bic, expectedTransfer.Acs[0].Ban)},
 	}, getOpts).Decode(&receivedAccount); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			t.Error("TestMakeAtomicTransfer() expected source account, but received 0 document")
 		}
+
 		t.Errorf("TestMakeAtomicTransfer() expected source account, but received error %v", err)
 	}
 
@@ -228,6 +246,7 @@ func MongoMakeAtomicTransfer(t *testing.T) {
 		if errors.Is(err, mongo.ErrNoDocuments) {
 			t.Error("TestMakeAtomicTransfer() expected destination account, but received 0 document")
 		}
+
 		t.Errorf("TestMakeAtomicTransfer() expected destination account, but received error %v", err)
 	}
 

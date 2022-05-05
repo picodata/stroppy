@@ -24,12 +24,11 @@ import (
 )
 
 // CartridgeCluster - объявление соединения к FDB и ссылки на модель данных.
-//nolint:golint,structcheck
 type CartridgeCluster struct {
 	client *http.Client
-	//nolint:golint,unused
-	binary_conn *tarantool.Connection
-	url         string
+	// nolint:unused,structcheck
+	binaryConn *tarantool.Connection
+	url        string
 }
 
 type account struct {
@@ -42,13 +41,13 @@ type account struct {
 }
 
 type transferMessage struct {
-	TransferId      string `json:"transfer_id"`
+	TransferID      string `json:"transfer_id"`
 	SrcBic          string `json:"src_bic"`
 	SrcBan          string `json:"src_ban"`
 	DestBic         string `json:"dest_bic"`
 	DestBan         string `json:"dest_ban"`
 	State           string `json:"state"`
-	ClientId        string `json:"client_id"`
+	ClientID        string `json:"client_id"`
 	ClientTimestamp string `json:"client_timestamp"`
 	Amount          int64  `json:"amount"`
 }
@@ -57,49 +56,48 @@ func (cluster *CartridgeCluster) InsertTransfer(_ *model.Transfer) error {
 	return errors.New("implement me")
 }
 
-func (cluster *CartridgeCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
+func (cluster *CartridgeCluster) DeleteTransfer(_ model.TransferID, _ uuid.UUID) error {
 	return errors.New("implement me")
 }
 
-func (cluster *CartridgeCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+func (cluster *CartridgeCluster) SetTransferClient(clientID uuid.UUID, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+func (cluster *CartridgeCluster) FetchTransferClient(transferID model.TransferID) (*uuid.UUID, error) {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *CartridgeCluster) ClearTransferClient(transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *CartridgeCluster) SetTransferState(state string, transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+func (cluster *CartridgeCluster) FetchTransfer(transferID model.TransferID) (*model.Transfer, error) {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+func (cluster *CartridgeCluster) FetchDeadTransfers() ([]model.TransferID, error) {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+func (cluster *CartridgeCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cluster *CartridgeCluster) LockAccount(transferID model.TransferID, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	panic("implement me")
 }
 
-func (cluster *CartridgeCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+func (cluster *CartridgeCluster) UnlockAccount(bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-// NewFoundationCluster - Создать подключение к cartridge и создать новые коллекции, если ещё не созданы.
+// NewCartridgeCluster - Создать подключение к cartridge и создать новые коллекции, если ещё не созданы.
 func NewCartridgeCluster(dbURL string, poolSize uint64, sharded bool) (*CartridgeCluster, error) {
-
 	llog.Debugln("connecting to cartridge...")
 
 	transport := &http.Transport{
@@ -117,7 +115,7 @@ func NewCartridgeCluster(dbURL string, poolSize uint64, sharded bool) (*Cartridg
 	}, nil
 }
 
-//nolint:golint,unused
+// nolint:unused
 func (cluster *CartridgeCluster) addSharding() error {
 	return nil
 }
@@ -126,13 +124,10 @@ func (cluster *CartridgeCluster) addSharding() error {
 func (cluster *CartridgeCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
 
-	body_template := []byte(`{"count":` + fmt.Sprintf("%v", count) + `,"seed": ` + fmt.Sprintf("%v", seed) + `}`)
-	request_template := fmt.Sprintf("%s/db/bootstrap", cluster.url)
+	bodyTemplate := []byte(`{"count":` + fmt.Sprintf("%v", count) + `,"seed": ` + fmt.Sprintf("%v", seed) + `}`)
+	requestTemplate := fmt.Sprintf("%s/db/bootstrap", cluster.url)
 
-	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(body_template),
-	)
-
+	request, err := http.NewRequest("POST", requestTemplate, bytes.NewBuffer(bodyTemplate))
 	if err != nil {
 		return merry.Prepend(err, "failed to create request of bootstrap DB in cartridge app")
 	}
@@ -140,12 +135,11 @@ func (cluster *CartridgeCluster) BootstrapDB(count int, seed int) error {
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return merry.Prepend(err, "failed to make request of bootstrap DB in cartridge app")
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return merry.Prepend(err, "failed to bootstrap DB in cartridge app")
 	}
 
@@ -161,23 +155,19 @@ func (cluster *CartridgeCluster) GetClusterType() DBClusterType {
 
 // FetchSettings - получить значения параметров настройки.
 func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
+	requestTemplate := fmt.Sprintf("%s/settings/fetch", cluster.url)
 
-	request_template := fmt.Sprintf("%s/settings/fetch", cluster.url)
-	request, err := http.NewRequest(
-		"GET", request_template, nil,
-	)
-
+	request, err := http.NewRequest("GET", requestTemplate, nil)
 	if err != nil {
 		return Settings{}, merry.Prepend(err, "failed to create request to fetch settings in cartridge app")
 	}
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return Settings{}, merry.Prepend(err, "failed to make request to fetch settings in cartridge app")
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return Settings{}, merry.Prepend(err, "failed to fetch settings in cartridge app")
 	}
 
@@ -197,7 +187,6 @@ func (cluster *CartridgeCluster) FetchSettings() (Settings, error) {
 
 // InsertAccount - сохранить новый счет.
 func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
-
 	account := account{
 		Bic:     acc.Bic,
 		Ban:     acc.Ban,
@@ -205,17 +194,14 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 		Found:   false,
 	}
 
-	account_json, err := json.Marshal(account)
+	accountJSON, err := json.Marshal(account)
 	if err != nil {
 		return merry.Prepend(err, "failed to marshal account to json to insert account in cartridge app")
 	}
 
-	request_template := fmt.Sprintf("%s/account/insert", cluster.url)
+	requestTemplate := fmt.Sprintf("%s/account/insert", cluster.url)
 
-	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(account_json),
-	)
-
+	request, err := http.NewRequest("POST", requestTemplate, bytes.NewBuffer(accountJSON))
 	if err != nil {
 		return merry.Prepend(err, "failed to create request to insert account in cartridge app")
 	}
@@ -223,33 +209,34 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return merry.Prepend(err, "failed to make request to insert account in cartridge app")
 	}
 
 	var response map[string]interface{}
 
-	if resp.StatusCode != 201 {
-
-		if resp.StatusCode == 409 || resp.StatusCode == 500 {
-
+	if resp.StatusCode != http.StatusCreated {
+		if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusInternalServerError {
 			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 				unknownResponse, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
 					llog.Errorf("failed to insert account in cartridge app because got unknown answer body: %v \n", err)
 				}
+
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
 
 			if response["error"] == "Account already exist" {
 				return ErrDuplicateKey
 			}
+
 			if response["error"] == "Timeout exceeded" {
 				return ErrTimeoutExceeded
 			}
+
 			return ErrInternalServerError
 		}
+
 		return merry.Errorf("failed to insert account in cartridge app: %v %v", resp.StatusCode, response)
 	}
 
@@ -260,17 +247,14 @@ func (cluster *CartridgeCluster) InsertAccount(acc model.Account) (err error) {
 
 // FetchTotal - получить значение итогового баланса из Settings.
 func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
-	request_template := fmt.Sprintf("%s/total_balance/fetch", cluster.url)
-	request, err := http.NewRequest(
-		"GET", request_template, nil,
-	)
+	requestTemplate := fmt.Sprintf("%s/total_balance/fetch", cluster.url)
 
+	request, err := http.NewRequest("GET", requestTemplate, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create request to fetch total balance in cartridge app")
 	}
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to make request to fetch total balance in cartridge app")
 	}
@@ -279,20 +263,21 @@ func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
 		if resp.StatusCode == 404 {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Prepend(err, "failed to fetch total balance in cartridge app")
 	}
 
 	defer resp.Body.Close()
 
-	var balance_from_resp map[string]string
+	var balanceFromResp map[string]string
 
-	if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&balanceFromResp); err != nil {
 		return nil, merry.Prepend(err, "failed to fetch total balance from cartridge app response")
 	}
 
-	llog.Debugf("result of fetch balance %v \n", balance_from_resp["info"])
+	llog.Debugf("result of fetch balance %v \n", balanceFromResp["info"])
 
-	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64)
+	balance, err := strconv.ParseInt(balanceFromResp["info"], 0, 64)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to convert balance string from cartridge app response")
 	}
@@ -302,13 +287,12 @@ func (cluster *CartridgeCluster) FetchTotal() (*inf.Dec, error) {
 
 // PersistTotal - сохранить значение итогового баланса в settings.
 func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
-	body_template := []byte(`{"total":` + fmt.Sprintf("%v", total.UnscaledBig().Int64()) + `}`)
-	request_template := fmt.Sprintf("%s/total_balance/persist", cluster.url)
+	bodyTemplate := []byte(`{"total":` + fmt.Sprintf("%v", total.UnscaledBig().Int64()) + `}`)
+	requestTemplate := fmt.Sprintf("%s/total_balance/persist", cluster.url)
 
 	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(body_template),
+		"POST", requestTemplate, bytes.NewBuffer(bodyTemplate),
 	)
-
 	if err != nil {
 		return merry.Prepend(err, "failed to create request to persist total balance in cartridge app")
 	}
@@ -316,7 +300,6 @@ func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return merry.Prepend(err, "failed to make request to persist total balance in cartridge app")
 	}
@@ -338,36 +321,33 @@ func (cluster *CartridgeCluster) PersistTotal(total inf.Dec) error {
 
 // CheckBalance - рассчитать итоговый баланc.
 func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
-	request_template := fmt.Sprintf("%s/balance/check", cluster.url)
-	request, err := http.NewRequest(
-		"GET", request_template, nil,
-	)
+	requestTemplate := fmt.Sprintf("%s/balance/check", cluster.url)
 
+	request, err := http.NewRequest("GET", requestTemplate, nil)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create request to calculate balance in cartridge app")
 	}
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to make request to calculate balance in cartridge app")
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return nil, merry.Prepend(err, "failed to calculate balance in cartridge app")
 	}
 
 	defer resp.Body.Close()
 
-	var balance_from_resp map[string]string
+	var balanceFromResp map[string]string
 
-	if err = json.NewDecoder(resp.Body).Decode(&balance_from_resp); err != nil {
+	if err = json.NewDecoder(resp.Body).Decode(&balanceFromResp); err != nil {
 		return nil, merry.Prepend(err, "failed to calculate balance from cartridge app response")
 	}
 
-	llog.Debugf("result of check balance %v \n", balance_from_resp["info"])
+	llog.Debugf("result of check balance %v \n", balanceFromResp["info"])
 
-	balance, err := strconv.ParseInt(balance_from_resp["info"], 0, 64)
+	balance, err := strconv.ParseInt(balanceFromResp["info"], 0, 64)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to convert balance string from cartridge app response")
 	}
@@ -376,32 +356,28 @@ func (cluster *CartridgeCluster) CheckBalance() (*inf.Dec, error) {
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, clientID uuid.UUID) error {
 	// преобразуем в новую структуру для удобства обработки приложением. На логику принципиально не влияет.
 	sendingTransfer := &transferMessage{
-		TransferId:      transfer.Id.String(),
+		TransferID:      transfer.ID.String(),
 		SrcBic:          transfer.Acs[0].Bic,
 		SrcBan:          transfer.Acs[0].Ban,
 		DestBic:         transfer.Acs[1].Bic,
 		DestBan:         transfer.Acs[1].Ban,
 		State:           transfer.State,
-		ClientId:        clientId.String(),
+		ClientID:        clientID.String(),
 		ClientTimestamp: "",
 		Amount:          0,
 	}
 
-	transferJson, err := json.Marshal(sendingTransfer)
+	transferJSON, err := json.Marshal(sendingTransfer)
 	if err != nil {
-		//nolint:golint,errcheck
 		merry.Prepend(err, "failed to marshal transfer to json to make custom transfer in cartridge app")
 	}
 
-	request_template := fmt.Sprintf("%s/transfer/custom/create", cluster.url)
+	requestTemplate := fmt.Sprintf("%s/transfer/custom/create", cluster.url)
 
-	request, err := http.NewRequest(
-		"POST", request_template, bytes.NewBuffer(transferJson),
-	)
-
+	request, err := http.NewRequest("POST", requestTemplate, bytes.NewBuffer(transferJSON))
 	if err != nil {
 		return merry.Prepend(err, "failed to create request to make custom transfer in cartridge app")
 	}
@@ -409,36 +385,38 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 	request.Header.Set("Content-Type", "application/json")
 
 	resp, err := cluster.client.Do(request)
-
 	if err != nil {
 		return merry.Prepend(err, "failed to make request to make custom transfer in cartridge app")
 	}
 
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 200 {
-
-		if resp.StatusCode == 409 || resp.StatusCode == 500 {
+	if resp.StatusCode != http.StatusOK {
+		if resp.StatusCode == http.StatusConflict || resp.StatusCode == http.StatusInternalServerError {
 			var response map[string]interface{}
 			if err = json.NewDecoder(resp.Body).Decode(&response); err != nil {
 				unknownResponse, err := ioutil.ReadAll(resp.Body)
 				if err != nil {
 					llog.Errorf("failed to make custom transfer in cartridge app because got unknown answer body: %v \n", err)
 				}
+
 				llog.Errorf("failed to decode json response from cartridge app, because got %v \n", string(unknownResponse))
 			}
-			llog.Debugln(sendingTransfer.TransferId, sendingTransfer.ClientId, resp.StatusCode, response)
+
+			llog.Debugln(sendingTransfer.TransferID, sendingTransfer.ClientID, resp.StatusCode, response)
 
 			if response["error"] == "insufficient funds for transfer" {
 				return ErrInsufficientFunds
 			}
+
 			if response["error"] == "Timeout exceeded" {
 				return ErrTimeoutExceeded
 			}
+
 			return ErrInternalServerError
 		}
 
-		if resp.StatusCode == 404 {
+		if resp.StatusCode == http.StatusNotFound {
 			return ErrNoRows
 		}
 
@@ -448,7 +426,7 @@ func (cluster *CartridgeCluster) MakeAtomicTransfer(transfer *model.Transfer, cl
 	return nil
 }
 
-// FetchAccounts - получить список аккаунтов
+// FetchAccounts - получить список аккаунтов.
 func (cluster *CartridgeCluster) FetchAccounts() ([]model.Account, error) {
 	return nil, nil
 }
@@ -460,5 +438,6 @@ func (cluster *CartridgeCluster) FetchBalance(bic string, ban string) (*inf.Dec,
 
 func (cluster *CartridgeCluster) StartStatisticsCollect(statInterval time.Duration) error {
 	llog.Infoln("collect statistic from cartridge db is not implemented")
+
 	return nil
 }

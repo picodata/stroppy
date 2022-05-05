@@ -31,7 +31,7 @@ const (
 func CreateClient(wd, address, provider string, clientType ClientType) (c Client, err error) {
 	switch clientType {
 	case RemoteClient:
-		c, err = createSshClient(wd, address, provider)
+		c, err = createSSHClient(wd, address, provider)
 
 	case LocalClient:
 		c, err = createLocalClient(wd)
@@ -42,5 +42,6 @@ func CreateClient(wd, address, provider string, clientType ClientType) (c Client
 	default:
 		err = fmt.Errorf("unknown client type '%v'", clientType)
 	}
+
 	return
 }

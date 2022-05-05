@@ -20,8 +20,8 @@ import (
 )
 
 func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
-	ConnectionPoolSize int, sharded bool) (fc *commonCluster) {
-
+	connectionPoolSize int, sharded bool,
+) (fc *commonCluster) {
 	fc = &commonCluster{
 		k:                      k,
 		sc:                     sc,
@@ -33,9 +33,10 @@ func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, data
 		clusterSpec: ClusterSpec{
 			Pods: make([]*v1.Pod, 0, 10),
 		},
-		connectionPoolSize: ConnectionPoolSize,
+		connectionPoolSize: connectionPoolSize,
 		sharded:            sharded,
 	}
+
 	return
 }
 
@@ -60,35 +61,41 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
+
 	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/databases"); err != nil {
 		return
 	}
-	llog.Infof("copying %s directory: success\n", cc.tg)
 
+	llog.Infof("copying %s directory: success\n", cc.tg)
 	llog.Infof("%s deploy started\n", cc.tg)
+
 	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
+
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}
 
 	llog.Infof("%s deploy finished", cc.tg)
+
 	return
 }
 
-func (cc *commonCluster) examineCluster(tag, targetNamespace,
-	clusterMainPodName, clusterWorkerPodName string) (err error) {
-
+func (cc *commonCluster) examineCluster(tag, targetNamespace, clusterMainPodName, clusterWorkerPodName string) (err error) {
 	var pods []v1.Pod
+
 	if pods, err = cc.k.Engine.ListPods(kubeengine.ResourceDefaultNamespace); err != nil {
 		err = merry.Prepend(err, "list pods")
+
 		return
 	}
 
 	printPodContainers := func(pod *v1.Pod) {
-		for _, c := range pod.Spec.Containers {
+		for i := range pod.Spec.Containers {
 			llog.Debugf("\tfound (%s, `%s`, '%s') container in pod '%s'",
-				c.Name, strings.Join(c.Args, " "), strings.Join(c.Command, " "), pod.Name)
+				pod.Spec.Containers[i].Name, strings.Join(pod.Spec.Containers[i].Args, " "),
+				strings.Join(pod.Spec.Containers[i].Command, " "), pod.Name)
 		}
+
 		llog.Debug("\t---------------------\n\n")
 	}
 
@@ -96,6 +103,7 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 		pPod := &pods[i]
 
 		llog.Debugf("examining pod: '%s'/'%s'", pPod.Name, pPod.GenerateName)
+
 		if strings.HasPrefix(pPod.Name, clusterMainPodName) {
 			llog.Infof("%s main pod is '%s'", tag, pPod.Name)
 			printPodContainers(pPod)
@@ -114,32 +122,32 @@ func (cc *commonCluster) examineCluster(tag, targetNamespace,
 		cc.clusterSpec.MainPod, err = cc.k.Engine.WaitPod(cc.clusterSpec.MainPod.Name,
 			targetNamespace,
 			kubeengine.PodWaitingWaitCreation,
-			kubeengine.PodWaitingTimeTenMinutes)
+			kubeengine.PodWaitingTime)
 		if err != nil {
 			return merry.Prependf(err, "%s pod wait", tag)
 		}
 	}
+
 	llog.Debugf("%s main pod '%s' in status '%s', okay",
 		tag, cc.clusterSpec.MainPod.Name, cc.clusterSpec.MainPod.Status.Phase)
+
 	return
 }
 
 func (cc *commonCluster) openPortForwarding(name string, portMap []string) (err error) {
 	var reqURL *url.URL
-	reqURL, err = cc.k.Engine.GetResourceURL(kubeengine.ResourcePodName,
-		kubeengine.ResourceDefaultNamespace,
-		name,
-		kubeengine.SubresourcePortForwarding)
+
+	reqURL, err = cc.k.Engine.GetResourceURL(kubeengine.ResourcePodName, kubeengine.ResourceDefaultNamespace, name, kubeengine.SubresourcePortForwarding)
 	if err != nil {
 		return
 	}
 
-	err = cc.k.Engine.OpenPortForward(cc.tg, portMap, reqURL,
-		cc.portForwardControlChan)
+	err = cc.k.Engine.OpenPortForward(cc.tg, portMap, reqURL, cc.portForwardControlChan)
 	if err != nil {
 		return merry.Prependf(err, "failed to started port-forward for '%s'", cc.tg)
 	}
 
 	llog.Infof("Port-forwarding for %s is started success", name)
+
 	return
 }

@@ -39,22 +39,24 @@ func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime,
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "",
-		payTestCommand, logFileName)
+	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "", payTestCommand, logFileName)
 	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote transfer test")
 	}
+
 	return
 }
 
-// executePay - выполнить тест переводов внутри удаленного пода stroppy
+// executePay - выполнить тест переводов внутри удаленного пода stroppy.
 func (sh *shell) executePay(_ string) (err error) {
 	var settings *config.DatabaseSettings
+
 	if settings, err = sh.readDatabaseConfig("pay"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
 	var beginTime, endTime int64
+
 	if sh.settings.TestSettings.UseCloudStroppy {
 		beginTime, endTime, err = sh.executeRemotePay(settings)
 		if err != nil {
@@ -67,14 +69,16 @@ func (sh *shell) executePay(_ string) (err error) {
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+
 	llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	// таймаут, чтобы не получать пустое место на графиках
+	// таймаут, чтобы не получать пустое место на графиках.
 	time.Sleep(20 * time.Second)
+
 	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
@@ -106,18 +110,21 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote populate test")
 	}
+
 	return
 }
 
-// executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
+// executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy.
 func (sh *shell) executePop(_ string) (err error) {
 	var settings *config.DatabaseSettings
+
 	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 	// sh.payload.UpdateSettings(settings)
 
 	var beginTime, endTime int64
+
 	if sh.settings.TestSettings.UseCloudStroppy {
 		beginTime, endTime, err = sh.executeRemotePop(settings)
 		if err != nil {
@@ -125,19 +132,23 @@ func (sh *shell) executePop(_ string) (err error) {
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+
 		if err = sh.payload.Pop(""); err != nil {
 			return
 		}
+
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
+
 	llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	// таймаут, чтобы не получать пустое место на графиках
+	// таймаут, чтобы не получать пустое место на графиках.
 	time.Sleep(20 * time.Second)
+
 	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
@@ -146,12 +157,15 @@ func (sh *shell) executePop(_ string) (err error) {
 }
 
 // readDatabaseConfig
-// прочитать конфигурационный файл test_config.json
+// прочитать конфигурационный файл test_config.json.
 func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
 	var data []byte
+
 	configFilePath := filepath.Join(sh.workingDirectory, configFileName)
+
 	if data, err = ioutil.ReadFile(configFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read config file")
+
 		return
 	}
 
@@ -177,6 +191,7 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
+
 		return
 	}
 

@@ -18,7 +18,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	kuberv1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
@@ -37,6 +36,7 @@ func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, db
 			connectionPoolSize,
 			false),
 	}
+
 	return
 }
 
@@ -44,18 +44,19 @@ type postgresCluster struct {
 	*commonCluster
 }
 
-func (pc *postgresCluster) Connect() (cluster interface{}, err error) {
-	// для возможности подключиться к БД в кластере с локальной машины
-	if pc.DBUrl == "" {
+func (pc *postgresCluster) Connect() (pgCluster interface{}, err error) {
+	if pc.DBUrl == "" { // для возможности подключиться к БД в кластере с локальной машины.
 		pc.DBUrl = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", pc.DBUrl)
 	}
-	cluster, err = cluster2.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
+
+	pgCluster, err = cluster.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
+
 	return
 }
 
 // Deploy
-// разворачивает postgres в кластере
+// разворачивает postgres в кластере.
 func (pc *postgresCluster) Deploy() (err error) {
 	if err = pc.deploy(); err != nil {
 		return merry.Prepend(err, "deploy")
@@ -64,28 +65,34 @@ func (pc *postgresCluster) Deploy() (err error) {
 	llog.Infoln("Checking of deploy postgres...")
 
 	var postgresPodsCount int64
+
 	var postgresPodName string
+
 	if postgresPodsCount, postgresPodName, err = pc.getClusterParameters(); err != nil {
 		return merry.Prepend(err, "failed to get postgres pods count")
 	}
 
 	postgresPodNameTemplate := postgresPodName + "-%d"
+
 	for i := int64(0); i < postgresPodsCount; i++ {
 		podName := fmt.Sprintf(postgresPodNameTemplate, i)
 
 		var targetPod *kuberv1.Pod
-		targetPod, err = pc.k.Engine.WaitPod(podName, kubeengine.ResourceDefaultNamespace,
-			kubeengine.PodWaitingWaitCreation, kubeengine.PodWaitingTimeTenMinutes)
 
+		targetPod, err = pc.k.Engine.WaitPod(podName, kubeengine.ResourceDefaultNamespace, kubeengine.PodWaitingWaitCreation, kubeengine.PodWaitingTime)
 		if err != nil {
 			err = merry.Prepend(err, "waiting")
+
 			return
 		}
 
 		pc.clusterSpec.Pods = append(pc.clusterSpec.Pods, targetPod)
+
 		llog.Infof("'%s/%s' pod registered", targetPod.Namespace, targetPod.Name)
+
 		if i == 0 {
 			pc.clusterSpec.MainPod = targetPod
+
 			llog.Debugln("... and this pod is main")
 		}
 	}
@@ -101,45 +108,52 @@ func (pc *postgresCluster) Deploy() (err error) {
 	}
 
 	err = pc.openPortForwarding(pc.clusterSpec.MainPod.Name, []string{"6432:5432"})
+
 	return
 }
 
 func (pc *postgresCluster) GetSpecification() (spec ClusterSpec) {
 	spec = pc.clusterSpec
+
 	return
 }
 
-// getClusterParameters возвращает кол-во подов postgres, которые должны быть созданы
+// getClusterParameters возвращает кол-во подов postgres, которые должны быть созданы.
 func (pc *postgresCluster) getClusterParameters() (podsCount int64, clusterName string, err error) {
 	manifestFilePath := filepath.Join(pc.wd, "postgres-manifest.yaml")
 
 	var manifestFileContent []byte
+
 	if manifestFileContent, err = ioutil.ReadFile(manifestFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read postgres-manifest.yaml")
+
 		return
 	}
 
 	specStartPos := bytes.Index(manifestFileContent, []byte("\n---\napiVersion: \"acid.zalan.do"))
 	if specStartPos > 0 {
-		// пропускаем первую часть конфига, если таковая имеется
+		// пропускаем первую часть конфига, если таковая имеется.
 		manifestFileContent = manifestFileContent[specStartPos+5:]
 	}
 
 	var obj runtime.Object
-	obj, _, err = scheme.Codecs.UniversalDeserializer().
-		Decode(manifestFileContent, nil, &v1.Postgresql{})
+
+	obj, _, err = scheme.Codecs.UniversalDeserializer().Decode(manifestFileContent, nil, &v1.Postgresql{})
 	if err != nil {
 		err = merry.Prepend(err, "failed to decode postgres-manifest.yaml")
+
 		return
 	}
 
 	postgresSQLConfig, ok := obj.(*v1.Postgresql)
 	if !ok {
 		err = merry.Prepend(err, "failed to check format postgres-manifest.yaml")
+
 		return
 	}
 
 	podsCount = int64(postgresSQLConfig.Spec.NumberOfInstances)
 	clusterName = postgresSQLConfig.Name
+
 	return
 }

@@ -44,7 +44,7 @@ func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder s
 
 // --- Public methods ---------------
 
-// InitProvider - инициализировать провайдера в зависимости от настроек
+// InitProvider - инициализировать провайдера в зависимости от настроек.
 func (t *Terraform) InitProvider() (err error) {
 	switch t.settings.Provider {
 	case provider.Yandex:
@@ -75,10 +75,11 @@ func (t *Terraform) LoadState() (err error) {
 	}
 
 	t.Provider.SetTerraformStatusData(t.data)
+
 	return
 }
 
-// GetAddressMap - получить структуру с адресами кластера
+// GetAddressMap - получить структуру с адресами кластера.
 func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
 	return t.Provider.GetAddressMap(t.settings.Nodes)
 }
@@ -100,10 +101,11 @@ func (t *Terraform) Run() (err error) {
 	}
 
 	err = t.LoadState()
+
 	return
 }
 
-// Destroy - уничтожить кластер
+// Destroy - уничтожить кластер.
 func (t *Terraform) Destroy() error {
 	destroyCmd := &exec.Cmd{}
 	// https://github.com/hashicorp/terraform/releases/tag/v0.15.2
@@ -116,14 +118,16 @@ func (t *Terraform) Destroy() error {
 	} else {
 		destroyCmd = exec.Command("terraform", "apply", "-destroy", "--auto-approve")
 	}
+
 	destroyCmd.Dir = t.WorkDirectory
 
-	// нужно для успешной передачи yes в команду destroy при версии > 0.15.2
+	// нужно для успешной передачи yes в команду destroy при версии > 0.15.2.
 	destroyCmd.Stdout = os.Stdout
 	destroyCmd.Stderr = os.Stdout
 	destroyCmd.Stdin = os.Stdin
 
 	llog.Infoln("Destroying terraform...")
+
 	if err := destroyCmd.Run(); err != nil {
 		return merry.Wrap(err)
 	}
@@ -131,17 +135,19 @@ func (t *Terraform) Destroy() error {
 	llog.Infoln("Terraform destroyed")
 
 	t.deleteWorkingFiles()
+
 	return nil
 }
 
-// --- private methods ---------------
+// --- private methods ---------------.
 
-// apply() разворачивает кластер
+// apply() разворачивает кластер.
 func (t *Terraform) apply() (err error) {
 	terraformShowCmd := exec.Command("terraform", "show")
 	terraformShowCmd.Dir = t.WorkDirectory
 
 	var terraformShowOutput []byte
+
 	if terraformShowOutput, err = terraformShowCmd.CombinedOutput(); err != nil {
 		return merry.Prepend(err, "failed to Check terraform applying")
 	}
@@ -149,20 +155,24 @@ func (t *Terraform) apply() (err error) {
 	// при незапущенном кластера terraform возвращает пустую строку длиной 13 символов, либо no state c пробелами до 13
 	if len(terraformShowOutput) > linesNotInitTerraformShow {
 		llog.Infof("terraform already applied, deploy continue...")
+
 		return
 	}
 
 	llog.Infoln("Applying terraform...")
+
 	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
 	applyCMD.Dir = t.WorkDirectory
 
 	var result []byte
+
 	if result, err = applyCMD.CombinedOutput(); err != nil {
 		return merry.Prependf(err, "terraform apply error, possible output \n```\n%s\n```\n",
 			string(result))
 	}
 
 	llog.Printf("Terraform applied\n")
+
 	return
 }
 
@@ -179,19 +189,21 @@ func (t *Terraform) deleteWorkingFiles() {
 
 func (t *Terraform) getTerraformVersion() (*version, error) {
 	var installedVersion version
+
 	getVersionCMD, err := exec.Command("terraform", "version").Output()
 	if err != nil {
 		if !errors.Is(err, exec.ErrNotFound) {
 			return nil, merry.Wrap(err)
 		}
 
-		return nil, nil
+		return nil, err
 	}
 
 	// получаем из строки идентификатор версии в виде: v0.15.4 (как пример)
 	searchExpressionString := regexp.MustCompile(`v[0-9]+.[0-9]+.[0-9]+`)
 	installedVersionString := searchExpressionString.FindString(string(getVersionCMD))
-	if len(installedVersionString) == 0 {
+
+	if installedVersionString == "" {
 		return nil, errVersionParsed
 	}
 
@@ -210,14 +222,12 @@ func (t *Terraform) getTerraformVersion() (*version, error) {
 	return &installedVersion, nil
 }
 
-// install
-// установить terraform, если не установлен
+// install установить terraform, если не установлен.
 func (t *Terraform) install() error {
-	downloadURL := fmt.Sprintf("https://releases.hashicorp.com/terraform/%v/terraform_%v_linux_amd64.zip",
-		installableTerraformVersion, installableTerraformVersion)
-	downloadArchiveCmd := exec.Command("curl", "-O",
-		downloadURL)
+	downloadURL := fmt.Sprintf("https://releases.hashicorp.com/terraform/%v/terraform_%v_linux_amd64.zip", installableTerraformVersion, installableTerraformVersion)
+	downloadArchiveCmd := exec.Command("curl", "-O", downloadURL)
 	downloadArchiveCmd.Dir = t.WorkDirectory
+
 	err := downloadArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to download archive of terraform")
@@ -225,8 +235,11 @@ func (t *Terraform) install() error {
 
 	archiveName := fmt.Sprintf("terraform_%v_linux_amd64.zip", installableTerraformVersion)
 	unzipArchiveCmd := exec.Command("unzip", "-u", archiveName)
+
 	llog.Infoln(unzipArchiveCmd.String())
+
 	unzipArchiveCmd.Dir = t.WorkDirectory
+
 	err = unzipArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to unzip archive of terraform")
@@ -234,24 +247,29 @@ func (t *Terraform) install() error {
 
 	rmArchiveCmd := exec.Command("rm", archiveName)
 	rmArchiveCmd.Dir = t.WorkDirectory
+
 	err = rmArchiveCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to remove archive of terraform")
 	}
 
 	installCmd := exec.Command("bash", "-c", "sudo install terraform /usr/bin/terraform")
+
 	llog.Infoln(installCmd.String())
+
 	installCmd.Dir = t.WorkDirectory
+
 	err = installCmd.Run()
 	if err != nil {
 		return merry.Prepend(err, "failed to install terraform")
 	}
 
 	llog.Infoln("terrafrom installed: success")
+
 	return nil
 }
 
-// init подготовить среду для развертывания
+// init подготовить среду для развертывания.
 func (t *Terraform) init() (err error) {
 	llog.Infoln("Initializating terraform...")
 
@@ -270,6 +288,7 @@ func (t *Terraform) init() (err error) {
 
 	initCmd := exec.Command("terraform", "init")
 	initCmd.Dir = t.WorkDirectory
+
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
 		// вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
@@ -277,6 +296,8 @@ func (t *Terraform) init() (err error) {
 	}
 
 	t.isInit = true
+
 	llog.Infoln("Terraform initialized")
+
 	return
 }

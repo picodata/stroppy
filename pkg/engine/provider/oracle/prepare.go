@@ -20,9 +20,8 @@ import (
 
 const instanceFileName = "main_oracle-derived.tf"
 
-func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
-	ram int, diskString string, nodesString string) {
-
+// nolint:maintidx
+func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int, ram int, diskString string, nodesString string) {
 	tenancyOCIDBlock := instanceFileBody.AppendNewBlock("variable", []string{"tenancy_ocid"})
 	tenancyOCIDBody := tenancyOCIDBlock.Body()
 	tenancyOCIDBody.SetAttributeValue("default",
@@ -70,6 +69,7 @@ func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 	sshPublicKeyBlock := instanceFileBody.AppendNewBlock("variable", []string{"ssh_public_key"})
 	sshPublickeyBody := sshPublicKeyBlock.Body()
 	sshPublickeyBody.SetAttributeValue("default",
+		// nolint:lll
 		cty.StringVal(`ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCnPYxOLBLVVzRrWlw96AOzavA034a2tV1G5rtM6b7yUc5J9Vi2g3uvAj2idlRWnumEMrm1E6Pr6LHRr1oChDSCrcfIxl8oJZQW5eQsPPtRKj9fE8v6J3Nr8hMIAflG/SBqpGQmxhRqvcuuf7RHxs8EqsnOaXxUtbtZNDSo+VZj45rVh3BSg0TxSKfDrRNRw3/HO0KtYYlH8J1VIYl9t0tlrXZEndShS9LCat/EmBjSG1dtUdzz3jo3L67cJ7Qigcg1U2drzQ78yCJHRM6oTFEQkfO+WnjDm97+zxGordWhejaVzwARP4TjDBWAZVdxHUl3yAb02nHnRkHmtliuLBcX`))
 
 	instanceFileBody.AppendNewline()
@@ -155,6 +155,7 @@ func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 			Name: "map(string)",
 		},
 	})
+
 	euFrankfurt1 := hcl.Traversal{
 		hcl.TraverseRoot{
 			Name: `{
@@ -552,5 +553,6 @@ func (op *Provider) prepare(template *provider.ClusterParameters, nodes int, wd 
 	}
 
 	llog.Infoln("Generation provider configuration file: success")
+
 	return
 }

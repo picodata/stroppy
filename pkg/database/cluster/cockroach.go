@@ -32,16 +32,18 @@ func (cockroach *CockroachDatabase) InsertTransfer(transfer *model.Transfer) err
 	res, err := cockroach.pool.Exec(
 		context.Background(),
 		insertTransfer,
-		transfer.Id,
+		transfer.ID,
 		transfer.Acs[0].Bic,
 		transfer.Acs[0].Ban,
 		transfer.Acs[1].Bic,
 		transfer.Acs[1].Ban,
 		transfer.Amount.UnscaledBig().Int64(),
 	)
+
 	if res.RowsAffected() != 1 {
 		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
 	}
+
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -49,14 +51,16 @@ func (cockroach *CockroachDatabase) InsertTransfer(transfer *model.Transfer) err
 	return nil
 }
 
-func (cockroach *CockroachDatabase) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
+func (cockroach *CockroachDatabase) DeleteTransfer(transferID model.TransferID, clientID uuid.UUID) error {
+	res, err := cockroach.pool.Exec(context.Background(), deleteTransfer, transferID, clientID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return ErrNoRows
 		}
+
 		return merry.Wrap(err)
 	}
+
 	if res.RowsAffected() != 1 {
 		return merry.Errorf("res.RowsAffected() is %v", res.RowsAffected())
 	}
@@ -64,11 +68,12 @@ func (cockroach *CockroachDatabase) DeleteTransfer(transferId model.TransferId, 
 	return nil
 }
 
-func (cockroach *CockroachDatabase) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
-	res, err := cockroach.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
+func (cockroach *CockroachDatabase) SetTransferClient(clientID uuid.UUID, transferID model.TransferID) error {
+	res, err := cockroach.pool.Exec(context.Background(), setTransferClient, clientID, transferID)
 	if err != nil {
 		return merry.Wrap(err)
 	}
+
 	if res.RowsAffected() == 0 {
 		return ErrNoRows
 	}
@@ -76,26 +81,29 @@ func (cockroach *CockroachDatabase) SetTransferClient(clientId uuid.UUID, transf
 	return nil
 }
 
-func (cockroach *CockroachDatabase) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
-	row := cockroach.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
+func (cockroach *CockroachDatabase) FetchTransferClient(transferID model.TransferID) (*uuid.UUID, error) {
+	row := cockroach.pool.QueryRow(context.Background(), fetchTransferClient, transferID)
 
-	var clientId uuid.UUID
-	err := row.Scan(&clientId)
+	var clientID uuid.UUID
+
+	err := row.Scan(&clientID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Wrap(err)
 	}
 
-	return &clientId, nil
+	return &clientID, nil
 }
 
-func (cockroach *CockroachDatabase) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
+func (cockroach *CockroachDatabase) ClearTransferClient(transferID model.TransferID, clientID uuid.UUID) error {
+	res, err := cockroach.pool.Exec(context.Background(), clearTransferClient, transferID, clientID)
 	if err != nil {
 		return merry.Wrap(err)
 	}
+
 	if res.RowsAffected() != 1 {
 		if err == pgx.ErrNoRows {
 			return ErrNoRows
@@ -105,11 +113,12 @@ func (cockroach *CockroachDatabase) ClearTransferClient(transferId model.Transfe
 	return nil
 }
 
-func (cockroach *CockroachDatabase) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
+func (cockroach *CockroachDatabase) SetTransferState(state string, transferID model.TransferID, clientID uuid.UUID) error {
+	res, err := cockroach.pool.Exec(context.Background(), setTransferState, state, transferID, clientID)
 	if err != nil {
 		return merry.Wrap(err)
 	}
+
 	if res.RowsAffected() != 1 {
 		return ErrNoRows
 	}
@@ -117,55 +126,63 @@ func (cockroach *CockroachDatabase) SetTransferState(state string, transferId mo
 	return nil
 }
 
-func (cockroach *CockroachDatabase) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+func (cockroach *CockroachDatabase) FetchTransfer(transferID model.TransferID) (*model.Transfer, error) {
 	t := new(model.Transfer)
-	t.InitEmptyTransfer(transferId)
-	row := cockroach.pool.QueryRow(context.Background(), fetchTransfer, transferId)
+	t.InitEmptyTransfer(transferID)
+	row := cockroach.pool.QueryRow(context.Background(), fetchTransfer, transferID)
 	// Ignore possible error, we will retry
 	var amount int64
+
 	if err := row.Scan(&t.Acs[0].Bic, &t.Acs[0].Ban, &t.Acs[1].Bic,
 		&t.Acs[1].Ban, &amount, &t.State); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Wrap(err)
 	}
+
 	t.Amount = inf.NewDec(amount, 0)
+
 	return t, nil
 }
 
-func (cockroach *CockroachDatabase) FetchDeadTransfers() ([]model.TransferId, error) {
+func (cockroach *CockroachDatabase) FetchDeadTransfers() ([]model.TransferID, error) {
 	rows, err := cockroach.pool.Query(context.Background(), fetchDeadTransfers)
 	if err != nil {
 		if err == pgx.ErrNoRows {
-			return []model.TransferId{}, nil
+			return []model.TransferID{}, nil
 		}
 
 		return nil, merry.Wrap(err)
 	}
-	var transferIds []model.TransferId
+
+	var transferIds []model.TransferID
+
 	for rows.Next() {
-		var tId model.TransferId
-		err = rows.Scan(&tId)
+		var tID model.TransferID
+
+		err = rows.Scan(&tID)
 		// probably should be ignored
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
-		transferIds = append(transferIds, tId)
+
+		transferIds = append(transferIds, tID)
 	}
 
 	return transferIds, nil
 }
 
-func (cockroach *CockroachDatabase) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+func (cockroach *CockroachDatabase) UpdateBalance(balance *inf.Dec, bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cockroach *CockroachDatabase) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cockroach *CockroachDatabase) LockAccount(transferID model.TransferID, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	panic("implement me")
 }
 
-func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
@@ -173,8 +190,10 @@ func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *Cockroa
 	llog.Infof("Establishing connection to cockroach on %v", dbURL)
 
 	var poolConfig *pgxpool.Config
+
 	if poolConfig, err = pgxpool.ParseConfig(dbURL); err != nil {
 		err = merry.Prepend(err, "parse url parameter")
+
 		return
 	}
 
@@ -187,8 +206,10 @@ func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *Cockroa
 	ctxt := context.Background()
 
 	var pgPool *pgxpool.Pool
+
 	if pgPool, err = pgxpool.ConnectConfig(ctxt, poolConfig); err != nil {
 		err = merry.Prepend(err, "connection")
+
 		return
 	}
 
@@ -196,16 +217,19 @@ func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *Cockroa
 		pool: pgPool,
 		ctxt: ctxt,
 	}
+
 	return
 }
 
 func (cockroach *CockroachDatabase) BootstrapDB(count int, seed int) (err error) {
 	llog.Infof("Bootstrapping cluster...")
+
 	if _, err = cockroach.pool.Exec(cockroach.ctxt, bootstrapScript); err != nil {
 		return merry.Prepend(err, "failed to execute bootstrap script")
 	}
 
 	llog.Infof("Loading settings...")
+
 	_, err = cockroach.pool.Exec(cockroach.ctxt, insertSetting, "count", strconv.Itoa(count))
 	if err != nil {
 		return merry.Prepend(err, "failed to load count setting")
@@ -230,6 +254,7 @@ func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, e
 	defer cancel()
 
 	var rows pgx.Rows
+
 	rows, err = cockroach.pool.Query(ctx, fetchSettings)
 	if err != nil {
 		return Settings{
@@ -239,11 +264,13 @@ func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, e
 	}
 
 	var fetchSettings []string
+
 	for rows.Next() {
 		var clusterSetting string
 		if err := rows.Scan(&clusterSetting); err != nil {
 			return clusterSettings, merry.Prepend(err, "failed to scan setting for FetchSettings")
 		}
+
 		fetchSettings = append(fetchSettings, clusterSetting)
 	}
 
@@ -276,6 +303,7 @@ func (cockroach *CockroachDatabase) InsertAccount(acc model.Account) (err error)
 				return merry.Wrap(ErrDuplicateKey)
 			}
 		}
+
 		return merry.Wrap(err)
 	}
 
@@ -290,6 +318,7 @@ func (cockroach *CockroachDatabase) FetchTotal() (*inf.Dec, error) {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Wrap(err)
 	}
 
@@ -301,6 +330,7 @@ func (cockroach *CockroachDatabase) PersistTotal(total inf.Dec) error {
 	if err != nil {
 		return merry.Wrap(err)
 	}
+
 	if res.RowsAffected() != 1 {
 		return merry.Errorf("PersistTotal() res.RowsAffected is %v", res.RowsAffected())
 	}
@@ -310,12 +340,15 @@ func (cockroach *CockroachDatabase) PersistTotal(total inf.Dec) error {
 
 func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 	row := cockroach.pool.QueryRow(context.Background(), checkBalance)
+
 	var totalBalance int64
+
 	err := row.Scan(&totalBalance)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNoRows
 		}
+
 		return nil, merry.Wrap(err)
 	}
 
@@ -324,7 +357,7 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 
 const cockroachTxTimeout = 45 * time.Second
 
-func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer, clientID uuid.UUID) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
 	defer cancel()
 
@@ -352,7 +385,7 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 	_, err = tx.Exec(
 		ctx,
 		insertTransfer,
-		transfer.Id,
+		transfer.ID,
 		sourceAccount.Bic,
 		sourceAccount.Ban,
 		destAccount.Bic,
@@ -365,6 +398,7 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 				return ErrTxRollback
 			}
 		}
+
 		return merry.Prepend(err, "failed to insert transfer")
 	}
 
@@ -414,6 +448,7 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 				return ErrTxRollback
 			}
 		}
+
 		return merry.Prepend(err, "failed to commit tx")
 	}
 
@@ -425,28 +460,20 @@ func (cockroach *CockroachDatabase) FetchAccounts() ([]model.Account, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
-	var accs []model.Account
-	for rows.Next() {
-		var Balance int64
-		dec := new(inf.Dec)
-		var acc model.Account
-		if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
-			return nil, merry.Prepend(err, "failed to scan account for FetchAccounts")
-		}
-		dec.SetUnscaled(Balance)
-		acc.Balance = dec
-		accs = append(accs, acc)
-	}
-	return accs, nil
+
+	return accRowsToSlice(rows)
 }
 
 func (cockroach *CockroachDatabase) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
 	row := cockroach.pool.QueryRow(context.Background(), fetchBalance, bic, ban)
+
 	var balance, pendingAmount inf.Dec
+
 	err := row.Scan(&balance, &pendingAmount)
 	if err != nil {
 		return nil, nil, err
 	}
+
 	return &balance, &pendingAmount, nil
 }
 

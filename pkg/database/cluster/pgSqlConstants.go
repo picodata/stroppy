@@ -39,7 +39,7 @@ TRUNCATE checksum;
 `
 )
 
-// --- fetching ------------------
+// --- fetching ------------------.
 const (
 	fetchTotal = `SELECT amount FROM checksum WHERE name = 'total;'`
 
@@ -59,7 +59,7 @@ const (
 	fetchDeadTransfers = `SELECT transfer_id FROM transfer;`
 )
 
-// --- insertions ----------------
+// --- insertions ----------------.
 const (
 	upsertAccount = `INSERT INTO account (bic, ban, balance) VALUES ($1, $2, $3);`
 
@@ -68,12 +68,12 @@ const (
 	persistTotal = `INSERT INTO checksum (name, amount) VALUES('total', $1)
 	ON CONFLICT (name) DO UPDATE SET amount = excluded.amount;`
 
-	// Client id has to be updated separately to let it expire
+	// Client id has to be updated separately to let it expire.
 	insertTransfer = `INSERT INTO transfer (transfer_id, src_bic, src_ban, dst_bic, dst_ban, amount, state)
 	VALUES ($1, $2, $3, $4, $5, $6, 'complete');`
 )
 
-// --- data update ----------------
+// --- data update ----------------.
 const (
 	setTransferState = `UPDATE transfer SET state = $1 WHERE transfer_id = $2
 	AND amount IS NOT NULL AND client_id = $3 AND client_timestamp > now() - interval'30 second';`

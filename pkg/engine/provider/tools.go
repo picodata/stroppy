@@ -5,7 +5,7 @@
 package provider
 
 import (
-	"io/ioutil"
+	"os"
 	"path/filepath"
 
 	"github.com/ansel1/merry"
@@ -16,7 +16,7 @@ import (
 func LoadClusterTemplate(dir string) (*ClusterConfigurations, error) {
 	templatesFilePath := filepath.Join(dir, ClusterTemplateFileName)
 
-	data, err := ioutil.ReadFile(templatesFilePath)
+	data, err := os.ReadFile(templatesFilePath)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to read templates.yaml")
 	}
@@ -27,12 +27,11 @@ func LoadClusterTemplate(dir string) (*ClusterConfigurations, error) {
 	}
 
 	llog.Traceln("reading templates.yaml: success")
+
 	return &templatesConfig, nil
 }
 
-func DispatchTemplate(templatesConfig *ClusterConfigurations,
-	flavor string) (template ClusterParameters, err error) {
-
+func DispatchTemplate(templatesConfig *ClusterConfigurations, flavor string) (template ClusterParameters, err error) {
 	switch flavor {
 	case "small":
 		template = templatesConfig.Small
@@ -51,19 +50,23 @@ func DispatchTemplate(templatesConfig *ClusterConfigurations,
 	return
 }
 
-func DeepCopyAddressMap(addressMap map[string]map[string]string) (copy map[string]map[string]string) {
+func DeepCopyAddressMap(addressMap map[string]map[string]string) (copyAddress map[string]map[string]string) {
 	if addressMap == nil {
 		return
 	}
 
-	copy = make(map[string]map[string]string, len(addressMap))
+	copyAddress = make(map[string]map[string]string, len(addressMap))
+
 	for key, val := range addressMap {
 		valLen := len(val)
 		valCopy := make(map[string]string, valLen)
+
 		for valKey, valVal := range val {
 			valCopy[valKey] = valVal[:]
 		}
-		copy[key] = valCopy
+
+		copyAddress[key] = valCopy
 	}
+
 	return
 }

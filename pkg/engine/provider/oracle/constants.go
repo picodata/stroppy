@@ -17,7 +17,7 @@ sudo parted -a optimal /dev/sdb mkpart primary ext4 0% 100%
 	checkExistFileSystemCmd = "sudo file -sL /dev/sdb1"
 
 	checkAddedDiskCmd = "file /dev/sdb"
-	// -s используем, чтобы не получать ошибку, когда ничего не найдено
+	// -s используем, чтобы не получать ошибку, когда ничего не найдено.
 	checkPartedCmd = "sudo parted -l"
 	checkMountCmd  = "df -h"
 

@@ -27,7 +27,7 @@ import (
 
 const (
 	versionAPI              = 620
-	fdbStatJsonFileTemplate = "status_json_%v.json"
+	fdbStatJSONFileTemplate = "status_json_%v.json"
 )
 
 // FDBCluster - объявление соединения к FDB и ссылки на модель данных.
@@ -40,43 +40,43 @@ func (cluster *FDBCluster) InsertTransfer(_ *model.Transfer) error {
 	return errors.New("implement me")
 }
 
-func (cluster *FDBCluster) DeleteTransfer(_ model.TransferId, _ uuid.UUID) error {
+func (cluster *FDBCluster) DeleteTransfer(_ model.TransferID, _ uuid.UUID) error {
 	return errors.New("implement me")
 }
 
-func (cluster *FDBCluster) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
+func (cluster *FDBCluster) SetTransferClient(clientID uuid.UUID, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
+func (cluster *FDBCluster) FetchTransferClient(transferID model.TransferID) (*uuid.UUID, error) {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *FDBCluster) ClearTransferClient(transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
+func (cluster *FDBCluster) SetTransferState(state string, transferID model.TransferID, clientID uuid.UUID) error {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+func (cluster *FDBCluster) FetchTransfer(transferID model.TransferID) (*model.Transfer, error) {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) FetchDeadTransfers() ([]model.TransferId, error) {
+func (cluster *FDBCluster) FetchDeadTransfers() ([]model.TransferID, error) {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+func (cluster *FDBCluster) UpdateBalance(balance *inf.Dec, bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cluster *FDBCluster) LockAccount(transferID model.TransferID, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
 	panic("implement me")
 }
 
-func (cluster *FDBCluster) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+func (cluster *FDBCluster) UnlockAccount(bic string, ban string, transferID model.TransferID) error {
 	panic("implement me")
 }
 
@@ -101,6 +101,7 @@ type accountValue struct {
 // NewFoundationCluster - Создать подключение к FDB и создать новые DirectorySubspace, если ещё не созданы.
 func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 	llog.Infof("Establishing connection to FDB on %v", dbURL)
+
 	poolConfig := dbURL
 
 	err := fdb.APIVersion(versionAPI)
@@ -109,9 +110,11 @@ func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 	}
 
 	var FDBPool fdb.Database
+
 	if FDBPool, err = fdb.OpenDatabase(poolConfig); err != nil {
 		return nil, merry.Prepend(err, "fdb.cluster file open")
 	}
+
 	llog.Infof("Creating or opening the subspaces... \n")
 	// создаем или открываем Directory - часть Directory cо своими метаданынми
 
@@ -149,6 +152,7 @@ func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
 func (cluster *FDBCluster) BootstrapDB(count int, seed int) error {
 	llog.Infof("Populating settings...")
+
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		// очищаем cпейсы перед началом загрузки счетов, BootstrapDB вызывается на этом этапе
 		tx.ClearRange(cluster.model.accounts)
@@ -162,11 +166,14 @@ func (cluster *FDBCluster) BootstrapDB(count int, seed int) error {
 		tx.Set(seedKey, []byte(strconv.Itoa(seed)))
 		// добавляем пустое значение для checksum, чтобы инициировать ключ
 		tx.Set(checkSumTotalKey, []byte{})
+
+		//nolint:nilnil
 		return nil, nil
 	})
 	if err != nil {
 		return merry.Prepend(err, "failed to populate settings")
 	}
+
 	return nil
 }
 
@@ -178,26 +185,33 @@ func (cluster *FDBCluster) GetClusterType() DBClusterType {
 // FetchSettings - получить значения параметров настройки.
 func (cluster *FDBCluster) FetchSettings() (Settings, error) {
 	var clusterSettings Settings
+
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		var fetchCount, fetchSeed int
+
 		countKey := cluster.model.settings.Pack(tuple.Tuple{"count"})
 		seedKey := cluster.model.settings.Pack(tuple.Tuple{"seed"})
+
 		count, err := tx.Get(countKey).Get()
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to get count from Settings")
 		}
+
 		seed, err := tx.Get(seedKey).Get()
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to get seed from Settings")
 		}
+
 		err = json.Unmarshal(count, &fetchCount)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to deserialize count from Settings")
 		}
+
 		err = json.Unmarshal(seed, &fetchSeed)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to deserialize seed from Settings")
 		}
+
 		return Settings{
 			Count: fetchCount,
 			Seed:  fetchSeed,
@@ -207,10 +221,12 @@ func (cluster *FDBCluster) FetchSettings() (Settings, error) {
 		// не удается вернуть nil, возникает ошибка
 		return clusterSettings, merry.Prepend(err, "failed to fetch from Settings")
 	}
+
 	clusterSettings, ok := data.(Settings)
 	if !ok {
 		return clusterSettings, merry.Errorf("this data type ClusterSettings is not supported")
 	}
+
 	return clusterSettings, nil
 }
 
@@ -218,27 +234,34 @@ func (cluster *FDBCluster) FetchSettings() (Settings, error) {
 func (cluster *FDBCluster) InsertAccount(acc model.Account) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		keyAccount := cluster.getAccountKey(acc)
+
 		checkUniq, err := tx.Get(keyAccount).Get()
 		if checkUniq != nil {
 			return nil, ErrDuplicateKey
 		}
+
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to check account for existence")
 		}
+
 		var valueAccount accountValue
 		valueAccount.Balance = acc.Balance
+
 		valueAccountSet, err := serializeValue(valueAccount)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to serialize account value for insert")
 		}
+
 		tx.Set(keyAccount, valueAccountSet)
+
 		// оставляем просто err, т.к. обработчик определен после транзакции
-		return nil, nil
+		return nil, err
 	})
 	if err != nil {
 		if errors.Is(err, ErrDuplicateKey) {
 			return ErrDuplicateKey
 		}
+
 		return merry.Prepend(err, "failed to insert account")
 	}
 
@@ -255,23 +278,28 @@ func (cluster *FDBCluster) FetchTotal() (*inf.Dec, error) {
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		checkSumValue, err = deserializeCheckSum(checkSumValueRaw)
 		// обработчик определен после транзакции
 		if err != nil {
 			return nil, err
 		}
+
 		return checkSumValue, nil
 	})
 	if err != nil {
 		if !errors.Is(err, ErrNoRows) {
 			return nil, merry.Prepend(err, "failed to fetch total balance")
 		}
+
 		return nil, ErrNoRows
 	}
+
 	valueCheckSum, ok := data.(inf.Dec)
 	if !ok {
 		return nil, merry.Errorf("this data type of CheckSum is not supported")
 	}
+
 	return &valueCheckSum, nil
 }
 
@@ -279,16 +307,20 @@ func (cluster *FDBCluster) FetchTotal() (*inf.Dec, error) {
 func (cluster *FDBCluster) PersistTotal(total inf.Dec) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		totalKey := cluster.model.checksum.Pack(tuple.Tuple{"total"})
+
 		totalValue, err := serializeCheckSum(total)
 		if err != nil {
 			return totalValue, merry.Prepend(err, "failed to serialize total balance value")
 		}
+
 		tx.Set(totalKey, totalValue)
-		return nil, nil
+
+		return totalValue, nil
 	})
 	if err != nil {
 		return merry.Prepend(err, "failed to save total balance in CheckSum")
 	}
+
 	return nil
 }
 
@@ -342,7 +374,6 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 			}
 
 			for _, accountKeyValue := range accountsKeyValuesArray {
-
 				var fetchAccountValue accountValue
 
 				fetchAccountValue, err = deserializeAccountValue(accountKeyValue.Value)
@@ -354,31 +385,30 @@ func (cluster *FDBCluster) CheckBalance() (*inf.Dec, error) {
 			}
 
 			beginKey = accountsKeyValues[len(accountsKeyValues)-1].Key
-
 		}
 	} else {
-
 		fetchResult, err := cluster.FetchAccounts()
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to get Accounts array")
 		}
+
 		for i := range fetchResult {
 			fetchAccount := fetchResult[i]
 			totalBalance = totalBalance.Add(totalBalance, fetchAccount.Balance)
 		}
-
 	}
 
 	return totalBalance, nil
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientID uuid.UUID) error {
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		err := cluster.setTransfer(tx, transfer)
 		if err != nil {
 			return nil, err
 		}
+
 		srcAccount := model.Account{
 			Bic:     transfer.Acs[0].Bic,
 			Ban:     transfer.Acs[0].Ban,
@@ -386,22 +416,28 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId
 			Found:   false,
 		}
 		sourceAccountKey := cluster.getAccountKey(srcAccount)
+
 		sourceAccountValue, err := getAccountValue(tx, sourceAccountKey)
 		if err != nil {
 			if errors.Is(err, ErrNoRows) {
 				return nil, ErrNoRows
 			}
+
 			return nil, merry.Prepend(err, "failed to get source account")
 		}
+
 		sourceAccountValue.Balance.Sub(sourceAccountValue.Balance, transfer.Amount)
 		if sourceAccountValue.Balance.UnscaledBig().Int64() < 0 {
 			return nil, ErrInsufficientFunds
 		}
+
 		setSourceAccountValue, err := serializeValue(sourceAccountValue)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to serialize source account")
 		}
+
 		tx.Set(sourceAccountKey, setSourceAccountValue)
+
 		destAccount := model.Account{
 			Bic:     transfer.Acs[1].Bic,
 			Ban:     transfer.Acs[1].Ban,
@@ -409,28 +445,35 @@ func (cluster *FDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId
 			Found:   false,
 		}
 		destAccountKey := cluster.getAccountKey(destAccount)
+
 		destAccountValue, err := getAccountValue(tx, destAccountKey)
 		if err != nil {
 			if errors.Is(err, ErrNoRows) {
 				return nil, ErrNoRows
 			}
+
 			return nil, merry.Prepend(err, "failed to get destination account")
 		}
+
 		destAccountValue.Balance.Add(destAccountValue.Balance, transfer.Amount)
+
 		setDestAccountValue, err := serializeValue(destAccountValue)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to serialize destination account")
 		}
+
 		tx.Set(destAccountKey, setDestAccountValue)
-		return nil, nil
+
+		return nil, err
 	})
 
 	return merry.Wrap(err)
 }
 
-// FetchAccounts - получить список аккаунтов
+// FetchAccounts - получить список аккаунтов.
 func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	var accounts []model.Account
+
 	var accountKeyValueArray []fdb.KeyValue
 
 	// StreamingModeWantAll - режим "прочитать всё и как можно быстрее"
@@ -444,7 +487,9 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 			// для скорости обработки возвращаем необработанный массив пар ключ-значение
 			accountKeyValueArray = append(accountKeyValueArray, accountKeyValue)
 		}
+
 		llog.Traceln("count of elements inside loop of transaction", len(accountKeyValueArray))
+
 		return accountKeyValueArray, nil
 	})
 	if err != nil {
@@ -457,6 +502,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 	}
 
 	llog.Traceln("count of elements outside loop of transaction", len(accountKeyValueArray))
+
 	for _, accountKeyValue := range accountKeyValues {
 		keyAccountTuple, err := cluster.model.accounts.Unpack(accountKeyValue.Key)
 		if err != nil {
@@ -464,25 +510,32 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 		}
 
 		var fetchAccount model.Account
+
 		var fetchAccountValue accountValue
+
 		if len(accountKeyValue.Value) == 0 {
 			return nil, ErrNoRows
 		}
+
 		fetchAccountValue, err = deserializeAccountValue(accountKeyValue.Value)
 		if err != nil {
 			return nil, err
 		}
 
 		fetchAccount.Balance = fetchAccountValue.Balance
+
 		Bic, ok := keyAccountTuple[0].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Bic)
 		}
+
 		fetchAccount.Bic = Bic
+
 		Ban, ok := keyAccountTuple[1].(string)
 		if !ok {
 			return nil, merry.Errorf("account bic is not string, value: %v \n", fetchAccount.Ban)
 		}
+
 		fetchAccount.Ban = Ban
 		accounts = append(accounts, fetchAccount)
 	}
@@ -493,6 +546,7 @@ func (cluster *FDBCluster) FetchAccounts() ([]model.Account, error) {
 // FetchBalance - получить баланс счета по атрибутам ключа счета.
 func (cluster *FDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
 	var balances, pendingAmount *inf.Dec
+
 	data, err := cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		fetchAccount := model.Account{
 			Bic:     bic,
@@ -500,19 +554,24 @@ func (cluster *FDBCluster) FetchBalance(bic string, ban string) (*inf.Dec, *inf.
 			Balance: balances,
 			Found:   false,
 		}
+
 		var fetchAccountValue accountValue
 		var balance *inf.Dec
+
 		keyFetchAccount := cluster.getAccountKey(fetchAccount)
 		fetchAccountValue, err := getAccountValue(tx, keyFetchAccount)
 		if err != nil {
 			return nil, merry.Prepend(err, "failed to get balance value in FetchBalance FDB")
 		}
+
 		balance = fetchAccountValue.Balance
+
 		return balance, nil
 	})
 	if err != nil {
 		return nil, nil, merry.Wrap(err)
 	}
+
 	balances, ok := data.(*inf.Dec)
 	if !ok {
 		return nil, nil, merry.Errorf("balance data type is not supported, value: %v", balances)
@@ -526,6 +585,7 @@ func serializeValue(prepare interface{}) (pack []byte, errs error) {
 	if err != nil {
 		return nil, merry.Wrap(err)
 	}
+
 	return pack, nil
 }
 
@@ -536,20 +596,23 @@ func serializeCheckSum(prepare inf.Dec) (pack []byte, errs error) {
 	if err != nil {
 		return nil, merry.Wrap(err)
 	}
+
 	return pack, nil
 }
 
 func deserializeCheckSum(value []byte) (postmap inf.Dec, errs error) {
 	var result inf.Dec
+
 	if len(value) == 0 {
 		return result, ErrNoRows
 	}
+
 	/*inf.Dec взятое отдельно, через json нормально не десериализуется, поэтому используем
 	штатное преобразование из библиотеки inf.v0*/
-	err := result.GobDecode(value)
-	if err != nil {
+	if err := result.GobDecode(value); err != nil {
 		return result, merry.Wrap(err)
 	}
+
 	return result, nil
 }
 
@@ -558,6 +621,7 @@ func deserializeAccountValue(value []byte) (postmap accountValue, errs error) {
 	if err != nil {
 		return postmap, merry.Wrap(err)
 	}
+
 	return postmap, nil
 }
 
@@ -567,13 +631,16 @@ func getAccountValue(tx fdb.ReadTransaction, key fdb.Key) (valueResult accountVa
 	if err != nil {
 		return valueResult, merry.Wrap(err)
 	}
+
 	if len(valueSrc) == 0 {
 		return valueResult, ErrNoRows
 	}
+
 	valueResult, err = deserializeAccountValue(valueSrc)
 	if err != nil {
 		return valueResult, err
 	}
+
 	return valueResult, nil
 }
 
@@ -583,6 +650,7 @@ func getAccountValue(tx fdb.ReadTransaction, key fdb.Key) (valueResult accountVa
 // getAccountKey - cформировать ключ по параметрам счета.
 func (cluster *FDBCluster) getAccountKey(space model.Account) (keyResult fdb.Key) {
 	keyResult = cluster.model.accounts.Pack(tuple.Tuple{space.Bic, space.Ban})
+
 	return keyResult
 }
 
@@ -592,12 +660,12 @@ func (cluster *FDBCluster) getAccountKey(space model.Account) (keyResult fdb.Key
 если по ключу ничего не найдено, нужно это обрабатывать*/
 // getTransferKey - сформировать ключ по параметрам перевода.
 func (cluster *FDBCluster) getTransferKey(space *model.Transfer) (keyResult fdb.Key) {
+	spaceID := tuple.UUID(space.ID)
 	/*tuple не поддерживает тип uuid.UUID,
 	доступные типы https://github.com/apple/foundationdb/blob/master/bindings/go/src/fdb/tuple/tuple.go
 	согласно доке на tuple.UUID:
 	 this simple wrapper allows for other libraries to write the output of their UUID type as a 16-byte array into
 	an instance of this type.*/
-	spaceID := tuple.UUID(space.Id)
 	keyResult = cluster.model.transfers.Pack(
 		tuple.Tuple{
 			spaceID,
@@ -606,6 +674,7 @@ func (cluster *FDBCluster) getTransferKey(space *model.Transfer) (keyResult fdb.
 			space.Acs[1].Bic,
 			space.Acs[1].Ban,
 		})
+
 	return keyResult
 }
 
@@ -613,12 +682,15 @@ func (cluster *FDBCluster) getTransferKey(space *model.Transfer) (keyResult fdb.
 func (cluster *FDBCluster) setTransfer(tx fdb.Transaction, transfer *model.Transfer) error {
 	var preparemap transferValue
 	preparemap.Amount = transfer.Amount
+
 	transferValue, err := serializeValue(preparemap)
 	if err != nil {
 		return merry.Prepend(err, "failed to serialize value transfer")
 	}
+
 	transferKey := cluster.getTransferKey(transfer)
 	tx.Set(transferKey, transferValue)
+
 	return err
 }
 
@@ -626,11 +698,10 @@ func (cluster *FDBCluster) StartStatisticsCollect(statInterval time.Duration) er
 	errChan := make(chan error)
 
 	llog.Debugln("starting of statistic goroutine...")
+
 	go cluster.getStatistics(statInterval, errChan)
 
-	errorCheck := <-errChan
-
-	if errorCheck != nil {
+	if errorCheck := <-errChan; errorCheck != nil {
 		return merry.Prepend(errorCheck, "failed to get statistic")
 	}
 
@@ -639,13 +710,17 @@ func (cluster *FDBCluster) StartStatisticsCollect(statInterval time.Duration) er
 
 func (cluster *FDBCluster) getStatistics(statInterval time.Duration, errChan chan error) {
 	var once sync.Once
+
 	var resultMap map[string]interface{}
+
 	var jsonResult []byte
 
 	const dateFormat = "02-01-2006_15:04:05"
 
-	statFileName := fmt.Sprintf(fdbStatJsonFileTemplate, time.Now().Format(dateFormat))
+	statFileName := fmt.Sprintf(fdbStatJSONFileTemplate, time.Now().Format(dateFormat))
+
 	llog.Debugln("Opening statistic file...")
+
 	statFile, err := os.OpenFile(statFileName, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		errChan <- merry.Prepend(err, "failed to open statistic file")
@@ -661,6 +736,7 @@ func (cluster *FDBCluster) getStatistics(statInterval time.Duration, errChan cha
 			if err != nil {
 				return nil, err
 			}
+
 			return status, nil
 		})
 		if err != nil {
@@ -693,7 +769,7 @@ func (cluster *FDBCluster) getStatistics(statInterval time.Duration, errChan cha
 		once.Do(func() {
 			errChan <- nil
 		})
-
+		// nolint:durationcheck
 		time.Sleep(statInterval * time.Second)
 	}
 }
