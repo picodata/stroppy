@@ -92,7 +92,6 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID
 				Code: 1007,
 			}) || errors.Is(err, cluster.ErrCockroachTxClosed) || errors.Is(err, cluster.ErrCockroachUnexpectedEOF) || errors.Is(err, mongo.CommandError{
 				Code: 133,
-				// https://gitlab.com/picodata/openway/stroppy/-/issues/57
 			}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
 				// временная мера до стабилизации mongo
 				mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||

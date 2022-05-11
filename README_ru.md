@@ -190,7 +190,7 @@ sudo apt-get update && sudo apt-get install terraform
 
 ```sh
 ssh-keygen -F gitlab.com || ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
-git clone git@gitlab.com:picodata/openway/stroppy.git
+git clone git@github.com:picodata/stroppy.git
 ```
 
 3.Поместить готовый бинарный файл Stroppy в папку bin.
@@ -254,7 +254,7 @@ sudo usermod -aG docker ${USER}
 
 ```sh
 ssh-keygen -F gitlab.com || ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
-git clone git@gitlab.com:picodata/openway/stroppy.git
+git clone git@github.com:picodata/stroppy.git
 ```
 
 3.Собрать контейнер.
@@ -275,13 +275,13 @@ docker push USERNAME/stroppy
 5.Заменить контейнер Stroppy в файле `stroppy-manifest.yml`
 
 ```sh
-sed -i 's/registry.gitlab.com\/picodata\/openway\/stroppy:latest/docker.io\/USERNAME\/stroppy:latest/g' benchmark/deploy/stroppy-manifest.yaml
+sed -i 's/registry.github.com\/picodata\/stroppy:latest/docker.io\/USERNAME\/stroppy:latest/g' benchmark/deploy/stroppy-manifest.yaml
 ```
 
 (!) Если планируется запуск примеров из папки doc/examples, то замену следует проводить в соответствующей папке, например:
 
 ```sh
-sed -i 's/registry.gitlab.com\/picodata\/openway\/stroppy:latest/docker.io\/USERNAME\/stroppy:latest/g' docs/examples/deploy-oracle-3node-2cpu-8gbRAM-100gbStorage/stroppy-manifest.yaml
+sed -i 's/registry.github.com\/picodata\/stroppy:latest/docker.io\/USERNAME\/stroppy:latest/g' docs/examples/deploy-oracle-3node-2cpu-8gbRAM-100gbStorage/stroppy-manifest.yaml
 ```
 
 6.Скопировать ключ private_key.pem в требуемую рабочую папку
@@ -339,7 +339,7 @@ sudo usermod -aG docker ${USER}
 
 ```sh
 ssh-keygen -F gitlab.com || ssh-keyscan gitlab.com >> ~/.ssh/known_hosts
-git clone git@gitlab.com:picodata/openway/stroppy.git
+git clone git@github.com:picodata/stroppy.git
 ```
 
 3.Скомилировать Stroppy.

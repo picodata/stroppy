@@ -117,7 +117,6 @@ func (mongo *mongoCluster) addStroppyUser(executePodName string) error {
 	success := false
 	var podName string
 	// техдолг - заменить имя и пароль на данные из secrets. Нужен отдельный метод.
-	// https://gitlab.com/picodata/openway/stroppy/-/issues/66
 	createUserCmd := []string{
 		"mongo",
 		"-u", "userAdmin",
