@@ -42,7 +42,8 @@ fmt:
 	gofumpt -w -s .
 
 lint:
-	golangci-lint run --new-from-rev=main --timeout=10m
+	go mod vendor
+	golangci-lint run
 
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
@@ -50,5 +51,5 @@ deploy_yandex:
 configure_fdb:
 	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
 
-test: configure_fdb
+test: configure_fdb lint
 	go test ./...
