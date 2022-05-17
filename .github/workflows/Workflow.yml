@@ -74,7 +74,7 @@ jobs:
       - run: rm -rf ..?* .[!.]* *
         if: always()
   build_docker:
-    name: Build docker image with cartridge app
+    name: Docker image stroppy
     needs: [ synchronization, tests ]
     runs-on: [ self-hosted, stroppy ]
     steps:
@@ -90,7 +90,7 @@ jobs:
       - name: push image
         run: docker push docker-public.binary.picodata.io/stroppy:latest
   build_cartridge:
-    name: Build docker image with cartridge app
+    name: Docker image with cartridge app
     needs: [synchronization, tests, build_docker]
     runs-on: [self-hosted, stroppy]
     steps:
