@@ -1,7 +1,7 @@
 FROM docker.binary.picodata.io/stroppy-builder:latest
 WORKDIR /stroppy
 USER root:root
-COPY .. .
+COPY . .
 RUN go build -o bin/stroppy ./cmd/stroppy
 
 FROM docker-proxy.binary.picodata.io/debian:bullseye-slim
