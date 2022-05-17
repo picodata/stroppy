@@ -51,5 +51,5 @@ deploy_yandex:
 configure_fdb:
 	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
 
-test: configure_fdb lint
+test: configure_fdb
 	go test ./...
