@@ -69,6 +69,7 @@ jobs:
           ref: develop
           fetch-depth: 0
       - run: rm -rf stroppy
+      - run: git rev-parse --abbrev-ref HEAD
       - run: make test
       - run: rm -rf ..?* .[!.]* *
         if: always()
