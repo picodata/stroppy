@@ -42,7 +42,7 @@ fmt:
 	gofumpt -w -s .
 
 lint:
-	CURRENT=$(git rev-parse --abbrev-ref HEAD) ; if [ $CURRENT!="develop" ]; then (git fetch && git checkout --track origin/develop && git pull && git checkout $CURRENT && go mod vendor && golangci-lint run) else (go mod vendor) fi
+	CURRENT=$(git rev-parse --abbrev-ref HEAD) ; if [ $CCURRENT != "develop" ]; then (git fetch && git checkout --track origin/develop && git pull && git checkout $CCURRENT && go mod vendor && golangci-lint run) else (go mod vendor) fi
 	go mod vendor
 	golangci-lint run
 
