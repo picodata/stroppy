@@ -52,7 +52,6 @@ configure_fdb:
 	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
 
 test: configure_fdb
-	go mod vendor
 	current_branch=$(git rev-parse --abbrev-ref HEAD)
-	if [ $current_branch != "develop" ]; then (git checkout --track origin/develop && git pull && git checkout $current_branch && golangci-lint run) fi
+	if [ $current_branch != "develop" ]; then (git checkout --track origin/develop && git pull && git checkout $current_branch && go mod vendor && golangci-lint run) else (go mod vendor) fi
 	go test ./...
