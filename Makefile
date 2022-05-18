@@ -53,5 +53,5 @@ configure_fdb:
 
 test: configure_fdb
 	current_branch=$(git rev-parse --abbrev-ref HEAD)
-	if [ $current_branch != "develop" ]; then (git checkout --track origin/develop && git pull && git checkout $current_branch && go mod vendor && golangci-lint run) else (go mod vendor) fi
+	if [ $current_branch != "develop" ]; then (git fetch && git checkout --track origin/develop && git pull && git checkout $current_branch && go mod vendor && golangci-lint run) else (go mod vendor) fi
 	go test ./...
