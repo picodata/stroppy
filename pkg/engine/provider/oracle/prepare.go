@@ -20,8 +20,21 @@ import (
 
 const instanceFileName = "main_oracle-derived.tf"
 
-func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
-	ram int, diskString string, nodesString string) {
+func (op *Provider) setVariableBlock(
+	instanceFileBody *hcl2.Body,
+	cpu int,
+	ram int,
+	diskString string,
+	nodesString string,
+) {
+	terraformBody := instanceFileBody.AppendNewBlock("terraform", []string{}).Body()
+	requiredProvidersBody := terraformBody.AppendNewBlock("required_providers", []string{}).Body()
+
+	oracleMap := make(map[string]cty.Value, 1)
+	oracleMap["source"] = cty.StringVal("oracle/oci")
+
+	requiredProvidersBody.SetAttributeValue("oracle", cty.MapVal(oracleMap))
+	instanceFileBody.AppendNewline()
 
 	tenancyOCIDBlock := instanceFileBody.AppendNewBlock("variable", []string{"tenancy_ocid"})
 	tenancyOCIDBody := tenancyOCIDBlock.Body()
@@ -74,7 +87,7 @@ func (op *Provider) setVariableBlock(instanceFileBody *hcl2.Body, cpu int,
 
 	instanceFileBody.AppendNewline()
 
-	providerOCIblock := instanceFileBody.AppendNewBlock("provider", []string{"oci"})
+	providerOCIblock := instanceFileBody.AppendNewBlock("provider", []string{"oracle"})
 	providerOCIbody := providerOCIblock.Body()
 	providerOCIbody.SetAttributeTraversal("tenancy_ocid", hcl.Traversal{
 		hcl.TraverseRoot{
