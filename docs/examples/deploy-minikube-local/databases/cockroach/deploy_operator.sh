@@ -7,16 +7,12 @@ source "$SCRIPT_DIR/../../common.sh"
 errorless_run "creating role bindings" \
 kubectl create clusterrolebinding ubuntu-cluster-admin-binding --clusterrole=cluster-admin
 
-errorless_run "creating role bindings" \
-kubectl create clusterrolebinding ubuntu-cluster-admin-binding --clusterrole=cluster-admin
-
 run "applying crd for the operator" \
 kubectl apply -f "$SCRIPT_DIR/operator/crds.yaml"
 
 sleep 10
 
 run "installing operator" \
-
 kubectl apply -f "$SCRIPT_DIR/operator/operator.yaml"
 
 sleep 10

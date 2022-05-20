@@ -853,7 +853,7 @@ spec:
                 format: int32
                 type: integer
               image:
-                description: Container image information
+                description: (Optional) Container image information
                 properties:
                   name:
                     description: 'Container image with supported CockroachDB version.
@@ -872,6 +872,114 @@ spec:
                 required:
                 - name
                 type: object
+              ingress:
+                description: (Optional) Ingress defines the Ingress configuration
+                  used to expose the services using Ingress
+                properties:
+                  sql:
+                    description: (Optional) Ingress options for SQL connections Adding/changing
+                      the SQL host will result in rolling update of the crdb cluster
+                      nodes
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: (Optional) Annotations related to ingress resource
+                        type: object
+                      host:
+                        description: host is host to be used for exposing service
+                        type: string
+                      ingressClassName:
+                        description: (Optional) IngressClassName to be used by ingress
+                          resource
+                        type: string
+                      tls:
+                        description: (Optional) TLS describes the TLS certificate
+                          info
+                        items:
+                          description: IngressTLS describes the transport layer security
+                            associated with an Ingress.
+                          properties:
+                            hosts:
+                              description: Hosts are a list of hosts included in the
+                                TLS certificate. The values in this list must match
+                                the name/s used in the tlsSecret. Defaults to the
+                                wildcard host setting for the loadbalancer controller
+                                fulfilling this Ingress, if left unspecified.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            secretName:
+                              description: SecretName is the name of the secret used
+                                to terminate TLS traffic on port 443. Field is left
+                                optional to allow TLS routing based on SNI hostname
+                                alone. If the SNI host in a listener conflicts with
+                                the "Host" header field used by an IngressRule, the
+                                SNI host is used for termination and value of the
+                                Host header is used for routing.
+                              type: string
+                          type: object
+                        type: array
+                    required:
+                    - host
+                    type: object
+                  ui:
+                    description: (Optional) Ingress options for UI (HTTP) connections
+                    properties:
+                      annotations:
+                        additionalProperties:
+                          type: string
+                        description: (Optional) Annotations related to ingress resource
+                        type: object
+                      host:
+                        description: host is host to be used for exposing service
+                        type: string
+                      ingressClassName:
+                        description: (Optional) IngressClassName to be used by ingress
+                          resource
+                        type: string
+                      tls:
+                        description: (Optional) TLS describes the TLS certificate
+                          info
+                        items:
+                          description: IngressTLS describes the transport layer security
+                            associated with an Ingress.
+                          properties:
+                            hosts:
+                              description: Hosts are a list of hosts included in the
+                                TLS certificate. The values in this list must match
+                                the name/s used in the tlsSecret. Defaults to the
+                                wildcard host setting for the loadbalancer controller
+                                fulfilling this Ingress, if left unspecified.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                            secretName:
+                              description: SecretName is the name of the secret used
+                                to terminate TLS traffic on port 443. Field is left
+                                optional to allow TLS routing based on SNI hostname
+                                alone. If the SNI host in a listener conflicts with
+                                the "Host" header field used by an IngressRule, the
+                                SNI host is used for termination and value of the
+                                Host header is used for routing.
+                              type: string
+                          type: object
+                        type: array
+                    required:
+                    - host
+                    type: object
+                type: object
+              logConfigMap:
+                description: (Optional) LogConfigMap define the config map which contains
+                  log configuration used to send the logs through the proper channels
+                  in the cockroachdb. Logging configuration is available for cockroach
+                  version v21.1.0 onwards. The logging configuration is taken in format
+                  of yaml file, you can check the logging configuration here (https://www.cockroachlabs.com/docs/stable/configure-logs.html#default-logging-configuration)
+                  The default logging for cockroach version v20.x or less is stderr,
+                  logging API is ignored for older versions.
+                type: string
               maxSQLMemory:
                 description: '(Optional) The maximum in-memory storage capacity available
                   to store temporary data for SQL queries (`--max-sql-memory` parameter)
@@ -1084,6 +1192,106 @@ spec:
                       type: string
                   type: object
                 type: array
+              topologySpreadConstraints:
+                description: (Optional) If specified, the pod's topology spread constraints
+                items:
+                  description: TopologySpreadConstraint specifies how to spread matching
+                    pods among the given topology.
+                  properties:
+                    labelSelector:
+                      description: LabelSelector is used to find matching pods. Pods
+                        that match this label selector are counted to determine the
+                        number of pods in their corresponding topology domain.
+                      properties:
+                        matchExpressions:
+                          description: matchExpressions is a list of label selector
+                            requirements. The requirements are ANDed.
+                          items:
+                            description: A label selector requirement is a selector
+                              that contains values, a key, and an operator that relates
+                              the key and values.
+                            properties:
+                              key:
+                                description: key is the label key that the selector
+                                  applies to.
+                                type: string
+                              operator:
+                                description: operator represents a key's relationship
+                                  to a set of values. Valid operators are In, NotIn,
+                                  Exists and DoesNotExist.
+                                type: string
+                              values:
+                                description: values is an array of string values.
+                                  If the operator is In or NotIn, the values array
+                                  must be non-empty. If the operator is Exists or
+                                  DoesNotExist, the values array must be empty. This
+                                  array is replaced during a strategic merge patch.
+                                items:
+                                  type: string
+                                type: array
+                            required:
+                            - key
+                            - operator
+                            type: object
+                          type: array
+                        matchLabels:
+                          additionalProperties:
+                            type: string
+                          description: matchLabels is a map of {key,value} pairs.
+                            A single {key,value} in the matchLabels map is equivalent
+                            to an element of matchExpressions, whose key field is
+                            "key", the operator is "In", and the values array contains
+                            only "value". The requirements are ANDed.
+                          type: object
+                      type: object
+                    maxSkew:
+                      description: 'MaxSkew describes the degree to which pods may
+                        be unevenly distributed. When `whenUnsatisfiable=DoNotSchedule`,
+                        it is the maximum permitted difference between the number
+                        of matching pods in the target topology and the global minimum.
+                        For example, in a 3-zone cluster, MaxSkew is set to 1, and
+                        pods with the same labelSelector spread as 1/1/0: | zone1
+                        | zone2 | zone3 | |   P   |   P   |       | - if MaxSkew is
+                        1, incoming pod can only be scheduled to zone3 to become 1/1/1;
+                        scheduling it onto zone1(zone2) would make the ActualSkew(2-0)
+                        on zone1(zone2) violate MaxSkew(1). - if MaxSkew is 2, incoming
+                        pod can be scheduled onto any zone. When `whenUnsatisfiable=ScheduleAnyway`,
+                        it is used to give higher precedence to topologies that satisfy
+                        it. It''s a required field. Default value is 1 and 0 is not
+                        allowed.'
+                      format: int32
+                      type: integer
+                    topologyKey:
+                      description: TopologyKey is the key of node labels. Nodes that
+                        have a label with this key and identical values are considered
+                        to be in the same topology. We consider each <key, value>
+                        as a "bucket", and try to put balanced number of pods into
+                        each bucket. It's a required field.
+                      type: string
+                    whenUnsatisfiable:
+                      description: 'WhenUnsatisfiable indicates how to deal with a
+                        pod if it doesn''t satisfy the spread constraint. - DoNotSchedule
+                        (default) tells the scheduler not to schedule it. - ScheduleAnyway
+                        tells the scheduler to schedule the pod in any location,   but
+                        giving higher precedence to topologies that would help reduce
+                        the   skew. A constraint is considered "Unsatisfiable" for
+                        an incoming pod if and only if every possible node assigment
+                        for that pod would violate "MaxSkew" on some topology. For
+                        example, in a 3-zone cluster, MaxSkew is set to 1, and pods
+                        with the same labelSelector spread as 3/1/1: | zone1 | zone2
+                        | zone3 | | P P P |   P   |   P   | If WhenUnsatisfiable is
+                        set to DoNotSchedule, incoming pod can only be scheduled to
+                        zone2(zone3) to become 3/2/1(3/1/2) as ActualSkew(2-1) on
+                        zone2(zone3) satisfies MaxSkew(1). In other words, the cluster
+                        can still be imbalanced, but scheduler won''t make it *more*
+                        imbalanced. It''s a required field.'
+                      type: string
+                  required:
+                  - maxSkew
+                  - topologyKey
+                  - whenUnsatisfiable
+                  type: object
+                type: array
             required:
             - dataStore
             - image
@@ -1147,6 +1355,9 @@ spec:
                   - type
                   type: object
                 type: array
+              sqlHost:
+                description: SQLHost is the host to be used with SQL ingress
+                type: string
               version:
                 description: Database service version. Not populated and is just a
                   placeholder currently.
