@@ -6,7 +6,7 @@ metadata:
 spec:
   containers:
   - name: stroppy-client
-    image: registry.github.com/picodata/stroppy:latest
+    image: docker.binary.picodata.io/stroppy:latest
     command: ["/bin/sleep"]
     args: [ "infinity" ]
   imagePullSecrets:
