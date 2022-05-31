@@ -28,6 +28,8 @@ const (
 	RemoteClient ClientType = "remote"
 )
 
+
+/// Create ssh.Client based on bastion (master) address and ssh private key 
 func CreateClient(wd, address, provider string, clientType ClientType) (c Client, err error) {
 	switch clientType {
 	case RemoteClient:

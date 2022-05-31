@@ -69,7 +69,10 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.Cartridge:
 		_cluster = createCartridgeCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
-	}
+
+    case cluster.Yandex:
+        _cluster = createYandexCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+    }
 
 	return
 }

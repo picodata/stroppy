@@ -54,16 +54,17 @@ func createSshClient(wd, address, provider string) (cc Client, err error) {
 		return
 	}
 	c.keyFilePath = filepath.Join(wd, c.keyFileName)
+    llog.Tracef("Ssh private key file path '%v'", c.keyFilePath)
 
 	if c.keyFileBytes, err = ioutil.ReadFile(c.keyFilePath); err != nil {
 		err = merry.Prependf(err, "failed to read '%s' key file content", c.keyFilePath)
 		return
 	}
-
-	if c.internalClient, err = c.getClientInstance(address); err != nil {
+    
+    if c.internalClient, err = c.getClientInstance(address); err != nil {
 		return
 	}
-	llog.Infof("remote secure shell client created")
+    llog.Debugln("Remote secure shh client creacted")
 
 	cc = c
 	return
@@ -85,6 +86,8 @@ func (sc *client) GetNewSession() (session Session, err error) {
 	return
 }
 
+/// Parse client.keyFileBytes to private key and returning ssh.Client
+/// if client returned successefully, connection is ok
 func (sc *client) getClientInstance(address string) (client *ssh.Client, err error) {
 	var signer ssh.Signer
 	if signer, err = ssh.ParsePrivateKey(sc.keyFileBytes); err != nil {
@@ -100,8 +103,10 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 		//nolint:gosec
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
+    llog.Traceln("Ssh private key successefully parsed")
 
 	addr := fmt.Sprintf("%s:%d", address, 22)
+    llog.Traceln("Taget address for ssh connection %v", addr)
 	if client, err = ssh.Dial("tcp", addr, config); err != nil {
 		err = merry.Prepend(err, "failed to start ssh connection for ssh client")
 	}

@@ -45,6 +45,7 @@ const (
 	MongoDBClusterType
 	CockroachClusterType
 	CartridgeClusterType
+	YandexCluserType
 )
 
 func (e DBClusterType) String() string {
@@ -59,7 +60,9 @@ func (e DBClusterType) String() string {
 		return "MongoDB"
 	case CockroachClusterType:
 		return "CocroachDB"
-	}
+    case YandexCluserType:
+        return  "YandexDB"
+    }
 	panic("unknown DBClusterType")
 }
 
@@ -69,6 +72,7 @@ const (
 	MongoDB    = "mongodb"
 	Cockroach  = "cockroach"
 	Cartridge  = "cartridge"
+	Yandex     = "yandex"
 )
 
 const (
