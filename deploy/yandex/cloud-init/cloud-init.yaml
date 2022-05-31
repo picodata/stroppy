@@ -1,0 +1,19 @@
+#cloud-config
+---
+package_update: true
+package_reboot_if_required: true
+
+packages:
+  - net-tools
+  - epel-release
+
+users:
+  - name: picoadm
+    groups: [ sudo, docker ]
+    shell: /bin/bash
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    passwd: '$6$w7J1BHYgFQw9iQco$Mr0BrJV9NMjGqb7pcYgwl4zK4.hlOdlySE19TRUC1ag3LJmN9Dceg6u3OaBAE9EnKsGfJXRKif3LSh12VwfUJ.'
+
+debug:
+  verbose: true
+  output: /var/log/cloud-init-debug.log

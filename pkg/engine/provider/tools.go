@@ -30,8 +30,10 @@ func LoadClusterTemplate(dir string) (*ClusterConfigurations, error) {
 	return &templatesConfig, nil
 }
 
-func DispatchTemplate(templatesConfig *ClusterConfigurations,
-	flavor string) (template ClusterParameters, err error) {
+func DispatchTemplate(
+    templatesConfig *ClusterConfigurations,
+	flavor string,
+) (template ClusterParameters, err error) {
 
 	switch flavor {
 	case "small":

@@ -1,0 +1,17 @@
+---
+- name: User | Create User Group
+  become: true
+  group:
+    name: "{{ user.group|default(user.name) }}"
+    system: "{{ user.system|default(omit) }}"
+
+- name: User | Create User
+  become: true
+  user:
+    comment: "{{ user.comment|default(omit) }}"
+    createhome: "{{ user.createhome|default(omit) }}"
+    group: "{{ user.group|default(user.name) }}"
+    home: "{{ user.home|default(omit) }}"
+    shell: "{{ user.shell|default(omit) }}"
+    name: "{{ user.name }}"
+    system: "{{ user.system|default(omit) }}"

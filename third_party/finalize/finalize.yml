@@ -1,0 +1,31 @@
+---
+- name: Finalize cluster deploy
+  hosts: master
+  tasks:
+    - name: Get kube config from master
+      ansible.builtin.fetch:
+        src: ~/.kube/config
+        dest: .kube/config
+
+- name: Apply grafana manifests
+  hosts: local
+  tasks:
+    - name: Apply metrics-server manifest
+      kubernetes.core.k8s:
+        kubeconfig: .kube/config
+        state: present
+        src: manifests/metrics-server.yaml
+
+    - name: Apply grafana-index-yandex manifest
+      when: cloud_type == yandex
+      kubernetes.core.k8s:
+        kubeconfig: .kube/config
+        state: present
+        src: manifests/ingress-grafana-yandex.yaml
+
+    - name: Apply grafana-index-oracle manifest
+      when: cloud_type == oracle
+      kubernetes.core.k8s:
+        kubeconfig: .kube/config
+        state: present
+        src: manifests/ingress-grafana-oracle.yaml

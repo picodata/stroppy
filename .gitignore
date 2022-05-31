@@ -7,6 +7,8 @@ private_key
 private_key.pem
 **.tfstate
 **.tfstate.backup
+.DS_Store
+.idea
 
 benchmark
 terraform*.zip
@@ -44,4 +46,12 @@ third_party/stroppy-test-cartridge/stroppy_test/config/
 third_party/stroppy-test-cartridge/stroppy_test/config.backup/*
 !third_party/stroppy-test-cartridge/tmp/.keep
 
-.idea
+terraform.*
+.terraform.*
+/**/.terraform
+/tmp
+/.ssh/
+/.roles/
+/.collections/
+ansible.cfg
+requirements.yml

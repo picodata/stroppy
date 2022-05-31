@@ -12,10 +12,12 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
 )
 
-func CreateKubernetes(settings *config.Settings,
+func CreateKubernetes(
+    settings *config.Settings,
 	provider provider.Provider,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (k *Kubernetes, err error) {
+	sshClient ssh.Client,
+) (k *Kubernetes, err error) {
 
 	k = &Kubernetes{
 		provider: provider,

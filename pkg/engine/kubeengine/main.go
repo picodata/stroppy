@@ -42,9 +42,13 @@ func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 	return
 }
 
-func createKubernetesObject(settings *config.Settings,
+/// Create kubernetes object based on kubeengine.Engine
+/// engine prepared to run on local machine
+func createKubernetesObject(
+    settings *config.Settings,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (pObj *Engine) {
+	sshClient ssh.Client,
+) (pObj *Engine) {
 
 	pObj = &Engine{
 		WorkingDirectory:  settings.WorkingDirectory,
@@ -59,9 +63,11 @@ func createKubernetesObject(settings *config.Settings,
 	return
 }
 
-func CreateEngine(settings *config.Settings,
+func CreateEngine(
+    settings *config.Settings,
 	terraformAddressMap map[string]map[string]string,
-	sshClient ssh.Client) (e *Engine, err error) {
+	sshClient ssh.Client,
+) (e *Engine, err error) {
 
 	e = createKubernetesObject(settings, terraformAddressMap, sshClient)
 	e.sshKeyFileName, e.sshKeyFilePath = e.sc.GetPrivateKeyInfo()
@@ -113,4 +119,8 @@ func (e *Engine) GetResourceURL(resource, namespace, name, subresource string) (
 		Name(name).
 		SubResource(subresource).URL()
 	return
+}
+
+func (e *Engine) SetClusterConfigFile(path  string) {
+    e.clusterConfigFile = path
 }

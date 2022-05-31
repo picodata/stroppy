@@ -76,6 +76,7 @@ func Deploy(settings *config.Settings) (shell Shell, err error) {
 
 func (sh *shell) prepareTerraform() (err error) {
 	deploymentSettings := sh.settings.DeploymentSettings
+
 	sh.tf = terraform.CreateTerraform(deploymentSettings, sh.workingDirectory, sh.workingDirectory)
 	/* отдельный метод, чтобы не смешивать инициализацию terraform, где просто заполняем структуру,
 	и провайдера, где читаем файл и его может не быть*/
@@ -91,15 +92,18 @@ func (sh *shell) prepareTerraform() (err error) {
 
 func (sh *shell) prepareEngine() (err error) {
 	var addressMap map[string]map[string]string
+	// Parse terraform.tfstate, get ip_address and nat_address
 	if addressMap, err = sh.tf.GetAddressMap(); err != nil {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
+	// string var (like `remote` or `local`) which will be used to create ssh the client
 	commandClientType := engineSsh.RemoteClient
 	if sh.settings.Local {
 		commandClientType = engineSsh.LocalClient
 	}
 
+	// create ssh client
 	sh.sc, err = engineSsh.CreateClient(sh.workingDirectory,
 		addressMap["external"]["master"],
 		sh.settings.DeploymentSettings.Provider,
@@ -117,7 +121,12 @@ func (sh *shell) prepareEngine() (err error) {
 }
 
 func (sh *shell) preparePayload() (err error) {
-	sh.cluster, err = db.CreateCluster(sh.settings.DatabaseSettings, sh.sc, sh.k, sh.workingDirectory)
+	sh.cluster, err = db.CreateCluster(
+		sh.settings.DatabaseSettings,
+		sh.sc,
+		sh.k,
+		sh.workingDirectory,
+	)
 	if err != nil {
 		return
 	}
@@ -137,20 +146,29 @@ func (sh *shell) preparePayload() (err error) {
 func (sh *shell) deploy() (err error) {
 	llog.Traceln(sh.settings)
 
+	// Build terraform script
 	if err = sh.prepareTerraform(); err != nil {
 		return
 	}
+
+	llog.Traceln(sh.tf)
+
+	// Apply terraform scirpt
 	if err = sh.tf.Run(); err != nil {
 		return merry.Prepend(err, "terraform run failed")
 	}
 
+	// Create and check ssh client
 	if err = sh.prepareEngine(); err != nil {
 		return
 	}
 
-	if err = sh.k.Deploy(); err != nil {
+	// Fully functional k8s cluster deploy via ansible
+	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
+
+	// Forvard host ports for grafana
 	if err = sh.k.OpenPortForwarding(); err != nil {
 		return
 	}
@@ -169,7 +187,11 @@ func (sh *shell) deploy() (err error) {
 		return
 	}
 	if err = sh.cluster.Deploy(); err != nil {
-		return merry.Prependf(err, "'%s' database deploy failed", sh.settings.DatabaseSettings.DBType)
+		return merry.Prependf(
+			err,
+			"'%s' database deploy failed",
+			sh.settings.DatabaseSettings.DBType,
+		)
 	}
 
 	if err = sh.payload.Connect(); err != nil {
