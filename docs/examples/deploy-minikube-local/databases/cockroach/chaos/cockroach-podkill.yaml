@@ -1,0 +1,25 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: cockroach-pay-pod-failure
+  namespace: default
+  labels: null
+  annotations:
+    experiment.chaos-mesh.org/pause: 'true'
+spec:
+  selector:
+    namespaces:
+      - default
+    pods:
+      default:
+        - cockroachdb-0
+        - cockroachdb-1
+        - cockroachdb-2
+  scheduler:
+    cron: '*/2 * * * *'
+  action: pod-kill
+  mode: one
+  value: ''
+  duration: 10s
+  containerName: ''
+  gracePeriod: 0

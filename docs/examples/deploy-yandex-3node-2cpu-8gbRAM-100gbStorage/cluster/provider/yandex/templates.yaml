@@ -2,7 +2,7 @@ small:
     description: "Minimal configuration: 4 CPU Xeon E5-2660 v4, 10 Gb RAM, 50 Gb disk"
     platform: "standard-v2"
     cpu: 4
-    ram: 10
+    ram: 10 
     disk: 50
 standard:
     description: "Standard configuration: 8 CPU Xeon E5-2660 v4, 16 Gb RAM, 50 Gb disk"

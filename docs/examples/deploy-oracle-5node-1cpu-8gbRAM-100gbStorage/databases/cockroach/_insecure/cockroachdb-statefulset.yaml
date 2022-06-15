@@ -6,6 +6,7 @@ metadata:
   name: cockroachdb-public
   labels:
     worker-type: dbms-worker
+    app: cockroachdb
 spec:
   ports:
   # The main port, served by gRPC, serves Postgres-flavor SQL, internode
@@ -19,6 +20,7 @@ spec:
     name: http
   selector:
     worker-type: dbms-worker
+    app: cockroachdb
 ---
 apiVersion: v1
 kind: Service
@@ -30,6 +32,7 @@ metadata:
   name: cockroachdb
   labels:
     worker-type: dbms-worker
+    app: cockroachdb
   annotations:
     # Use this annotation in addition to the actual publishNotReadyAddresses
     # field below because the annotation will stop being respected soon but the
@@ -55,6 +58,7 @@ spec:
   clusterIP: None
   selector:
     worker-type: dbms-worker
+    app: cockroachdb
 ---
 apiVersion: policy/v1beta1
 kind: PodDisruptionBudget

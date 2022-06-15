@@ -91,7 +91,7 @@ func (cluster *MongoDBCluster) UnlockAccount(bic string, ban string, transferId 
 }
 
 // NewFoundationCluster - Создать подключение к MongoDB и создать новые коллекции, если ещё не созданы.
-func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBCluster, error) {
+func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool, setDirect bool) (*MongoDBCluster, error) {
 	var clientOptions options.ClientOptions
 
 	llog.Debugln("sharded state:", sharded)
@@ -102,6 +102,8 @@ func NewMongoDBCluster(dbURL string, poolSize uint64, sharded bool) (*MongoDBClu
 	clientOptions.SetMaxConnIdleTime(maxConnIdleTimeout)
 	clientOptions.SetHeartbeatInterval(heartBeatInterval)
 	clientOptions.SetSocketTimeout(socketTimeout)
+
+	clientOptions.SetDirect(setDirect)
 
 	llog.Debugln("connecting to mongodb...")
 	client, err := mongo.NewClient(&clientOptions)
@@ -410,6 +412,7 @@ func (cluster *MongoDBCluster) CheckBalance() (*inf.Dec, error) {
 	}
 
 	return inf.NewDec(result.Balance, 0), nil
+
 }
 
 func (cluster *MongoDBCluster) TopUpMoney(sessCtx mongo.SessionContext, acc model.Account, amount int64, accounts *mongo.Collection) error {
@@ -450,10 +453,11 @@ func (cluster *MongoDBCluster) WithdrawMoney(sessCtx mongo.SessionContext, acc m
 	}
 
 	return nil
+
 }
 
 // MakeAtomicTransfer - выполнить операцию перевода и изменить балансы source и dest cчетов.
-func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) error {
+func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
 	ctx := context.Background()
 	transfers := cluster.mongoModel.transfers
 	srcAccounts := cluster.mongoModel.accounts
@@ -462,7 +466,9 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 
 	callback := func(sessCtx mongo.SessionContext) (interface{}, error) {
 		var insertResult *mongo.InsertOneResult
+
 		// We use algorithm as in postgres MakeAtomicTransfer() to decrease count of locks
+
 		if transfer.Acs[0].AccountID() > transfer.Acs[1].AccountID() {
 
 			if err = cluster.WithdrawMoney(sessCtx, transfer.Acs[0], transfer.Amount.UnscaledBig().Int64(), srcAccounts); err != nil {
@@ -495,8 +501,10 @@ func (cluster *MongoDBCluster) MakeAtomicTransfer(transfer *model.Transfer) erro
 			{Key: "Amount", Value: transfer.Amount.UnscaledBig().Int64()},
 			{Key: "State", Value: transfer.State},
 		}
+
 		// вставляем запись о переводе
 		if insertResult, err = transfers.InsertOne(sessCtx, docs); err != nil {
+
 			return nil, merry.Prepend(err, "failed to insert transfer")
 		}
 		llog.Tracef("Inserted transfer with %v and document Id %v", transfer.Id, insertResult)

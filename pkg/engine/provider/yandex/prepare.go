@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"math/rand"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -31,7 +32,8 @@ const (
 	subnetAddressTemplate = "172.16.%d.0/24"
 )
 
-const providerFileName = "yandex_compute_instance_group.tf"
+const providerFileName = "main.tf"
+const varsFileName = "vars.tf"
 
 func randStringID() string {
 	letters := []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
@@ -296,6 +298,22 @@ func (yp *Provider) setMasterBlock(providerFileBody *hclwrite.Body, stringSSHKey
 func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd string) (err error) {
 	llog.Infoln("Starting generation provider configuration file")
 
+    // At first we shold check that main.tf exists
+    varsConfigPath := filepath.Join(wd, varsFileName)
+    if _, err = os.Stat(varsConfigPath); err == nil {
+        llog.Debugln("Terraform variables file 'vars.tf' founded: success")
+    } else {
+        llog.Debugln("Terraform variables file 'vars.tf' does not exists: waning")
+    }
+
+    providerConfigPath := filepath.Join(wd, providerFileName)
+    // in some cases user should can create his own terraform script
+    // if in workingDirectory main.tf is exists, file creation will be skipped
+    if _, err = os.Stat(providerConfigPath); err == nil {
+        llog.Infoln("Terraform script 'main.tf' already exists, skipping creation")
+        return 
+    }
+
 	providerFile := hclwrite.NewEmptyFile()
 	providerFileBody := providerFile.Body()
 	providerFileBody.AppendNewline()
@@ -307,6 +325,8 @@ func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd 
 		hcl.TraverseAttr{Name: "pub\")}\"\n}"},
 	}
 
+    llog.Warningf("TF file: %#v", providerFile)
+
 	yp.setTerraformBlock(providerFileBody)
 	yp.setIamServiceAccountBlock(providerFileBody)
 	yp.setResourceManagerBlock(providerFileBody)
@@ -316,7 +336,7 @@ func (yp *Provider) prepare(template *provider.ClusterParameters, nodes int, wd 
 	yp.setWorkersBlock(providerFileBody, stringSSHKeys, template.CPU, template.RAM, template.Disk, template.Platform, nodes)
 	yp.setMasterBlock(providerFileBody, stringSSHKeys, template.Platform)
 
-	providerConfigPath := filepath.Join(wd, providerFileName)
+
 	if err = ioutil.WriteFile(providerConfigPath, providerFile.Bytes(), 0o600); err != nil {
 		return merry.Prepend(err, "failed to write provider configuration file")
 	}

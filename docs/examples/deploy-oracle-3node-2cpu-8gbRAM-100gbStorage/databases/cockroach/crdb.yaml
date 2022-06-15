@@ -66,5 +66,16 @@ spec:
   #             - cockroachdb
   #         topologyKey: kubernetes.io/hostname
 # nodeSelectors used to match against
+<<<<<<< HEAD
+<<<<<<< HEAD
   nodeSelector:
     worker-type: dbms-worker
+
+=======
+#  nodeSelector:
+#    worker-type: dbms-worker
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+  nodeSelector:
+    worker-type: dbms-worker
+>>>>>>> fix: поправлены замечания ревью

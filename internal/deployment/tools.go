@@ -172,6 +172,9 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 	case cluster.Cockroach:
 		settings.DBURL = "postgres://stroppy:stroppy@/stroppy?sslmode=disable"
 
+	case cluster.Cartridge:
+		settings.DBURL = "http://routers:8081"
+
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
 		return

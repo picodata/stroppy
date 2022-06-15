@@ -153,6 +153,7 @@ func (t *Terraform) apply() (err error) {
 
 	llog.Infoln("Applying terraform...")
 	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
+    applyCMD.Env = os.Environ()
 	applyCMD.Dir = t.WorkDirectory
 
 	var result []byte
@@ -268,6 +269,7 @@ func (t *Terraform) init() (err error) {
 	}
 
 	initCmd := exec.Command("terraform", "init")
+    initCmd.Env = os.Environ()
 	initCmd.Dir = t.WorkDirectory
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {

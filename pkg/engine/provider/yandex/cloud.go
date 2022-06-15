@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"sync"
 
 	"github.com/tidwall/gjson"
@@ -67,6 +66,7 @@ func (yp *Provider) Prepare() (err error) {
 	if clusterParameters, err = provider.DispatchTemplate(yp.templatesConfig, yp.settings.Flavor); err != nil {
 		return
 	}
+	llog.Infoln(clusterParameters)
 
 	err = yp.prepare(&clusterParameters, yp.settings.Nodes, yp.workingDirectory)
 	if err != nil {
@@ -100,60 +100,48 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 	yp.tfStateData = data
 }
 
-func (yp *Provider) reparseAddressMap(nodes int) (err error) {
+func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	if yp.tfStateData == nil {
 		err = errors.New("tf state data empty")
 		return
 	}
 
-	workerKey := "worker-%v"
-	yandexInstanceValue := "instances.%v"
+	llog.Debugln("Start parsing address map into ip addresses")
+
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)
 
-	data := yp.tfStateData
-	externalAddress["master"] = gjson.Parse(string(data)).
-		Get("resources.1").
-		Get("instances.0").
-		Get("attributes").
-		Get("network_interface.0").
-		Get("nat_ip_address").Str
-
-	internalAddress["master"] = gjson.Parse(string(data)).
-		Get("resources.1").
-		Get("instances.0").
-		Get("attributes").
-		Get("network_interface.0").
-		Get("ip_address").Str
-
-	for i := 1; i <= nodes; i++ {
-		key := fmt.Sprintf(workerKey, i)
-		currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
-		externalAddress[key] = gjson.Parse(string(data)).
-			Get("resources.2").
-			Get("instances.0").
-			Get("attributes").
-			Get(currentInstanceValue).
-			Get("network_interface.0").
-			Get("nat_ip_address").Str
+	decode_str := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
+		`.network_interface.0.{nat_ip_address,ip_address},resources.` +
+		`#(type="yandex_compute_instance_group")#.instances.#.attributes.` +
+		`instances.#.network_interface.0.{nat_ip_address,ip_address}].` +
+		`@flatten.@flatten.@flatten`
+	nodes := gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
+	master := nodes[0].(map[string]interface{})
+	internalAddress["master"] = master["ip_address"].(string)
+	externalAddress["master"] = master["nat_ip_address"].(string)
+	for i := 1; i < len(nodes); i++ {
+		node := nodes[i].(map[string]interface{})
+		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)
+		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string)
 	}
 
-	for i := 1; i <= nodes; i++ {
-		key := fmt.Sprintf(workerKey, i)
-		currentInstanceValue := fmt.Sprintf(yandexInstanceValue, strconv.Itoa(i-1))
-		internalAddress[key] = gjson.Parse(string(data)).
-			Get("resources.2").
-			Get("instances.0").
-			Get("attributes").
-			Get(currentInstanceValue).
-			Get("network_interface.0").
-			Get("ip_address").Str
-	}
+	llog.Tracef("external address %#v", externalAddress)
+	llog.Tracef("internal address %#v", internalAddress)
+
+    decode_str = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` + 
+        `attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
+	nodes = gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
+   
+    yp.addressMap["subnet"] = map[string]string{"ip_v4": nodes[0].(string)}
 
 	yp.addressMap = make(map[string]map[string]string)
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
-	return
+
+    llog.Infof("Addresses map: %v\n", yp.addressMap)
+
+    return
 }
 
 func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
@@ -164,7 +152,8 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
 	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
 
-	defer func() {
+	/*defer func() {
+		llog.Infoln("зашли в defer")
 		mapIPAddresses = provider.DeepCopyAddressMap(yp.addressMap)
 		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
 	}()
@@ -174,10 +163,14 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 
 	if yp.addressMap != nil {
 		return
-	}
+	}*/
 
-	err = yp.reparseAddressMap(nodes)
-	return
+	err = yp.parseAddressMap(nodes)
+	if err != nil {
+		return nil, err
+	}
+	llog.Debugln("Address map prepared: success")
+	return yp.addressMap, err
 }
 
 func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {

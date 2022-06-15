@@ -39,6 +39,7 @@ type Settings struct {
 	DeploymentSettings *DeploymentSettings
 
 	DestroyOnExit bool
+	EnableProfile bool
 }
 
 func DefaultSettings() (s *Settings) {
@@ -101,7 +102,7 @@ type DatabaseSettings struct {
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
-	ConnectPoolSize   int
+	ConnectPoolSize    int
 	Sharded            bool
 }
 
@@ -122,7 +123,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		UseCustomTx:        false,
 		BanRangeMultiplier: 1.1,
 		StatInterval:       10,
-		ConnectPoolSize:   0,
+		ConnectPoolSize:    0,
 		Sharded:            false,
 	}
 }

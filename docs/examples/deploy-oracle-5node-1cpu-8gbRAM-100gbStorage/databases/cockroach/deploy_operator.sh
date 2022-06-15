@@ -16,12 +16,10 @@ run "installing operator" \
 kubectl apply -f "$SCRIPT_DIR/operator/operator.yaml"
 sleep 10
 
-
 # ==============
 run "instantiating cocroachdb" kubectl apply -f "$SCRIPT_DIR/crdb.yaml"
 
 run "creating client" kubectl create -f "$SCRIPT_DIR/client-operator.yaml"
-
 
 # == monitoring ==============
 run "labeling cockroachdb svc for prometheus" \

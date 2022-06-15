@@ -3,7 +3,8 @@
   "banRangeMultiplier": 1.1,
   "database_type": [
     "postgres",
-    "fdb"
+    "fdb",
+    "cartridge"
   ],
   "cmd": [
     {

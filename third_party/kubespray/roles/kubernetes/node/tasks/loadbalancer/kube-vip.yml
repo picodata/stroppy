@@ -1,0 +1,7 @@
+---
+- name: kube-vip | Write static pod
+  become: true
+  template:
+    src: manifests/kube-vip.manifest.j2
+    dest: "{{ kube_manifest_dir }}/kube-vip.yml"
+    mode: 0640

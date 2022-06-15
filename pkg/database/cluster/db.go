@@ -26,6 +26,8 @@ var (
 	// ErrTimeoutExceeded is ...TODO: transform into any transient error.
 	ErrTimeoutExceeded = errors.New("cluster: query timeout exceeded")
 
+	ErrInternalServerError = errors.New("cluster: internal server error")
+
 	// ErrDuplicateKey is returned then there already such unique key
 	ErrDuplicateKey = errors.New("cluster: duplicate unique key")
 
@@ -42,6 +44,8 @@ const (
 	FDBClusterType
 	MongoDBClusterType
 	CockroachClusterType
+	CartridgeClusterType
+	YandexCluserType
 )
 
 func (e DBClusterType) String() string {
@@ -50,7 +54,15 @@ func (e DBClusterType) String() string {
 		return "PostgreSQL"
 	case FDBClusterType:
 		return "FoundationDB"
-	}
+	case CartridgeClusterType:
+		return "TarantoolCartridge"
+	case MongoDBClusterType:
+		return "MongoDB"
+	case CockroachClusterType:
+		return "CocroachDB"
+    case YandexCluserType:
+        return  "YandexDB"
+    }
 	panic("unknown DBClusterType")
 }
 
@@ -59,6 +71,8 @@ const (
 	Postgres   = "postgres"
 	MongoDB    = "mongodb"
 	Cockroach  = "cockroach"
+	Cartridge  = "cartridge"
+	Yandex     = "yandex"
 )
 
 const (
@@ -66,7 +80,7 @@ const (
 	iterRange          = 100000
 	maxConnIdleTimeout = 120 * time.Second
 	heartBeatInterval  = 30 * time.Second
-	socketTimeout      = 180 * time.Second
+	socketTimeout      = 10 * time.Second
 )
 
 // Settings returns the test run settings

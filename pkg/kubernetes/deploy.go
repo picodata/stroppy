@@ -5,38 +5,131 @@
 package kubernetes
 
 import (
+	"context"
+	"os"
+	"path"
 	"strings"
+	"text/template"
 
+	"github.com/apenella/go-ansible/pkg/options"
+	"github.com/apenella/go-ansible/pkg/playbook"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
-	"gitlab.com/picodata/stroppy/pkg/tools"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
-func (k *Kubernetes) Deploy() (err error) {
-	if err = k.loadFilesToMaster(); err != nil {
-		return merry.Prepend(err, "failed to сopy files to cluster")
+const (
+	SSHConfig string = `
+StrictHostKeyChecking no
+
+Host {{.PrivateSubnet}}
+  ProxyJump bastion
+  User ubuntu
+  IdentityFile {{.SSHPrivateKey}}
+
+Host bastion
+  HostName {{.BastionPubIP}}
+  User ubuntu
+  IdentityFile {{.SSHPrivateKey}}
+  ControlMaster auto
+  ControlPath ansible-kubespray-%r@%h:%p
+  ControlPersist 5m
+`
+	KubesprayInventoryPath string = "inventory/stroppy/inventory.yml"
+	InventoryName string = "inventory.yml"
+)
+
+type SshK8SOpts struct {
+	SSHPrivateKey string
+	PrivateSubnet string
+	BastionPubIP  string
+}
+
+/// Deploy kubernetes and other infrastructure
+/// #steps:
+/// 1. Create directory for ssh config if it is not exists
+/// 2. Write ssh config to created in previous step directory
+/// 3. Copy id_rsa to .ssh directory
+/// 4. Generate ansible requirements
+/// 5. Generate ansible cfg
+/// 6. install ansible galaxy roles
+/// 7. Generate inventory for grafana and deploy
+/// 8. Generate inventory for kubespray and deploy
+/// 9. Apply grafana manifests
+/// 10. Deploy DB operator
+/// 11. Deploy container with stroppy
+func (k *Kubernetes) DeployAll(wd string) (err error) {
+	// 1. Create ssh config file for kubespray
+	err = os.Mkdir(path.Join(wd, ".ssh"), os.ModePerm)
+	if err != nil {
+		merry.Prepend(err, "Error then creating ssh config directory")
 	}
 
-	if err = k.deploy(); err != nil {
+	// 2. Create and template ssh config
+	var file *os.File
+	file, err = os.Create(path.Join(wd, ".ssh/config"))
+	if err != nil {
+		llog.Infoln("Error then creating ssh config file")
+	}
+	ssh_opts := SshK8SOpts{
+		".ssh/id_rsa",
+		strings.ReplaceAll(k.Engine.AddressMap["subnet"]["ip_v4"], "0/24", "*"),
+		k.Engine.AddressMap["external"]["master"],
+	}
+
+	// replace template values to shh config variables
+	tmpl, err := template.New("config").Parse(SSHConfig)
+	if err != nil {
+		merry.Prepend(err, "Error then parsing ssh config template")
+	}
+	err = tmpl.Execute(file, ssh_opts)
+	if err != nil {
+		merry.Prepend(err, "Error then templating ssh config")
+	}
+
+	// 3. copy id_rsa file
+	if err = copyFileContents(
+		path.Join(wd, "id_rsa"),
+		path.Join(wd, ".ssh/id_rsa"),
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy grafana")
+	}
+
+	// 4. generate ansible requirements
+	if err = writeAnsibleRequirements(wd); err != nil {
+		return merry.Prepend(err, "Error then generating ansible requirements")
+	}
+
+	// 5. generate ansible config
+	if err = writeAnsibleConfig(wd); err != nil {
+		return merry.Prepend(err, "Error then generating ansible config")
+	}
+
+	// 6. install ansible galaxy roles
+	if err = installGalaxyRoles(); err != nil {
+		return merry.Prepend(err, "failed to intall galaxy roles")
+	}
+
+	// 7. run grafana on premise ansible playbook
+	if err = k.deployMonitoring(wd); err != nil {
+		return merry.Prepend(err, "failed to deploy grafana")
+	}
+
+	// 8. generate inventory and run kubespray ansible playbook
+	if err = k.deployKubernetes(wd); err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	err = tools.Retry("copy file from master on deploy",
-		func() (err error) {
-			err = k.Engine.CopyFileFromMaster(kubeengine.ConfigPath)
-			return
-		},
-		tools.RetryStandardRetryCount,
-		tools.RetryStandardWaitingTime)
-	if err != nil {
-		return merry.Prepend(err, "failed to copy kube config from master")
+	// 9. generate inventory and run kubespray ansible playbook
+	if err = k.finalizeDeployment(wd); err != nil {
+		return merry.Prepend(err, "failed to finalie k8s deploy")
 	}
 
+	k.Engine.SetClusterConfigFile(path.Join(wd, ".kube/config"))
 	if err = k.Engine.EditClusterURL(clusterK8sPort); err != nil {
 		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
 	}
@@ -76,41 +169,130 @@ func (k *Kubernetes) Shutdown() {
 	k.MonitoringPort.Tunnel.Close()
 }
 
-// deploy - развернуть k8s внутри кластера в cloud
-func (k *Kubernetes) deploy() (err error) {
-	/* Последовательно формируем файл deploy_kubernetes.sh,
-	   даем ему права на выполнение и выполняем.
-	   1-й шаг - добавляем первую часть команд (deployk8sFirstStepCmd)
-	   2-й шаг - подставляем ip адреса в hosts.ini и добавляем команду с его записью в файл
-	   3-й шаг - добавляем вторую часть команд (deployk8sThirdStepCmd)
-	   4-й шаг - выдаем файлу права на выполнение и выполняем */
+// Deploy monitoring (grafana, node_exporter, promtail)
+func (k *Kubernetes) deployMonitoring(wd string) (err error) {
+	wd = path.Join(wd, "third_party/monitoring")
 
+	// create kubespray inventory
+	if _, err = os.Stat(path.Join(wd, InventoryName)); err != nil {
+		llog.Traceln(err)
+		var inv *os.File
+		inv, err = os.Create(path.Join(wd, InventoryName))
+		if err != nil {
+			return merry.Prepend(err, "Error then creating monitoring inventory")
+		}
+		inv.Write(k.generateSimpleInventory())
+	}
+
+	// next variables is wrappers around ansible
+	ansible_connection_options := &options.AnsibleConnectionOptions{
+		Connection:   "ssh",
+		SSHExtraArgs: "-F .ssh/config",
+	}
+	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
+		Inventory: path.Join(wd, InventoryName),
+	}
+	playbook := &playbook.AnsiblePlaybookCmd{
+		Playbooks:         []string{path.Join(wd, "grafana.yml"), path.Join(wd, "node.yml")},
+		ConnectionOptions: ansible_connection_options,
+		Options:           ansible_playbook_opts,
+	}
+
+	if err = playbook.Run(context.TODO()); err != nil {
+		return merry.Prepend(err, "Error then running monitoring playbooks")
+	}
+
+	return
+}
+
+// Deploy kubernetes cluster and all dependent software
+// Function execution order
+// 1. Check that kubernetes already deployed
+// 2. Deploy kubernetes via kubespray
+func (k *Kubernetes) deployKubernetes(wd string) (err error) {
+	wd = path.Join(wd, "third_party/kubespray")
+
+	// run on bastion (master) host shell command `kubectl get pods`
+	// if command returns something (0 or 127 exit code) kubernetes is deployed
 	var isDeployed bool
 	if isDeployed, err = k.checkMasterDeploymentStatus(); err != nil {
 		return merry.Prepend(err, "failed to Check deploy k8s in master node")
 	}
 
+	// early return if cluster already deployed
 	if isDeployed {
 		llog.Infoln("k8s already success deployed")
 		return
 	}
 
-	providerSpecificFirstStep, providerSpecificThirdStep := k.provider.GetDeploymentCommands()
-	if err = k.Engine.ExecuteCommand(providerSpecificFirstStep); err != nil {
-		return merry.Prepend(err, "first step failed")
+	// create kubespray inventory
+	if _, err = os.Stat(path.Join(wd, KubesprayInventoryPath)); err != nil {
+		llog.Traceln(err)
+		var inv *os.File
+		inv, err = os.Create(path.Join(wd, KubesprayInventoryPath))
+		if err != nil {
+			return merry.Prepend(err, "Error then creating kubespray inventory")
+		}
+		inv.Write(k.generateK8sInventory())
 	}
-	llog.Printf("First step deploy k8s: success")
 
-	secondStepCommandText := k.craftClusterDeploymentScript()
-	if err = k.Engine.DebugCommand(secondStepCommandText, false); err != nil {
-		return merry.Prepend(err, "second step failed")
+	// next variables is an ansible interaction objects
+	ansible_connection_options := &options.AnsibleConnectionOptions{
+		Connection:   "ssh",
+		SSHExtraArgs: "-F .ssh/config",
 	}
-	llog.Printf("Second cluster deployment step: success")
+	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
+		Inventory: path.Join(wd, KubesprayInventoryPath),
+	}
+	playbook := &playbook.AnsiblePlaybookCmd{
+		Playbooks:         []string{path.Join(wd, "cluster.yml")},
+		ConnectionOptions: ansible_connection_options,
+		Options:           ansible_playbook_opts,
+	}
 
-	if err = k.Engine.DebugCommand(providerSpecificThirdStep, false); err != nil {
-		return merry.Prepend(err, "third step")
+	// run kubespray ansible playbook
+	if err = playbook.Run(context.TODO()); err != nil {
+		return merry.Prepend(err, "Error then running kubespray playbook")
 	}
-	llog.Printf("Third cluster deployment step: success")
+
+	return
+}
+
+// Function for final k8s deployment steps
+// 1. Get kube config from master node
+// 2. Install grafana ingress into cluster
+// 3. Install metrics server
+func (k *Kubernetes) finalizeDeployment(wd string) (err error) {
+	wd = path.Join(wd, "third_party/finalize")
+
+	// create kubespray inventory
+	if _, err = os.Stat(path.Join(wd, InventoryName)); err != nil {
+		llog.Traceln(err)
+		var inv *os.File
+		inv, err = os.Create(path.Join(wd, InventoryName))
+		if err != nil {
+			return merry.Prepend(err, "Error then creating `finalize` inventory")
+		}
+		inv.Write(k.generateSimpleInventory())
+	}
+
+	// next variables is wrappers around ansible
+	ansible_connection_options := &options.AnsibleConnectionOptions{
+		Connection:   "ssh",
+		SSHExtraArgs: "-F .ssh/config",
+	}
+	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
+		Inventory: path.Join(wd, InventoryName),
+	}
+	playbook := &playbook.AnsiblePlaybookCmd{
+		Playbooks:         []string{path.Join(wd, "finalize.yml")},
+		ConnectionOptions: ansible_connection_options,
+		Options:           ansible_playbook_opts,
+	}
+
+	if err = playbook.Run(context.TODO()); err != nil {
+		return merry.Prepend(err, "Error then finalizing deployment with finalize playbook")
+	}
 
 	return
 }
@@ -135,7 +317,11 @@ func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
 		k.provider.Name(),
 		commandClientType)
 	if err != nil {
-		return false, merry.Prependf(err, "failed to establish ssh client to '%s' address", masterExternalIP)
+		return false, merry.Prependf(
+			err,
+			"failed to establish ssh client to '%s' address",
+			masterExternalIP,
+		)
 	}
 
 	checkSession, err := sshClient.GetNewSession()

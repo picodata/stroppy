@@ -47,7 +47,7 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 	sc ssh.Client, k *kubernetes.Kubernetes, wd string) (_cluster Cluster, err error) {
 
 	// если кол-во соединений не задано, приравниваем к кол-ву воркеров
-	if dbConfig.ConnectPoolSize == 0{
+	if dbConfig.ConnectPoolSize == 0 {
 		dbConfig.ConnectPoolSize = dbConfig.Workers
 	}
 
@@ -66,7 +66,13 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 
 	case cluster.Cockroach:
 		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
-	}
+
+	case cluster.Cartridge:
+		_cluster = createCartridgeCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+
+    case cluster.Yandex:
+        _cluster = createYandexCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+    }
 
 	return
 }

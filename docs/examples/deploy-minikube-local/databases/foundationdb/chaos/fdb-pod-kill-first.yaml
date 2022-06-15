@@ -1,0 +1,24 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: fdb-pod-kill-first
+  namespace: default
+  labels: null
+  annotations: null
+spec:
+  selector:
+    namespaces:
+      - default
+    pods:
+      default:
+        - sample-cluster-storage-1
+        - sample-cluster-storage-2
+        - sample-cluster-storage-3
+  scheduler:
+    cron: '*/2 * * * *'
+  action: pod-kill
+  mode: one
+  value: ''
+  duration: 1s
+  containerName: ''
+  gracePeriod: 0

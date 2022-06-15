@@ -30,6 +30,7 @@ func (e *Engine) ExecuteCommand(text string) (err error) {
 	return
 }
 
+/// Execute and print debug information
 func (e *Engine) DebugCommand(text string, waitComplete bool) (err error) {
 	var sshSession engineSsh.Session
 	if sshSession, err = e.sc.GetNewSession(); err != nil {

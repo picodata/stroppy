@@ -1,0 +1,52 @@
+---
+replicasets:
+  4e8a717d-692a-4c24-8ce4-358c238be707:
+    weight: 1
+    master:
+    - 5865c6dd-4c69-4e9a-9f15-43c2a8a4fd3d
+    alias: storage-1
+    vshard_group: default
+    all_rw: false
+    roles:
+      vshard-storage: true
+      ddl-manager: true
+      metrics: true
+      storage: true
+  4e513c63-d91b-4e92-b089-e3ce4ee72f10:
+    weight: 0
+    master:
+    - c0efdec7-b068-40fb-9d20-6d4cb15e95f6
+    alias: router-1
+    roles:
+      vshard-router: true
+      ddl-manager: true
+      metrics: true
+      api: true
+    all_rw: false
+  7f9bc71e-406c-4d3f-ba92-c321445d04ff:
+    weight: 1
+    master:
+    - 41a58c1c-3fff-4bec-b003-917eadf3009e
+    alias: storage-2
+    vshard_group: default
+    roles:
+      storage: true
+      ddl-manager: true
+      metrics: true
+      vshard-storage: true
+    all_rw: false
+servers:
+  5865c6dd-4c69-4e9a-9f15-43c2a8a4fd3d:
+    disabled: false
+    uri: 127.0.0.1:3302
+    replicaset_uuid: 4e8a717d-692a-4c24-8ce4-358c238be707
+  c0efdec7-b068-40fb-9d20-6d4cb15e95f6:
+    disabled: false
+    uri: localhost:3301
+    replicaset_uuid: 4e513c63-d91b-4e92-b089-e3ce4ee72f10
+  41a58c1c-3fff-4bec-b003-917eadf3009e:
+    uri: 127.0.0.1:3303
+    disabled: false
+    replicaset_uuid: 7f9bc71e-406c-4d3f-ba92-c321445d04ff
+failover: false
+...

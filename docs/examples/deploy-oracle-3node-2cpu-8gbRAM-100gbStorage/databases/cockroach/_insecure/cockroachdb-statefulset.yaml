@@ -30,6 +30,10 @@ metadata:
   name: cockroachdb
   labels:
     worker-type: dbms-worker
+<<<<<<< HEAD
+    app: cockroachdb
+=======
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
   annotations:
     # Use this annotation in addition to the actual publishNotReadyAddresses
     # field below because the annotation will stop being respected soon but the
@@ -109,7 +113,15 @@ spec:
             memory: "8Gi"
           limits:
             cpu: "2"
+<<<<<<< HEAD
+<<<<<<< HEAD
             memory: "8Gi"
+=======
+            memory: "8Gi" 
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+            memory: "8Gi"
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
         ports:
         - containerPort: 26257
           name: grpc
@@ -157,7 +169,14 @@ spec:
             --insecure
             --advertise-host $(hostname -f)
             --http-addr 0.0.0.0
+<<<<<<< HEAD
+<<<<<<< HEAD
             # --sql-addr=:26257
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+            # --sql-addr=:26257
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
             --join cockroachdb-0.cockroachdb,cockroachdb-1.cockroachdb,cockroachdb-2.cockroachdb
             --cache $(expr $MEMORY_LIMIT_MIB / 4)MiB
             --max-sql-memory $(expr $MEMORY_LIMIT_MIB / 4)MiB
@@ -176,8 +195,20 @@ spec:
       name: datadir
     spec:
       accessModes:
+<<<<<<< HEAD
+<<<<<<< HEAD
         - "ReadWriteOnce"
+<<<<<<< HEAD
       storageClassName: local-path
+=======
+>>>>>>> fix: в папке на кластер из пяти машин обновил файлы разворачивания (они устарели),
+=======
+        - ReadWriteOnce
+=======
+        - "ReadWriteOnce"
+>>>>>>> fix: добавлена обработка отказов транзакций cockroach sql
+      storageClassName: local-path
+>>>>>>> fix: Были изменены константы ожидания для sql запросов в cockroach,
       resources:
         requests:
           storage: 100Gi

@@ -24,6 +24,13 @@ run "instantiating cocroachdb" kubectl apply -f "$SCRIPT_DIR/crdb.yaml"
 
 run "creating client" kubectl create -f "$SCRIPT_DIR/client-operator.yaml"
 
+# == monitoring ==============
+run "labeling cockroachdb svc for prometheus" \
+kubectl label svc cockroachdb prometheus=cockroachdb
+
+run "applying cockroachdb prometheus config" \
+kubectl apply -f "$SCRIPT_DIR/monitoring/prometheus.yaml"
+
 
 # == monitoring ==============
 run "labeling cockroachdb svc for prometheus" \
