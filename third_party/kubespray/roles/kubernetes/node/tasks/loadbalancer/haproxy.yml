@@ -1,5 +1,6 @@
 ---
 - name: haproxy | Cleanup potentially deployed nginx-proxy
+  become: true
   file:
     path: "{{ kube_manifest_dir }}/nginx-proxy.yml"
     state: absent

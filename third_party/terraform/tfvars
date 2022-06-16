@@ -1,0 +1,18 @@
+# YC cloud dependent
+TF_VAR_token=
+TF_VAR_cloud_id=
+TF_VAR_folder_id=
+TF_VAR_zone=
+TF_VAR_network_id=
+
+# Service account
+TF_VAR_service_account=
+TF_VAR_service_account_id=
+
+# Cluster size
+TF_VAR_workers_count=
+
+# Worker params
+TF_VAR_workers_cpu=
+TF_VAR_workers_memory=
+TF_VAR_workers_disk=

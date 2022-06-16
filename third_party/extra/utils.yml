@@ -1,0 +1,14 @@
+- name: Install necessary packets and utils
+  hosts: all
+  tasks:
+    - name: install ethtool
+      become: true
+      apt:
+        name: ethtool
+        state: present
+    - name: Install netaddr python package
+      become: true
+      pip:
+        name: netaddr
+        state: present
+

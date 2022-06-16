@@ -6,6 +6,7 @@
   check_mode: false
 
 - name: Install nerdctl completion
+  become: true
   copy:
     dest: /etc/bash_completion.d/nerdctl
     content: "{{ nerdctl_completion.stdout }}"

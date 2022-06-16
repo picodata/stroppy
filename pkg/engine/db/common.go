@@ -19,24 +19,28 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 )
 
-func createCommonCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, databaseTag, dbURL string,
-	ConnectionPoolSize int, sharded bool) (fc *commonCluster) {
-
-	fc = &commonCluster{
-		k:                      k,
-		sc:                     sc,
-		wd:                     wd,
-		tg:                     databaseTag,
-		DBUrl:                  dbURL,
-		portForwardControlChan: make(chan struct{}),
-
+func createCommonCluster(
+	sshClient engineSsh.Client,
+	kube *kubernetes.Kubernetes,
+	workDir, databaseTag, dbURL string,
+	connectionPoolSize int,
+	sharded bool,
+) *commonCluster {
+	return &commonCluster{
+		sc: sshClient,
+		k:  kube,
+		wd: workDir,
+		tg: databaseTag,
 		clusterSpec: ClusterSpec{
-			Pods: make([]*v1.Pod, 0, 10),
+			MainPod: &v1.Pod{},              //nolint       // errors in import
+			Pods:    make([]*v1.Pod, 0, 10), //nolint:gomnd // this is pods count
 		},
-		connectionPoolSize: ConnectionPoolSize,
-		sharded:            sharded,
+		portForwardControlChan: make(chan struct{}),
+		DBUrl:                  dbURL,
+		connectionPoolSize:     connectionPoolSize,
+		addPool:                0,
+		sharded:                sharded,
 	}
-	return
 }
 
 type commonCluster struct {
@@ -60,13 +64,17 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/databases"); err != nil {
+	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, ".tmp/databases"); err != nil {
 		return
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
 	llog.Infof("%s deploy started\n", cc.tg)
-	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
+	deployCmd := fmt.Sprintf(
+		"chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh",
+		cc.tg,
+		cc.tg,
+	)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}
@@ -76,8 +84,8 @@ func (cc *commonCluster) deploy() (err error) {
 }
 
 func (cc *commonCluster) examineCluster(tag, targetNamespace,
-	clusterMainPodName, clusterWorkerPodName string) (err error) {
-
+	clusterMainPodName, clusterWorkerPodName string,
+) (err error) {
 	var pods []v1.Pod
 	if pods, err = cc.k.Engine.ListPods(kubeengine.ResourceDefaultNamespace); err != nil {
 		err = merry.Prepend(err, "list pods")

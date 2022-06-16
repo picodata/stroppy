@@ -32,6 +32,7 @@
     download: "{{ download_defaults | combine(downloads.containerd) }}"
 
 - name: containerd | Unpack containerd archive
+  become: true
   unarchive:
     src: "{{ downloads.containerd.dest }}"
     dest: "{{ containerd_bin_dir }}"
@@ -42,6 +43,7 @@
   notify: restart containerd
 
 - name: containerd | Remove orphaned binary
+  become: true
   file:
     path: "/usr/bin/{{ item }}"
     state: absent
@@ -57,6 +59,7 @@
     - ctr
 
 - name: containerd | Generate systemd service for containerd
+  become: true
   template:
     src: containerd.service.j2
     dest: /etc/systemd/system/containerd.service
@@ -64,6 +67,7 @@
   notify: restart containerd
 
 - name: containerd | Ensure containerd directories exist
+  become: true
   file:
     dest: "{{ item }}"
     state: directory
@@ -77,6 +81,7 @@
     - "{{ containerd_state_dir }}"
 
 - name: containerd | Write containerd proxy drop-in
+  become: true
   template:
     src: http-proxy.conf.j2
     dest: "{{ containerd_systemd_dir }}/http-proxy.conf"
@@ -85,6 +90,7 @@
   when: http_proxy is defined or https_proxy is defined
 
 - name: containerd | Copy containerd config file
+  become: true
   template:
     src: config.toml.j2
     dest: "{{ containerd_cfg_dir }}/config.toml"
@@ -98,6 +104,7 @@
   meta: flush_handlers
 
 - name: containerd | Ensure containerd is started and enabled
+  become: true
   systemd:
     name: containerd
     daemon_reload: yes

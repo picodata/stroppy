@@ -1,15 +1,18 @@
 ---
 - name: Kubeadm | restart kubelet
+  become: true
   command: /bin/true
   notify:
     - Kubeadm | reload systemd
     - Kubeadm | reload kubelet
 
 - name: Kubeadm | reload systemd
+  become: true
   systemd:
     daemon_reload: true
 
 - name: Kubeadm | reload kubelet
+  become: true
   service:
     name: kubelet
     state: restarted

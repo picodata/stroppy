@@ -151,6 +151,7 @@
     - not kube_external_ca_mode
 
 - name: kubeadm | Initialize first master
+  become: true
   command: >-
     timeout -k 300s 300s
     {{ bin_dir }}/kubeadm init
@@ -189,6 +190,7 @@
     - kubeadm_token
 
 - name: Create kubeadm token for joining nodes with 24h expiration (default)
+  become: true
   command: "{{ bin_dir }}/kubeadm --kubeconfig {{ kube_config_dir }}/admin.conf token create"
   changed_when: false
   register: temp_token

@@ -54,40 +54,53 @@ func (sh *shell) LoadState() (err error) {
 
 // ReadEvalPrintLoop - прочитать стандартный ввод и запустить выбранные команды
 func (sh *shell) ReadEvalPrintLoop() (err error) {
+out:
 	for {
 		fmt.Printf("stroppy> ")
+	inner:
 		for stillAlive, command, params := sh.scanInteractiveCommand(); stillAlive; {
 			statistics.StatsInit()
 
 			switch command {
 			case "quit", "exit":
-				err = sh.gracefulShutdown()
-				return
+				if err = sh.gracefulShutdown(); err != nil {
+					return merry.Prepend(err, "Error then stopping stroppy")
+				}
+
+				return nil
 
 			case "pop":
 				llog.Println("Starting accounts populating")
 
 				if err = sh.executePop(params); err != nil {
-					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
-						command, err, params)
-					break
+					llog.Errorf(
+						"'%s' command failed with error '%v' for arguments '%s'",
+						command, err, params,
+					)
+
+					break out
 				} else {
 					llog.Println("Populating of accounts in postgres success")
 					llog.Println("Enter next command:")
-					break
+
+					break inner
 				}
 
 			case "pay":
 				llog.Println("Starting transfer tests for postgres...")
 
 				if err = sh.executePay(params); err != nil {
-					llog.Errorf("'%s' command failed with error '%v' for arguments '%s'",
-						command, err, params)
-					break
+					llog.Errorf(
+						"'%s' command failed with error '%v' for arguments '%s'",
+						command, err, params,
+					)
+
+					break out
 				} else {
 					llog.Println("Transfers test in postgres success")
 					llog.Println("Enter next command:")
-					break
+
+					break inner
 				}
 
 			case "chaos":
@@ -107,9 +120,12 @@ func (sh *shell) ReadEvalPrintLoop() (err error) {
 			default:
 				llog.Warnf("You entered unknown command '%s'. To exit enter quit", command)
 			}
+
 			break
 		}
 	}
+
+	return nil
 }
 
 func (sh *shell) RunRemotePayTest() (err error) {

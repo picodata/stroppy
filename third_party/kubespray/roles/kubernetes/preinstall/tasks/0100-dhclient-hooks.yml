@@ -1,5 +1,6 @@
 ---
 - name: Configure dhclient to supersede search/domain/nameservers
+  become: true
   blockinfile:
     block: |-
       {% for item in [ supersede_domain, supersede_search, supersede_nameserver ] -%}
@@ -15,6 +16,7 @@
   notify: Preinstall | propagate resolvconf to k8s components
 
 - name: Configure dhclient hooks for resolv.conf (non-RH)
+  become: true
   template:
     src: dhclient_dnsupdate.sh.j2
     dest: "{{ dhclienthookfile }}"

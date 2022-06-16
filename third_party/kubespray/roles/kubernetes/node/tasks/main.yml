@@ -42,6 +42,7 @@
     - haproxy
 
 - name: Ensure nodePort range is reserved
+  become: true
   sysctl:
     name: net.ipv4.ip_local_reserved_ports
     value: "{{ kube_apiserver_node_port_range }}"
@@ -75,6 +76,7 @@
   when: modinfo_br_netfilter.rc == 0
 
 - name: Persist br_netfilter module
+  become: true
   copy:
     dest: /etc/modules-load.d/kubespray-br_netfilter.conf
     content: br_netfilter
@@ -90,6 +92,7 @@
   register: sysctl_bridge_nf_call_iptables
 
 - name: Enable bridge-nf-call tables
+  become: true
   sysctl:
     name: "{{ item }}"
     state: present
@@ -103,6 +106,7 @@
     - net.bridge.bridge-nf-call-ip6tables
 
 - name: Modprobe Kernel Module for IPVS
+  become: true
   modprobe:
     name: "{{ item }}"
     state: present
@@ -116,6 +120,7 @@
     - kube-proxy
 
 - name: Modprobe nf_conntrack_ipv4
+  become: true
   modprobe:
     name: nf_conntrack_ipv4
     state: present
@@ -127,6 +132,7 @@
     - kube-proxy
 
 - name: Persist ip_vs modules
+  become: true
   copy:
     dest: /etc/modules-load.d/kube_proxy-ipvs.conf
     mode: 0644

@@ -25,11 +25,14 @@
     state: directory
 
 - name: Copy admin kubeconfig to current/ansible become user home
+  become: true
   copy:
     src: "{{ kube_config_dir }}/admin.conf"
     dest: "{{ ansible_env.HOME | default('/root') }}/.kube/config"
     remote_src: yes
     mode: "0600"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
     backup: yes
 
 - name: Create kube artifacts dir
