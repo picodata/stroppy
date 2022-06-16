@@ -6,9 +6,19 @@ package deployment
 
 import (
 	"bufio"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
+	"fmt"
+	"io"
+	"io/fs"
 	"os"
+	"path"
+	"strings"
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"golang.org/x/crypto/ssh"
 
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -22,12 +32,18 @@ import (
 	llog "github.com/sirupsen/logrus"
 )
 
+const (
+	rwRoot  int = 0o600
+	rsaBits int = 4096
+)
+
 func createShell(config *config.Settings) (d *shell) {
 	d = &shell{
 		settings:         config,
 		stdinScanner:     bufio.NewScanner(os.Stdin),
 		workingDirectory: config.WorkingDirectory,
 	}
+
 	return
 }
 
@@ -56,11 +72,13 @@ func (sh *shell) gracefulShutdown() (err error) {
 			return merry.Prepend(err, "failed to destroy terraform")
 		}
 	}
+
 	return
 }
 
 func (sh *shell) Shutdown() (err error) {
 	err = sh.gracefulShutdown()
+
 	return
 }
 
@@ -71,6 +89,7 @@ func Deploy(settings *config.Settings) (shell Shell, err error) {
 	}
 
 	shell = sh
+
 	return
 }
 
@@ -85,8 +104,79 @@ func (sh *shell) prepareTerraform() (err error) {
 	}
 
 	if ok := sh.tf.Provider.IsPrivateKeyExist(sh.tf.WorkDirectory); !ok {
-		return merry.Errorf("failed to check private key exist")
+		// Create ssh config directory
+		err = os.Mkdir(path.Join(sh.workingDirectory, ".ssh"), os.ModePerm)
+		if err != nil {
+			return merry.Prepend(err, "Error then creating ssh config directory")
+		}
+
+		// if .ssh directory does not contains id_rsa trying to copy id_rsa file
+		// from project root dir
+		if err = copyFileContents(
+			path.Join(sh.workingDirectory, "id_rsa"),
+			path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
+		); err == nil {
+			return
+		}
+		llog.Warnf("failed to copy id_rsa to .ssh/id_rsa: %v", err)
+
+		// if ssh key
+		reader := bufio.NewReader(os.Stdin)
+		fmt.Print("stroppy can not find ssh keys, do you want to create them (yes/no)? ") // nolint
+		for {
+			answer, _ := reader.ReadString('\n')
+			answer = strings.ReplaceAll(answer, "\n", "")
+
+			switch {
+			case strings.Compare("yes", strings.ToLower(answer)) == 0:
+				{
+					llog.Infoln("Creating new ssh key pair...")
+					var privateKey *rsa.PrivateKey
+					var publicKey ssh.PublicKey
+
+					if privateKey, err = rsa.GenerateKey(rand.Reader, rsaBits); err != nil {
+						return merry.Prepend(err, "Error then generating ssh private key")
+					}
+
+					if err = privateKey.Validate(); err != nil {
+						return merry.Prepend(err, "Error then validating ssh private key")
+					}
+
+					if publicKey, err = ssh.NewPublicKey(privateKey.Public()); err != nil {
+						return merry.Prepend(err, "Error then generating ssh public key")
+					}
+
+					if err = os.WriteFile(
+						path.Join(sh.workingDirectory, ".ssh", "id_rsa.pub"),
+						ssh.MarshalAuthorizedKey(publicKey),
+						fs.FileMode(rwRoot),
+					); err != nil {
+						return merry.Prepend(err, "Error then writing id_rsa private key file")
+					}
+
+					if err = os.WriteFile(
+						path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
+						pem.EncodeToMemory(&pem.Block{
+							Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+						}),
+						fs.FileMode(rwRoot),
+					); err != nil {
+						return merry.Prepend(err, "Error then writing id_rsa private key file")
+					}
+					llog.Infoln("New ssh keypair successfully created")
+
+					return
+				}
+			case strings.Compare("no", strings.ToLower(answer)) == 0:
+				return merry.Errorf(
+					"ssh key pair does not exists, please create manualy, exiting...",
+				)
+			default:
+				fmt.Print("Please type 'yes' or 'no': ") // nolint
+			}
+		}
 	}
+
 	return
 }
 
@@ -120,7 +210,8 @@ func (sh *shell) prepareEngine() (err error) {
 	return
 }
 
-func (sh *shell) preparePayload() (err error) {
+func (sh *shell) preparePayload() error {
+	var err error
 	sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
 		sh.sc,
@@ -128,7 +219,7 @@ func (sh *shell) preparePayload() (err error) {
 		sh.workingDirectory,
 	)
 	if err != nil {
-		return
+		return merry.Prepend(err, "Error then creating YDB cluster")
 	}
 
 	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
@@ -138,9 +229,9 @@ func (sh *shell) preparePayload() (err error) {
 
 		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
 		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
-		err = nil
 	}
-	return
+
+	return nil
 }
 
 func (sh *shell) deploy() (err error) {
@@ -164,13 +255,11 @@ func (sh *shell) deploy() (err error) {
 	}
 
 	// Fully functional k8s cluster deploy via ansible
+	// 1. Deploy monitoring via grafana stack
+	// 2. Deploy kubernetes cluster
+	// 3. Deploy stroppy pod
 	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
-	}
-
-	// Forvard host ports for grafana
-	if err = sh.k.OpenPortForwarding(); err != nil {
-		return
 	}
 
 	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes)
@@ -205,5 +294,34 @@ func (sh *shell) deploy() (err error) {
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
 
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
+
+	return
+}
+
+// copyFileContents copies the contents of the file named src to the file named
+// by dst. The file will be created if it does not already exist. If the
+// destination file exists, all it's contents will be replaced by the contents
+// of the source file.
+func copyFileContents(src string, dst string) (err error) {
+	input, err := os.Open(src)
+	if err != nil {
+		return
+	}
+	defer input.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return
+	}
+	defer func() {
+		cerr := out.Close()
+		if err == nil {
+			err = cerr
+		}
+	}()
+	if _, err = io.Copy(out, input); err != nil {
+		return
+	}
+	err = out.Sync()
+
 	return
 }

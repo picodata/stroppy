@@ -1,0 +1,9 @@
+---
+- name: install node_exporter and promtail
+  hosts: all
+  become: true
+  tasks:
+    - name: Check already installed services
+      ansible.builtin.service_facts:
+    - import_tasks: tasks/node_exporter.yml
+    - import_tasks: tasks/promtail.yml

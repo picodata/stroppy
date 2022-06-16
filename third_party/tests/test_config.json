@@ -1,0 +1,24 @@
+{
+  "log_level": "info",
+  "banRangeMultiplier": 1.1,
+  "database_type": [
+    "postgres",
+    "fdb",
+    "cartridge"
+  ],
+  "cmd": [
+    {
+      "pop": {
+        "count": 5000
+      }
+    },
+    {
+      "pay": {
+        "count": 100000,
+        "zipfian": false,
+        "oracle": false,
+        "check": true
+      }
+    }
+  ]
+}

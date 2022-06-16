@@ -35,6 +35,7 @@
     state: restarted
 
 - name: Preinstall | reload kubelet
+  become: true
   service:
     name: kubelet
     state: restarted
@@ -117,6 +118,7 @@
     - resolvconf_mode == 'host_resolvconf'
 
 - name: Preinstall | Restart systemd-resolved
+  become: true
   service:
     name: systemd-resolved
     state: restarted

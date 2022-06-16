@@ -145,7 +145,8 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 	// используем получения списка нод ради точного кол-ва нод кластера.
 	// deploySettings.nodes не используем из-за разного кол-ва nodes для одинакового кол-ва воркеров в yc и oc
 	var nodesList *v1.NodeList
-	err = tools.Retry("get nodes list",
+	err = tools.Retry(
+        "get nodes list",
 		func() (err error) {
 			nodesList, err = clientSet.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
 			return

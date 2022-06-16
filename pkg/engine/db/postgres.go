@@ -18,7 +18,6 @@ import (
 	"k8s.io/client-go/kubernetes/scheme"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	kuberv1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
@@ -44,14 +43,16 @@ type postgresCluster struct {
 	*commonCluster
 }
 
-func (pc *postgresCluster) Connect() (cluster interface{}, err error) {
+func (pc *postgresCluster) Connect() (interface{}, error) {
+    var c interface{}
+    var err error
 	// для возможности подключиться к БД в кластере с локальной машины
 	if pc.DBUrl == "" {
 		pc.DBUrl = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", pc.DBUrl)
 	}
-	cluster, err = cluster2.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
-	return
+    c, err = cluster.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
+	return c, err
 }
 
 // Deploy

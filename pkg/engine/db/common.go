@@ -60,13 +60,17 @@ func (cc *commonCluster) deploy() (err error) {
 	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, "/home/ubuntu/databases"); err != nil {
+	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, ".tmp/databases"); err != nil {
 		return
 	}
 	llog.Infof("copying %s directory: success\n", cc.tg)
 
 	llog.Infof("%s deploy started\n", cc.tg)
-	deployCmd := fmt.Sprintf("chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh", cc.tg, cc.tg)
+	deployCmd := fmt.Sprintf(
+	    "chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh",
+	    cc.tg,
+	    cc.tg,
+	)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
 		return
 	}

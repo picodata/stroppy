@@ -7,7 +7,6 @@ package yandex
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
 	"sync"
 
 	"github.com/tidwall/gjson"
@@ -22,17 +21,13 @@ import (
 )
 
 const (
-	yandexPrivateKeyFile = "id_rsa"
-	yandexPublicKeyFile  = "id_rsa.pub"
+	yandexPrivateKeyFile = ".ssh/id_rsa"
+	yandexPublicKeyFile  = ".ssh/id_rsa.pub"
 )
-
+// Create YandexCloud provider
+// TODO: Switch stroppy to work with HCL files instead of yaml #issue96.
 func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provider, err error) {
-	clusterDeploymentDirectory := filepath.Join(wd, "cluster", "provider", "yandex")
-
 	var templatesConfig *provider.ClusterConfigurations
-	if templatesConfig, err = provider.LoadClusterTemplate(clusterDeploymentDirectory); err != nil {
-		return nil, merry.Prepend(err, "failed to read templates for create yandex provider")
-	}
 
 	_provider := Provider{
 		templatesConfig:  templatesConfig,
@@ -100,6 +95,7 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 	yp.tfStateData = data
 }
 
+// Parse `terraform.tfstate` and get all important ip address.
 func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	if yp.tfStateData == nil {
 		err = errors.New("tf state data empty")
@@ -110,18 +106,21 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)
-
-	decode_str := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
+    yp.addressMap = make(map[string]map[string]string)
+	
+    decodeStr := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
 		`.network_interface.0.{nat_ip_address,ip_address},resources.` +
 		`#(type="yandex_compute_instance_group")#.instances.#.attributes.` +
 		`instances.#.network_interface.0.{nat_ip_address,ip_address}].` +
 		`@flatten.@flatten.@flatten`
-	nodes := gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
+	nodes := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
 	master := nodes[0].(map[string]interface{})
+
 	internalAddress["master"] = master["ip_address"].(string)
 	externalAddress["master"] = master["nat_ip_address"].(string)
 	for i := 1; i < len(nodes); i++ {
 		node := nodes[i].(map[string]interface{})
+        llog.Tracef("index: %v node: %v", i, node)
 		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)
 		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string)
 	}
@@ -129,13 +128,15 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	llog.Tracef("external address %#v", externalAddress)
 	llog.Tracef("internal address %#v", internalAddress)
 
-    decode_str = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` + 
+    decodeStr = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` + 
         `attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
-	nodes = gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
-   
+	nodes = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
+  
+    llog.Tracef("parsed ip_v4: %v", nodes)
     yp.addressMap["subnet"] = map[string]string{"ip_v4": nodes[0].(string)}
 
-	yp.addressMap = make(map[string]map[string]string)
+    llog.Tracef("subnet: %v", yp.addressMap["subnet"])
+
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
 

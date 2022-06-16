@@ -48,8 +48,10 @@ lint:
 deploy_yandex:
 	bin/stroppy deploy --cloud yandex --flavor small --nodes 3
 
+configure_fdb: export TEST_FDB_URL=$(PWD)/fdb.cluster
+
 configure_fdb:
-	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
+	fdbcli -C ${TEST_FDB_URL} --exec 'configure new single memory'
 
 test: configure_fdb lint
 	go test ./...

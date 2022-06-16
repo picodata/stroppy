@@ -1,6 +1,7 @@
 ---
 
 - name: Check which kube-control nodes are already members of the cluster
+  become: true
   command: "{{ bin_dir }}/kubectl get nodes --selector=node-role.kubernetes.io/control-plane -o json"
   register: kube_control_planes_raw
   ignore_errors: yes

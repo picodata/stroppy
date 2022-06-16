@@ -61,7 +61,7 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 		return
 	}
 
-	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/%v", e.AddressMap["external"]["master"], filePath)
+	connectCmd := fmt.Sprintf("stroppy@%v:/home/stroppy/%v", e.AddressMap["external"]["master"], filePath)
 	copyFromMasterCmd := exec.Command("scp", "-i", e.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
 	copyFromMasterCmd.Dir = e.WorkingDirectory
 
@@ -82,7 +82,7 @@ func (e *Engine) installSshKeyFileOnMaster() (err error) {
 	}
 
 	masterExternalIP := e.AddressMap["external"]["master"]
-	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
+	mastersConnectionString := fmt.Sprintf("stroppy@%v:/home/stroppy/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp",
 		"-i", e.sshKeyFileName,
 		"-o", "StrictHostKeyChecking=no",

@@ -10,7 +10,7 @@ jobs:
     name: Sync with picogit
     runs-on: [self-hosted, stroppy]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Install SSH Key
@@ -61,15 +61,8 @@ jobs:
         ports:
           - 27017:27017
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          repository: picodata/stroppy
-          path: stroppy
-          ref: develop
-          fetch-depth: 0
-      - run: rm -rf stroppy
-      - run: current_branch=$(git rev-parse --abbrev-ref HEAD); if current_branch=develop; then (git checkout --track origin/develop && git checkout $current_branch) fi
+      #- run: rm -rf stroppy
+      #- run: current_branch=$(git rev-parse --abbrev-ref HEAD); if current_branch=develop; then (git checkout --track origin/develop && git checkout $current_branch) fi
       - run: make test
       - run: rm -rf ..?* .[!.]* *
         if: always()
@@ -106,4 +99,3 @@ jobs:
         run: cartridge pack docker --tag docker.io/picodata/stroppy-test-cartridge:latest
       - name: push image
         run: docker push docker.io/picodata/stroppy-test-cartridge:latest
-

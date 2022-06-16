@@ -8,3 +8,4 @@ jmespath==0.9.5
 ruamel.yaml==0.16.10
 ruamel.yaml.clib==0.2.6
 MarkupSafe==1.1.1
+kubernetes==24.2.0

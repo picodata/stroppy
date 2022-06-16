@@ -77,7 +77,7 @@ resource "yandex_compute_instance_group" "workers" {
             nat = true
         }
         metadata = { 
-          ssh-keys = "ubuntu:${file("id_rsa.pub")}"
+          ssh-keys = "ubuntu:${file("../../.ssh/id_rsa.pub")}"
     }
   }
   scale_policy {
@@ -120,7 +120,7 @@ resource "yandex_compute_instance" "master" {
         nat       = true
     }
     metadata = { 
-        ssh-keys = "ubuntu:${file("id_rsa.pub")}"
+        ssh-keys = "ubuntu:${file("../../.ssh/id_rsa.pub")}"
     }
     depends_on =  [yandex_iam_service_account_iam_policy.srv_account_policy, ]
 }

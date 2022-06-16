@@ -78,25 +78,34 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		SuggestionsMinimumDistance: 0,
 	}
 
-	deployCmd.PersistentFlags().StringVar(&deploySettings.Provider,
+	deployCmd.PersistentFlags().StringVar(
+        &deploySettings.Provider,
 		"cloud",
 		deploySettings.Provider,
-		"name of cloud provider")
+		"name of cloud provider",
+    )
 
-	deployCmd.PersistentFlags().StringVar(&deploySettings.Flavor,
+	deployCmd.PersistentFlags().StringVar(
+        &deploySettings.Flavor,
 		"flavor",
 		deploySettings.Flavor,
-		"name of cluster configuration from templates.yml")
+		"name of cluster configuration from templates.yml",
+    )
 
-	deployCmd.PersistentFlags().IntVar(&deploySettings.Nodes,
+	deployCmd.PersistentFlags().IntVar(
+        &deploySettings.Nodes,
 		"nodes",
 		deploySettings.Nodes,
-		"count nodes of cluster")
+		"count nodes of cluster",
+    )
 
-	deployCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Sharded,
+	deployCmd.PersistentFlags().BoolVarP(
+        &settings.DatabaseSettings.Sharded,
 		"sharded", "",
 		false,
-		"Use to populate accounts in sharded MongoDB cluster. Default false - populate accounts in MongoDB replicasets cluster")
+		"Use to populate accounts in sharded MongoDB cluster. " + 
+        "Default false - populate accounts in MongoDB replicasets cluster",
+    )
 
 	return deployCmd
 }

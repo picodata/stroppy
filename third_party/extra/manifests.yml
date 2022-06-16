@@ -1,0 +1,21 @@
+---
+- name: Apply grafana manifests
+  hosts: localhost
+  tasks:
+    - name: Apply metrics-server manifest
+      kubernetes.core.k8s:
+        state: present
+        src:  "{{ lookup('env', 'PWD') }}/third_party/extra/manifests/metrics-server.yml"
+
+    - name: Apply grafana-index-yandex manifest
+      when: vars.cloud_type == 'yandex'
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ lookup('env', 'PWD') }}/third_party/extra/manifests/ingress-grafana-yandex.yml"
+
+    - name: Apply grafana-index-oracle manifest
+      when: vars.cloud_type == 'oracle'
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ lookup('env', 'PWD') }/third_party/extra/manifests/ingress-grafana-oracle.yml"
+

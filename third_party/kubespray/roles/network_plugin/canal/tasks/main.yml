@@ -65,6 +65,7 @@
     - inventory_hostname in groups['kube_control_plane']
 
 - name: Canal | Install calicoctl wrapper script
+  become: true
   template:
     src: calicoctl.sh.j2
     dest: "{{ bin_dir }}/calicoctl.sh"
