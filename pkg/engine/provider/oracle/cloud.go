@@ -342,3 +342,8 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	thirdStep = "./cluster/provider/oracle/deploy_3rdparties.sh"
 	return
 }
+
+//nolint
+func (op *Provider) CheckSSHKeyFiles(workDir string) error {
+    return nil
+}

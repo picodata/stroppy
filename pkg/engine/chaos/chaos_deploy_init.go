@@ -35,7 +35,7 @@ func (chaos *workableController) Deploy() (err error) {
 		rbacFileName       = "rbac.yaml"
 	)
 	rbacFileSourcePath := filepath.Join(chaos.wd, chaosConfigDirName, rbacFileName)
-	rbacFileKubemasterPath := filepath.Join("/home/ubuntu", rbacFileName)
+	rbacFileKubemasterPath := filepath.Join("home", "stroppy", rbacFileName)
 	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath); err != nil {
 		return merry.Prepend(err, "rbac.yaml copying")
 	}

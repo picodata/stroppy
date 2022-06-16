@@ -10,10 +10,12 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gitlab.com/picodata/stroppy/pkg/engine/provider/oracle"
@@ -26,19 +28,40 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
-func CreateTerraform(settings *config.DeploymentSettings, exeFolder, cfgFolder string) (t *Terraform) {
+const pauseAfterTFApply = 30
+
+func CreateTerraform(
+	settings *config.DeploymentSettings,
+	exeFolder, cfgFolder string,
+) *Terraform {
+	var tfobj *Terraform
+
 	addressMap := make(map[string]map[string]string)
 
-	t = &Terraform{
+	tfobj = &Terraform{
 		settings:      settings,
 		exePath:       filepath.Join(exeFolder, "terraform"),
+		stateFilePath: "",
 		addressMap:    addressMap,
 		isInit:        false,
 		WorkDirectory: cfgFolder,
+		version: &version{
+			major:  0,
+			minor:  0,
+			bugfix: 0,
+		},
+		Provider: nil,
+		data:     []byte{},
 	}
-	t.stateFilePath = filepath.Join(t.WorkDirectory, stateFileName)
 
-	return
+	tfobj.stateFilePath = filepath.Join(
+		tfobj.WorkDirectory,
+		"third_party",
+		"terraform",
+		stateFileName,
+	)
+
+	return tfobj
 }
 
 // --- Public methods ---------------
@@ -83,11 +106,6 @@ func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, er
 }
 
 func (t *Terraform) Run() (err error) {
-	err = t.Provider.Prepare()
-	if err != nil {
-		return merry.Prepend(err, "failed to prepare terraform")
-	}
-
 	err = t.init()
 	if err != nil {
 		return merry.Prepend(err, "failed to init terraform")
@@ -153,8 +171,8 @@ func (t *Terraform) apply() (err error) {
 
 	llog.Infoln("Applying terraform...")
 	applyCMD := exec.Command("terraform", "apply", "-auto-approve")
-    applyCMD.Env = os.Environ()
-	applyCMD.Dir = t.WorkDirectory
+	applyCMD.Env = os.Environ()
+	applyCMD.Dir = path.Join(t.WorkDirectory, "third_party", "terraform")
 
 	var result []byte
 	if result, err = applyCMD.CombinedOutput(); err != nil {
@@ -162,7 +180,12 @@ func (t *Terraform) apply() (err error) {
 			string(result))
 	}
 
+	llog.Debug("Waiting for terraform to form a state")
+
+	time.Sleep(pauseAfterTFApply * time.Second)
+
 	llog.Printf("Terraform applied\n")
+
 	return
 }
 
@@ -213,8 +236,11 @@ func (t *Terraform) getTerraformVersion() (*version, error) {
 // install
 // установить terraform, если не установлен
 func (t *Terraform) install() error {
-	downloadURL := fmt.Sprintf("https://releases.hashicorp.com/terraform/%v/terraform_%v_linux_amd64.zip",
-		installableTerraformVersion, installableTerraformVersion)
+	downloadURL := fmt.Sprintf(
+		"https://releases.hashicorp.com/terraform/%v/terraform_%v_linux_amd64.zip",
+		installableTerraformVersion,
+		installableTerraformVersion,
+	)
 	downloadArchiveCmd := exec.Command("curl", "-O",
 		downloadURL)
 	downloadArchiveCmd.Dir = t.WorkDirectory
@@ -248,12 +274,13 @@ func (t *Terraform) install() error {
 	}
 
 	llog.Infoln("terrafrom installed: success")
+
 	return nil
 }
 
 // init подготовить среду для развертывания
 func (t *Terraform) init() (err error) {
-	llog.Infoln("Initializating terraform...")
+	llog.Infoln("Initializing terraform...")
 
 	if t.version, err = t.getTerraformVersion(); err != nil {
 		return merry.Prepend(err, "failed to get terraform version")
@@ -269,15 +296,20 @@ func (t *Terraform) init() (err error) {
 	}
 
 	initCmd := exec.Command("terraform", "init")
-    initCmd.Env = os.Environ()
-	initCmd.Dir = t.WorkDirectory
+	initCmd.Env = os.Environ()
+	initCmd.Dir = path.Join(t.WorkDirectory, "third_party/terraform")
 	initCmdResult, err := initCmd.CombinedOutput()
 	if err != nil {
 		// вместо exit code из err возвращаем стандартный вывод, чтобы сразу видеть ошибку
-		return merry.Errorf("terraform init '%s' command return error: %v", string(initCmdResult), err)
+		return merry.Errorf(
+			"terraform init '%s' command return error: %v",
+			string(initCmdResult),
+			err,
+		)
 	}
 
 	t.isInit = true
 	llog.Infoln("Terraform initialized")
+
 	return
 }

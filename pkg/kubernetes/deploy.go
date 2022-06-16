@@ -6,32 +6,39 @@ package kubernetes
 
 import (
 	"context"
+	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/apenella/go-ansible/pkg/options"
 	"github.com/apenella/go-ansible/pkg/playbook"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
-	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
+	"k8s.io/apimachinery/pkg/util/yaml"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh"
 )
 
 const (
-	SSHConfig string = `
+	//nolint // constant
+	SSH_CONFIG string = `
 StrictHostKeyChecking no
+ConnectTimeout 120
+UserKnownHostsFile=/dev/null
 
 Host {{.PrivateSubnet}}
-  ProxyJump bastion
+  ProxyJump master
   User ubuntu
   IdentityFile {{.SSHPrivateKey}}
 
-Host bastion
+Host master
   HostName {{.BastionPubIP}}
   User ubuntu
   IdentityFile {{.SSHPrivateKey}}
@@ -39,8 +46,10 @@ Host bastion
   ControlPath ansible-kubespray-%r@%h:%p
   ControlPersist 5m
 `
-	KubesprayInventoryPath string = "inventory/stroppy/inventory.yml"
-	InventoryName string = "inventory.yml"
+	INVENTORY_NAME      string        = "inventory.yml" //nolint // constant
+	GRAFANA_PORT        int           = 3000            //nolint // constant
+	GRAFANA_REQ_TIMEOUT time.Duration = 10              //nolint // constant
+	EXIT_CODE_127       int           = 127             //nolint // constant
 )
 
 type SshK8SOpts struct {
@@ -63,12 +72,6 @@ type SshK8SOpts struct {
 /// 10. Deploy DB operator
 /// 11. Deploy container with stroppy
 func (k *Kubernetes) DeployAll(wd string) (err error) {
-	// 1. Create ssh config file for kubespray
-	err = os.Mkdir(path.Join(wd, ".ssh"), os.ModePerm)
-	if err != nil {
-		merry.Prepend(err, "Error then creating ssh config directory")
-	}
-
 	// 2. Create and template ssh config
 	var file *os.File
 	file, err = os.Create(path.Join(wd, ".ssh/config"))
@@ -82,7 +85,7 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 	}
 
 	// replace template values to shh config variables
-	tmpl, err := template.New("config").Parse(SSHConfig)
+	tmpl, err := template.New("config").Parse(SSH_CONFIG) //nolint:nosnakecase // constant
 	if err != nil {
 		merry.Prepend(err, "Error then parsing ssh config template")
 	}
@@ -91,13 +94,8 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 		merry.Prepend(err, "Error then templating ssh config")
 	}
 
-	// 3. copy id_rsa file
-	if err = copyFileContents(
-		path.Join(wd, "id_rsa"),
-		path.Join(wd, ".ssh/id_rsa"),
-	); err != nil {
-		return merry.Prepend(err, "failed to deploy grafana")
-	}
+	// Force colored output for ansible playbooks
+	options.AnsibleForceColor()
 
 	// 4. generate ansible requirements
 	if err = writeAnsibleRequirements(wd); err != nil {
@@ -116,11 +114,11 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 
 	// 7. run grafana on premise ansible playbook
 	if err = k.deployMonitoring(wd); err != nil {
-		return merry.Prepend(err, "failed to deploy grafana")
+		return merry.Prepend(err, "failed to deploy monitoring")
 	}
 
 	// 8. generate inventory and run kubespray ansible playbook
-	if err = k.deployKubernetes(wd); err != nil {
+	if err = k.deploySelf(wd); err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
@@ -129,22 +127,16 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 		return merry.Prepend(err, "failed to finalie k8s deploy")
 	}
 
-	k.Engine.SetClusterConfigFile(path.Join(wd, ".kube/config"))
-	if err = k.Engine.EditClusterURL(clusterK8sPort); err != nil {
-		return merry.Prepend(err, "failed to edit cluster's url in kubeconfig")
-	}
+	// 10. set path variable to kubeconfig file
+	// by default kubeconfig everytime in ~/.kube/config
+	k.Engine.SetClusterConfigFile(fmt.Sprintf("%s/.kube/config", os.Getenv("HOME")))
 
-	k.KubernetesPort = k.Engine.OpenSecureShellTunnel(kubeengine.SshEntity, clusterK8sPort)
-	if k.KubernetesPort.Err != nil {
-		err = merry.Prepend(k.KubernetesPort.Err, "failed to create ssh tunnel")
-		return
-	}
-	llog.Infoln("status of creating ssh tunnel for the access to k8s: success")
-
+	// 11. Add nodes labels
 	if err = k.Engine.AddNodeLabels(kubeengine.ResourceDefaultNamespace); err != nil {
 		return merry.Prepend(err, "failed to add labels to cluster nodes")
 	}
 
+	// 12. Create stroppy deployment with one pod on master node
 	k.StroppyPod = stroppy.CreateStroppyPod(k.Engine)
 	if err = k.StroppyPod.Deploy(); err != nil {
 		err = merry.Prepend(err, "failed to deploy stroppy pod")
@@ -169,132 +161,260 @@ func (k *Kubernetes) Shutdown() {
 	k.MonitoringPort.Tunnel.Close()
 }
 
+//nolint:funlen // deploy all monitoring components
 // Deploy monitoring (grafana, node_exporter, promtail)
-func (k *Kubernetes) deployMonitoring(wd string) (err error) {
-	wd = path.Join(wd, "third_party/monitoring")
+func (k *Kubernetes) deployMonitoring(workDir string) error {
+	// create monitoring inventory
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		resp   *http.Response
+		err    error
+	)
 
-	// create kubespray inventory
-	if _, err = os.Stat(path.Join(wd, InventoryName)); err != nil {
-		llog.Traceln(err)
-		var inv *os.File
-		inv, err = os.Create(path.Join(wd, InventoryName))
-		if err != nil {
-			return merry.Prepend(err, "Error then creating monitoring inventory")
+	workDir = path.Join(workDir, "third_party/monitoring")
+
+	if bytes, err = k.GenerateMonitoringInventory(); err != nil {
+		return merry.Prepend(err, "Error then serializing monitoring inventory")
+	}
+
+	if file, err = os.OpenFile(
+		path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,   //nolint:nosnakecase // constant
+		os.FileMode(roAll),
+	); err == nil {
+		if length, err = file.Write(bytes); err != nil {
+			return merry.Prepend(err, "Error then writing monitoring inventory")
 		}
-		inv.Write(k.generateSimpleInventory())
+
+		llog.Tracef(
+			"%v bytes successfully written to %v",
+			length,
+			path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
+		)
 	}
 
+	//nolint:nosnakecase // constant
 	// next variables is wrappers around ansible
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection:   "ssh",
-		SSHExtraArgs: "-F .ssh/config",
-	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(wd, InventoryName),
-	}
-	playbook := &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "grafana.yml"), path.Join(wd, "node.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
+
+	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{
+		Become:        false,
+		BecomeMethod:  "",
+		BecomeUser:    "",
+		AskBecomePass: false,
 	}
 
-	if err = playbook.Run(context.TODO()); err != nil {
+	//nolint:nosnakecase // constant
+	// check that grafana is deployed
+	llog.Tracef(
+		"grafana uri http://%s:%v",
+		k.Engine.AddressMap["external"]["master"],
+		GRAFANA_PORT,
+	)
+
+	contextWithTimeout, closeFn := context.WithTimeout(
+		context.Background(),
+		GRAFANA_REQ_TIMEOUT*time.Second, //nolint // constant
+	)
+
+	if resp, err = sendGetWithContext(
+		contextWithTimeout,
+		nil,
+		net.JoinHostPort(
+			k.Engine.AddressMap["external"]["master"],
+			fmt.Sprint(GRAFANA_PORT), //nolint:nosnakecase // constant
+		),
+	); err != nil || resp.StatusCode != 200 {
+		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
+
+		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{
+			Binary:                     "",
+			Exec:                       nil,
+			Playbooks:                  []string{path.Join(workDir, "grafana.yml")},
+			Options:                    PBOpts,
+			ConnectionOptions:          connOpts,
+			PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+			StdoutCallback:             "",
+		}
+
+		closeFn()
+
+		if err = grafanaPlaybook.Run(context.TODO()); err != nil {
+			return merry.Prepend(err, "Error then running monitoring playbooks")
+		}
+	} else {
+		llog.Infoln("Grafana already deployed. skipping")
+
+		closeFn()
+	}
+
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	nodePlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "nodeexp.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+		StdoutCallback:             "",
+	}
+
+	if err = nodePlaybook.Run(context.TODO()); err != nil {
 		return merry.Prepend(err, "Error then running monitoring playbooks")
 	}
 
-	return
+	return nil
 }
 
 // Deploy kubernetes cluster and all dependent software
 // Function execution order
 // 1. Check that kubernetes already deployed
 // 2. Deploy kubernetes via kubespray
-func (k *Kubernetes) deployKubernetes(wd string) (err error) {
-	wd = path.Join(wd, "third_party/kubespray")
+func (k *Kubernetes) deploySelf(workDir string) error {
+	// create kubespray inventory
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		err    error
+	)
+
+	inventoryDir := path.Join(workDir, "third_party", "kubespray", "inventory", "stroppy")
 
 	// run on bastion (master) host shell command `kubectl get pods`
 	// if command returns something (0 or 127 exit code) kubernetes is deployed
-	var isDeployed bool
-	if isDeployed, err = k.checkMasterDeploymentStatus(); err != nil {
-		return merry.Prepend(err, "failed to Check deploy k8s in master node")
+	if k.checkMasterDeploymentStatus() {
+		return nil
 	}
 
-	// early return if cluster already deployed
-	if isDeployed {
-		llog.Infoln("k8s already success deployed")
-		return
+	if bytes, err = k.generateK8sInventory(); err != nil {
+		return merry.Prepend(err, "Error then serializing kubespray inventory")
 	}
 
-	// create kubespray inventory
-	if _, err = os.Stat(path.Join(wd, KubesprayInventoryPath)); err != nil {
-		llog.Traceln(err)
-		var inv *os.File
-		inv, err = os.Create(path.Join(wd, KubesprayInventoryPath))
-		if err != nil {
-			return merry.Prepend(err, "Error then creating kubespray inventory")
-		}
-		inv.Write(k.generateK8sInventory())
+	//nolint:nosnakecase // constant
+	if file, err = os.Create(path.Join(inventoryDir, INVENTORY_NAME)); err != nil {
+		return merry.Prepend(err, "Error then creating kubespray inventory file")
 	}
 
-	// next variables is an ansible interaction objects
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection:   "ssh",
-		SSHExtraArgs: "-F .ssh/config",
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating kubespray inventory")
 	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(wd, KubesprayInventoryPath),
+
+	llog.Tracef(
+		"%v bytes successfully written to %v",
+		length,
+		path.Join(inventoryDir, INVENTORY_NAME), //nolint:nosnakecase // constant
+	)
+
+	//nolint:nosnakecase // constant
+	// next variable is an ansible interaction objects
+	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, INVENTORY_NAME))
+
+	ansiblePrivelegeOptions := &options.AnsiblePrivilegeEscalationOptions{
+		Become:        true,
+		BecomeMethod:  "",
+		BecomeUser:    "",
+		AskBecomePass: false,
 	}
+
+	workDir = path.Join(workDir, "third_party", "kubespray")
+
 	playbook := &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "cluster.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "cluster.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: ansiblePrivelegeOptions,
+		StdoutCallback:             "",
 	}
 
 	// run kubespray ansible playbook
-	if err = playbook.Run(context.TODO()); err != nil {
+	if err = playbook.Run(context.Background()); err != nil {
 		return merry.Prepend(err, "Error then running kubespray playbook")
 	}
 
-	return
+	return nil
 }
 
 // Function for final k8s deployment steps
 // 1. Get kube config from master node
 // 2. Install grafana ingress into cluster
 // 3. Install metrics server
-func (k *Kubernetes) finalizeDeployment(wd string) (err error) {
-	wd = path.Join(wd, "third_party/finalize")
+func (k *Kubernetes) finalizeDeployment(workDir string) error {
+	llog.Debugln("Run 'finalize deployment' playbooks")
 
-	// create kubespray inventory
-	if _, err = os.Stat(path.Join(wd, InventoryName)); err != nil {
-		llog.Traceln(err)
-		var inv *os.File
-		inv, err = os.Create(path.Join(wd, InventoryName))
-		if err != nil {
-			return merry.Prepend(err, "Error then creating `finalize` inventory")
-		}
-		inv.Write(k.generateSimpleInventory())
+	// create generic inventory
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		err    error
+	)
+
+	workDir = path.Join(workDir, "third_party/extra")
+
+	if bytes, err = k.generateSimplifiedInventory(); err != nil {
+		return merry.Prepend(err, "Error then serializing generic inventory")
 	}
 
+	//nolint:nosnakecase // constant
+	if file, err = os.Create(path.Join(workDir, INVENTORY_NAME)); err != nil {
+		return merry.Prepend(err, "Error then creating ansible inventory")
+	}
+
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating generic inventory")
+	}
+
+	//nolint:nosnakecase // constant
+	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, INVENTORY_NAME))
+
+	//nolint:nosnakecase // constant
 	// next variables is wrappers around ansible
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection:   "ssh",
-		SSHExtraArgs: "-F .ssh/config",
-	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(wd, InventoryName),
-	}
-	playbook := &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "finalize.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
+
+	privOpts := options.AnsiblePrivilegeEscalationOptions{
+		Become:        false,
+		BecomeMethod:  "",
+		BecomeUser:    "",
+		AskBecomePass: false,
 	}
 
-	if err = playbook.Run(context.TODO()); err != nil {
+	finalizePlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "finalize.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &privOpts,
+		StdoutCallback:             "",
+	}
+
+	if err = finalizePlaybook.Run(context.Background()); err != nil {
 		return merry.Prepend(err, "Error then finalizing deployment with finalize playbook")
 	}
 
-	return
+	manifestsPlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "manifests.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &privOpts,
+		StdoutCallback:             "",
+	}
+
+	if err = manifestsPlaybook.Run(context.Background()); err != nil {
+		return merry.Prepend(err, "Error then finalizing deployment with manifests playbook")
+	}
+
+	return nil
 }
 
 func (k *Kubernetes) Stop() {
@@ -302,53 +422,60 @@ func (k *Kubernetes) Stop() {
 	llog.Infoln("status of ssh tunnel close: success")
 }
 
-// checkMasterDeploymentStatus
-// проверяет, что все поды k8s в running, что подтверждает успешность разворачивания k8s
-func (k *Kubernetes) checkMasterDeploymentStatus() (bool, error) {
-	masterExternalIP := k.Engine.AddressMap["external"]["master"]
+// Run kubectl command and try to retrieve all not running pods
+// If command executed with non zero (or 127) exit code then return false.
+func (k *Kubernetes) checkMasterDeploymentStatus() bool {
+	var (
+		err    error
+		cmd    *exec.Cmd
+		stdout []byte
+		json   map[string]interface{}
+	)
 
-	commandClientType := engineSsh.RemoteClient
-	if k.Engine.UseLocalSession {
-		commandClientType = engineSsh.LocalClient
-	}
+	cmd = exec.Command(
+		"kubectl",
+		"get",
+		"pods",
+		"--field-selector",
+		"status.phase!=Running",
+		"--namespace",
+		"kube-system",
+		"--output",
+		"json",
+	)
 
-	sshClient, err := engineSsh.CreateClient(k.Engine.WorkingDirectory,
-		masterExternalIP,
-		k.provider.Name(),
-		commandClientType)
-	if err != nil {
-		return false, merry.Prependf(
-			err,
-			"failed to establish ssh client to '%s' address",
-			masterExternalIP,
-		)
-	}
+	llog.Tracef("kubectl command '%s'", cmd)
 
-	checkSession, err := sshClient.GetNewSession()
-	if err != nil {
-		return false, merry.Prepend(err, "failed to open ssh connection for Check deploy")
-	}
+	if stdout, err = cmd.Output(); err != nil {
+		llog.Warnln("kubectl command has non zero exit code")
 
-	const checkCmd = "kubectl get pods --all-namespaces"
-	resultCheckCmd, err := checkSession.CombinedOutput(checkCmd)
-	if err != nil {
-		e, ok := err.(*ssh.ExitError)
-		if !ok {
-			return false, merry.Prepend(err, "failed сheck deploy k8s")
-		}
+		if cmd.ProcessState.ExitCode() != EXIT_CODE_127 { //nolint:nosnakecase // constant
+			llog.Warnf("Error then retrieving k8s cluster status: %v", err)
 
-		// если вернулся not found(код 127), это норм, если что-то другое - лучше проверить
-		const sshNotFoundCode = 127
-		if e.ExitStatus() == sshNotFoundCode {
-			return false, nil
+			return false
 		}
 	}
 
-	countPods := strings.Count(string(resultCheckCmd), "Running")
-	if countPods < runningPodsCount {
-		return false, nil
+	llog.Tracef("kubectl stdout:\n%v", string(stdout))
+
+	if err = yaml.Unmarshal(stdout, &json); err != nil {
+		llog.Warnf("Error then deserializing kubectl response: %v", err)
+
+		return false
 	}
 
-	_ = checkSession.Close()
-	return true, nil
+	items, ok := json["items"].([]interface{})
+	if !ok {
+		return false
+	}
+
+	if len(items) > 0 {
+		llog.Warnln("Cluster already deployed but not healthy")
+
+		return false
+	}
+
+	llog.Infoln("Cluster already deployed and running")
+
+	return true
 }

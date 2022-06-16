@@ -18,6 +18,7 @@
   when: kube_webhook_authorization|default(false)
 
 - name: Create kube-scheduler config
+  become: true
   template:
     src: kubescheduler-config.yaml.j2
     dest: "{{ kube_config_dir }}/kubescheduler-config.yaml"
@@ -28,6 +29,7 @@
     - kube_encrypt_secret_data
 
 - name: Install | Copy kubectl binary from download dir
+  become: true
   copy:
     src: "{{ local_release_dir }}/kubectl-{{ kube_version }}-{{ image_arch }}"
     dest: "{{ bin_dir }}/kubectl"
@@ -38,6 +40,7 @@
     - upgrade
 
 - name: Install kubectl bash completion
+  become: true
   shell: "{{ bin_dir }}/kubectl completion bash >/etc/bash_completion.d/kubectl.sh"
   when: ansible_os_family in ["Debian","RedHat"]
   tags:
@@ -45,6 +48,7 @@
   ignore_errors: true  # noqa ignore-errors
 
 - name: Set kubectl bash completion file permissions
+  become: true
   file:
     path: /etc/bash_completion.d/kubectl.sh
     owner: root
@@ -79,12 +83,14 @@
   when: kubelet_rotate_certificates
 
 - name: Install script to renew K8S control plane certificates
+  become: true
   template:
     src: k8s-certs-renew.sh.j2
     dest: "{{ bin_dir }}/k8s-certs-renew.sh"
     mode: 0755
 
 - name: Renew K8S control plane certificates monthly 1/2
+  become: true
   template:
     src: "{{ item }}.j2"
     dest: "/etc/systemd/system/{{ item }}"
@@ -96,6 +102,7 @@
   when: auto_renew_certificates
 
 - name: Renew K8S control plane certificates monthly 2/2
+  become: true
   systemd:
     name: k8s-certs-renew.timer
     enabled: yes

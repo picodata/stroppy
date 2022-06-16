@@ -41,6 +41,7 @@
   changed_when: false
 
 - name: Create kubeadm token for joining nodes with 24h expiration (default)
+  become: true
   command: "{{ bin_dir }}/kubeadm token create"
   register: temp_token
   delegate_to: "{{ groups['kube_control_plane'][0] }}"
@@ -57,11 +58,14 @@
     kubeadmConfig_api_version: v1beta2
 
 - name: Create kubeadm client config
+  become: true
   template:
     src: "kubeadm-client.conf.{{ kubeadmConfig_api_version }}.j2"
     dest: "{{ kube_config_dir }}/kubeadm-client.conf"
     backup: yes
     mode: 0640
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
   when: not is_kube_master
 
 - name: Join to cluster if needed
@@ -71,6 +75,7 @@
   block:
 
     - name: Join to cluster
+      become: true
       command: >-
         timeout -k {{ kubeadm_join_timeout }} {{ kubeadm_join_timeout }}
         {{ bin_dir }}/kubeadm join
@@ -83,6 +88,7 @@
   rescue:
 
     - name: Join to cluster with ignores
+      become: true
       command: >-
         timeout -k {{ kubeadm_join_timeout }} {{ kubeadm_join_timeout }}
         {{ bin_dir }}/kubeadm join
@@ -102,6 +108,7 @@
           {{ kubeadm_join.stderr_lines }}
 
 - name: Update server field in kubelet kubeconfig
+  become: true
   lineinfile:
     dest: "{{ kube_config_dir }}/kubelet.conf"
     regexp: 'server:'
@@ -116,6 +123,7 @@
 # FIXME(mattymo): Need to point to localhost, otherwise masters will all point
 #                 incorrectly to first master, creating SPoF.
 - name: Update server field in kube-proxy kubeconfig
+  become: true
   shell: >-
     set -o pipefail && {{ kubectl }} get configmap kube-proxy -n kube-system -o yaml
     | sed 's#server:.*#server: https://127.0.0.1:{{ kube_apiserver_port }}#g'
@@ -141,6 +149,7 @@
     mode: "0644"
 
 - name: Restart all kube-proxy pods to ensure that they load the new configmap
+  become: true
   command: "{{ kubectl }} delete pod -n kube-system -l k8s-app=kube-proxy --force --grace-period=0"
   run_once: true
   delegate_to: "{{ groups['kube_control_plane']|first }}"

@@ -1,0 +1,18 @@
+---
+- name: Finalize cluster deploy
+  hosts: master
+  tasks:
+    - name: Rewrite server field in local kubeconfig
+      become: true
+      lineinfile:
+        path: /root/.kube/config
+        regexp: '^    server: https'
+        line: '    server: https://{{ kube_master_ext_ip }}:{{ kube_apiserver_port }}'
+        state: present
+    - name: Get kube config from master
+      become: true
+      ansible.builtin.fetch:
+        src: /root/.kube/config
+        dest: ~/.kube/config
+        flat: true
+

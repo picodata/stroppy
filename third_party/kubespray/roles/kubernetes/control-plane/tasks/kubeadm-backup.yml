@@ -1,5 +1,6 @@
 ---
 - name: Backup old certs and keys
+  become: true
   copy:
     src: "{{ kube_cert_dir }}/{{ item }}"
     dest: "{{ kube_cert_dir }}/{{ item }}.old"
@@ -15,6 +16,7 @@
   ignore_errors: true  # noqa ignore-errors
 
 - name: Backup old confs
+  become: true
   copy:
     src: "{{ kube_config_dir }}/{{ item }}"
     dest: "{{ kube_config_dir }}/{{ item }}.old"

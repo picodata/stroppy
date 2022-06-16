@@ -18,26 +18,34 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
+const SSHUser = "ubuntu"
+
 type Result struct {
 	Port   int
 	Tunnel *sshtunnel.SSHTunnel
 	Err    error
 }
 
-func getPrivateKeyFileName(provider string, workingDirectory string) (privateKeyFileName string, err error) {
+func getPrivateKeyFileName(
+	provider string,
+	workingDirectory string,
+) (privateKeyFileName string, err error) {
 	// проверяем наличие приватного ключа
 	switch provider {
 	case "yandex":
 		// переименовать единообразно ключи нельзя, т.к. Yandex.Cloud ожидает именно id_rsa
-		privateKeyFileName = "id_rsa"
+		privateKeyFileName = ".ssh/id_rsa"
 	case "oracle":
-		privateKeyFileName = "private_key.pem"
+		privateKeyFileName = ".ssh/private_key.pem"
 	}
 
 	privateKeyFilePath := filepath.Join(workingDirectory, privateKeyFileName)
 	if _, err = os.Stat(privateKeyFilePath); err != nil {
 		if os.IsNotExist(err) {
-			return privateKeyFileName, merry.Prepend(err, "private key file not found. Create it, please.")
+			return privateKeyFileName, merry.Prepend(
+				err,
+				"private key file not found. Create it, please.",
+			)
 		}
 		return privateKeyFileName, merry.Prepend(err, "failed to find private key file")
 	}
@@ -54,17 +62,18 @@ func createSshClient(wd, address, provider string) (cc Client, err error) {
 		return
 	}
 	c.keyFilePath = filepath.Join(wd, c.keyFileName)
-    llog.Tracef("Ssh private key file path '%v'", c.keyFilePath)
+	llog.Tracef("Ssh private key file path '%v'", c.keyFilePath)
 
 	if c.keyFileBytes, err = ioutil.ReadFile(c.keyFilePath); err != nil {
 		err = merry.Prependf(err, "failed to read '%s' key file content", c.keyFilePath)
 		return
 	}
-    
-    if c.internalClient, err = c.getClientInstance(address); err != nil {
+
+	if c.internalClient, err = c.getClientInstance(address); err != nil {
 		return
 	}
-    llog.Debugln("Remote secure shh client creacted")
+
+	llog.Debugln("Remote secure shh client created")
 
 	cc = c
 	return
@@ -87,7 +96,7 @@ func (sc *client) GetNewSession() (session Session, err error) {
 }
 
 /// Parse client.keyFileBytes to private key and returning ssh.Client
-/// if client returned successefully, connection is ok
+/// if client returned successfully, connection is ok.
 func (sc *client) getClientInstance(address string) (client *ssh.Client, err error) {
 	var signer ssh.Signer
 	if signer, err = ssh.ParsePrivateKey(sc.keyFileBytes); err != nil {
@@ -96,17 +105,19 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 	}
 
 	config := &ssh.ClientConfig{
-		User: "ubuntu",
+		User: SSHUser,
 		Auth: []ssh.AuthMethod{
 			ssh.PublicKeys(signer),
 		},
 		//nolint:gosec
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 	}
-    llog.Traceln("Ssh private key successefully parsed")
+
+	llog.Traceln("Ssh private key successfully parsed")
 
 	addr := fmt.Sprintf("%s:%d", address, 22)
-    llog.Traceln("Taget address for ssh connection %v", addr)
+	llog.Tracef("Target address for ssh connection %v", addr)
+
 	if client, err = ssh.Dial("tcp", addr, config); err != nil {
 		err = merry.Prepend(err, "failed to start ssh connection for ssh client")
 	}
@@ -118,7 +129,9 @@ func (sc *client) GetPrivateKeyInfo() (string, string) {
 }
 
 // ExecuteCommandWorker - выполнить команду на определенном воркере с сохранением результата
-func ExecuteCommandWorker(workingDirectory, address, text, provider string) (result []byte, err error) {
+func ExecuteCommandWorker(
+	workingDirectory, address, text, provider string,
+) (result []byte, err error) {
 	client, err := CreateClient(workingDirectory, address, provider, RemoteClient)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to create ssh client")
@@ -137,16 +150,26 @@ func ExecuteCommandWorker(workingDirectory, address, text, provider string) (res
 	if result, err = commandSessionObject.CombinedOutput(text); err != nil {
 		// проверка на длину массива добавлена для случая, когда grep возвращает пустую строку, что приводит к exit code 1
 		if len(result) != 0 {
-			return nil, merry.Prependf(err, "terraform command exec failed with output `%s`", string(result))
+			return nil, merry.Prependf(
+				err,
+				"terraform command exec failed with output `%s`",
+				string(result),
+			)
 		}
 	}
 
-	llog.Debugln("result of commands оn worker: ", string(result))
+	llog.Debugf("result of commands оn worker: %v", string(result))
 
 	return
 }
 
-func IsExistEntity(address string, checkCommand string, checkString string, workingDirectory string, provider string) (checkResult bool, err error) {
+func IsExistEntity(
+	address string,
+	checkCommand string,
+	checkString string,
+	workingDirectory string,
+	provider string,
+) (checkResult bool, err error) {
 	llog.Debugf("executing of commands %v for check \n", checkCommand)
 	var CmdResult []byte
 	if CmdResult, err = ExecuteCommandWorker(workingDirectory, address, checkCommand, provider); err != nil {

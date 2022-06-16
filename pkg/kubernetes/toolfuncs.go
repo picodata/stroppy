@@ -5,48 +5,51 @@
 package kubernetes
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
-    "os/exec"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"sort"
 	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/apenella/go-ansible/pkg/options"
+	"github.com/apenella/go-ansible/pkg/playbook"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	kube_engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
-const ConfigTemplate string = `
+const (
+	ConfigTemplate string = `
 [defaults]
 roles_path =third_party/.roles/
 collections_paths=third_party/.collections/
-host_key_checking = False
-
-[ssh_connection]
-ssh_args = -o ConnectTimeout=120 -o StrictHostKeyChecking=no
 `
+	SSHUser           string = "ubuntu"
+	grafanaVer        string = "0.17.0"
+	nodeExporterVer   string = "2.0.0"
+	kubernetesColVer  string = "2.0.1"
+	grafanaColVer     string = "1.4.0"
+	forceReinstallReq bool   = false //nolint
+	roAll             int    = 0o644
+)
 
 type Inventory struct {
-	All     All     `yaml:"all"`
-	Bastion Bastion `yaml:"bastion"`
+	All All `yaml:"all"`
 }
 
 type All struct {
 	Vars     map[string]interface{} `yaml:"vars"`
 	Hosts    map[string]interface{} `yaml:"hosts"`
 	Children map[string]interface{} `yaml:"children"`
-}
-
-type Bastion struct {
-	AnsibleHost    string `yaml:"ansible_host"`
-	AnsibleSshPort string `yaml:"ansible_ssh_port"`
 }
 
 type Host struct {
@@ -57,9 +60,8 @@ type Host struct {
 
 var errPortCheck = errors.New("port check failed")
 
-/* loadFilesToMaster
- * скопировать на мастер-ноду private key для работы мастера с воркерами
- * и файлы для развертывания мониторинга и postgres */
+// скопировать на мастер-ноду private key для работы мастера с воркерами
+// и файлы для развертывания мониторинга и postgres.
 func (k *Kubernetes) loadFilesToMaster() (err error) {
 	masterExternalIP := k.Engine.AddressMap["external"]["master"]
 	llog.Infof("Connecting to master %v", masterExternalIP)
@@ -96,13 +98,24 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	}
 	llog.Infoln("copying metrics-server.yaml: success")
 
-	ingressGrafanaFilePath := filepath.Join(k.Engine.WorkingDirectory, "monitoring", "ingress-grafana.yaml")
-	if err = k.Engine.LoadFile(ingressGrafanaFilePath, "/home/ubuntu/ingress-grafana.yaml"); err != nil {
+	ingressGrafanaFilePath := filepath.Join(
+		k.Engine.WorkingDirectory,
+		"monitoring",
+		"ingress-grafana.yaml",
+	)
+	if err = k.Engine.LoadFile(
+		ingressGrafanaFilePath,
+		"/home/ubuntu/ingress-grafana.yaml",
+	); err != nil {
 		return
 	}
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
-	grafanaDirectoryPath := filepath.Join(k.Engine.WorkingDirectory, "monitoring", "grafana-on-premise")
+	grafanaDirectoryPath := filepath.Join(
+		k.Engine.WorkingDirectory,
+		"monitoring",
+		"grafana-on-premise",
+	)
 	if err = k.Engine.LoadDirectory(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
 		return
 	}
@@ -124,7 +137,8 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 }
 
 // "Deprecated: deployment script replaced to ansible inventory, and go-ansible wrapper"
-// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера
+// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini
+// для использования при деплое k8s кластера.
 func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string) {
 	var workersAddressString string
 	var masterAddressString string
@@ -168,56 +182,112 @@ func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string)
 	return
 }
 
-// Generate monitoring inventory based on hosts
-func (k *Kubernetes) GenerateMonitoringInventory() (result []byte) {
-	inventory := Inventory{
-		All: All{
-			Vars: map[string]interface{}{
-				"ansible_user":            "stroppy",
-				"ansible_ssh_common_args": "-F inventory/yandex/.ssh/config",
-			},
-			Hosts: map[string]interface{}{
-				"master": map[string]interface{}{
-					"ansible_host": k.Engine.AddressMap["external"]["master"],
+// Generate monitoring inventory based on hosts.
+func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
+	var (
+		bytes []byte
+		err   error
+	)
+
+	hosts := make(map[string]map[string]string)
+
+	for k, v := range k.Engine.AddressMap["internal"] {
+		hosts[k] = map[string]string{"ansible_host": v}
+	}
+
+	//  vars:
+	//  prometheus_targets:
+	//    node:
+	//    - targets:
+	//      - master:9100
+	//      labels:
+	//        env: localhost
+
+	//  grafana_security:
+	//    admin_user: admin
+	//    admin_password: admin
+	//
+	//  grafana_address: 0.0.0.0
+	//  grafana_port: 3000
+	inventory := map[string]map[string]interface{}{
+		"all": {
+			"vars": map[string]interface{}{
+				"cloud_type":               "yandex",
+				"ansible_user":             SSHUser,
+				"ansible_ssh_common_args":  "-F .ssh/config",
+				"promtail_force_reinstall": false,
+				"nodeexp_force_reinstall":  false,
+				"grafana_force_reinstall":  false,
+				"loki_force_reinstall":     false,
+				"grafana_security": map[string]interface{}{
+					"admin_user":     "admin",
+					"admin_password": "admin",
+				},
+				"grafana_datasources": []interface{}{
+					map[string]interface{}{
+						"name":      "Prometheus",
+						"type":      "prometheus",
+						"access":    "proxy",
+						"url":       "http://localhost:9090",
+						"basicAuth": false,
+					},
+					map[string]interface{}{
+						"name":      "Loki",
+						"type":      "loki",
+						"access":    "proxy",
+						"url":       "http://localhost:3100",
+						"basicAuth": false,
+					},
 				},
 			},
+			"hosts": hosts,
 		},
 	}
 
-	result, err := yaml.Marshal(inventory)
-	if err != nil {
-		fmt.Println(err)
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
 	}
 
-	llog.Debugln(string(result))
-	return
+	llog.Tracef("Serialized monitoring inventory %v", string(bytes))
+
+	return bytes, nil
 }
 
-// Generate kubespray inventory based on hosts addresses list
-func (k *Kubernetes) generateK8sInventory() (result []byte) {
+// Generate kubespray inventory based on hosts addresses list.
+func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
+	var (
+		empty map[string]interface{}
+		bytes []byte
+		err   error
+	)
+
 	inventory := Inventory{
 		All: All{
 			Vars: map[string]interface{}{
 				"kube_version":              "v1.23.7",
-				"ansible_user":              "stroppy",
-				"ansible_ssh_common_args":   "-F inventory/yandex/.ssh/config",
+				"ansible_user":              SSHUser,
+				"ansible_ssh_common_args":   "-F .ssh/config",
 				"ignore_assert_errors":      "yes",
 				"docker_dns_servers_strict": "no",
 				"download_force_cache":      false,
 				"download_run_once":         false,
-				"addons":                    map[string]interface{}{"ingress_nginx_enabled": false},
+				"supplementary_addresses_in_ssl_keys": []string{
+					k.Engine.AddressMap["internal"]["master"],
+					k.Engine.AddressMap["external"]["master"],
+				},
+				"addons": map[string]interface{}{"ingress_nginx_enabled": false},
 			},
 			Hosts: make(map[string]interface{}),
 			Children: map[string]interface{}{
 				"kube_control_plane": map[string]interface{}{
 					"hosts": map[string]interface{}{
-						"master": nil,
+						"master": empty,
 					},
 				},
-				"k8s_kluster": map[string]interface{}{
+				"k8s_cluster": map[string]interface{}{
 					"children": map[string]interface{}{
-						"kube_control_plane": nil,
-						"kube_node":          nil,
+						"kube_control_plane": empty,
+						"kube_node":          empty,
 					},
 				},
 				"calico_rr": map[string]interface{}{
@@ -232,147 +302,226 @@ func (k *Kubernetes) generateK8sInventory() (result []byte) {
 		k.Engine.AddressMap["internal"]["master"],
 		k.Engine.AddressMap["internal"]["master"],
 	}
+
 	hosts := make(map[string]interface{})
+
 	for k, v := range k.Engine.AddressMap["internal"] {
 		if k == "master" {
 			continue
 		}
 		inventory.All.Hosts[k] = Host{v, v, v}
-		hosts[k] = nil
-	}
-	inventory.All.Children["kube_node"] = hosts
-	inventory.All.Children["etcd"] = hosts
-	inventory.Bastion = Bastion{k.Engine.AddressMap["external"]["master"], "22"}
-
-	result, err := yaml.Marshal(inventory)
-	if err != nil {
-		fmt.Println(err)
+		hosts[k] = empty
 	}
 
-	llog.Debugf("%v\n", string(result))
-	return
+	inventory.All.Children["kube_node"] = map[string]interface{}{
+		"hosts": hosts,
+	}
+
+	inventory.All.Children["etcd"] = map[string]interface{}{
+		"hosts": hosts,
+	}
+
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
+	}
+
+	llog.Tracef("Serialized kubespray inventory %v", string(bytes))
+
+	return bytes, nil
 }
 
-// Generate `default` inventory for any another actions related with ansible
-func (k *Kubernetes) generateSimpleInventory() (result []byte) {
-	hosts := make(map[string]interface{})
+// Generate `default` inventory for any another actions related with ansible.
+func (k *Kubernetes) generateSimplifiedInventory() ([]byte, error) {
+	var (
+		bytes []byte
+		err   error
+	)
+
+	hosts := make(map[string]map[string]string)
+
 	for k, v := range k.Engine.AddressMap["internal"] {
-		hosts[k] = v
+		hosts[k] = map[string]string{"ansible_host": v}
 	}
-	inventory := Inventory{
-		All: All{
-			Vars: map[string]interface{}{
+
+	inventory := map[string]map[string]interface{}{
+		"all": {
+			"vars": map[string]interface{}{
 				"cloud_type":              "yandex",
-				"ansible_user":            "ubuntu",
+				"ansible_user":            SSHUser,
 				"ansible_ssh_common_args": "-F .ssh/config",
+				"kube_master_ext_ip":      k.Engine.AddressMap["external"]["master"],
+				"kube_apiserver_port":     6443, //nolint //TODO: End-to-end inventory configuration for kubespray #issue97
 			},
-			Hosts: hosts,
+			"hosts": hosts,
 		},
 	}
 
-	result, err := yaml.Marshal(inventory)
-	if err != nil {
-		fmt.Println(err)
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
 	}
 
-	llog.Debugf("%v\n", string(result))
-	return
+	llog.Tracef("Serialized generic inventory %v\n", string(bytes))
+
+	return bytes, nil
 }
 
-// copyFileContents copies the contents of the file named src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the contents
-// of the source file.
-func copyFileContents(src string, dst string) (err error) {
-	in, err := os.Open(src)
-	if err != nil {
-		return
+// Write ansible config from const.
+func writeAnsibleConfig(workDir string) error {
+	var (
+		file   *os.File
+		length int
+		err    error
+	)
+
+	if file, err = os.Create(path.Join(workDir, "ansible.cfg")); err != nil {
+		return merry.Prepend(err, "Error then creating ansible.cfg file")
 	}
-	defer in.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return
+
+	if length, err = file.WriteString(ConfigTemplate); err != nil {
+		return merry.Prepend(err, "Error then writing ansible.cfg file")
 	}
-	defer func() {
-		cerr := out.Close()
-		if err == nil {
-			err = cerr
-		}
-	}()
-	if _, err = io.Copy(out, in); err != nil {
-		return
-	}
-	err = out.Sync()
-	return
+
+	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, "ansible.cfg"))
+
+	return nil
 }
 
-/// Write andible config from const
-/// TODO replace const to template
-func writeAnsibleConfig(wd string) (err error) {
-	var f *os.File
-	f, err = os.Create(path.Join(wd, "ansible.cfg"))
-	if err != nil {
-		merry.Prepend(err, "Error then creating ansible.cfg config file")
-	}
-	var l int
-	if l, err = f.WriteString(ConfigTemplate); err != nil {
-		merry.Prepend(err, "Error then writing ansible config")
-	} else {
-		llog.Tracef("%v bytes successfully writed", l)
-	}
-	return
-}
-
-/// Write andible requrements file
-/// TODO replace const to template
-func writeAnsibleRequirements(wd string) (err error) {
-	var f *os.File
-	f, err = os.Create(path.Join(wd, "requrements.yml"))
-	if err != nil {
-		merry.Prepend(err, "Error then creating requrements.yml file")
-	}
+// Write ansible requirements file.
+func writeAnsibleRequirements(workDir string) error {
+	var (
+		file   *os.File
+		bytes  []byte
+		length int
+		err    error
+	)
 
 	requirements := map[string]interface{}{
 		"roles": []map[string]string{
 			{
 				"name":    "cloudalchemy.grafana",
-				"version": "0.17.0",
+				"version": grafanaVer,
 			},
 			{
 				"name":    "cloudalchemy.node_exporter",
-				"version": "2.0.0",
+				"version": nodeExporterVer,
 			},
 		},
 		"collections": []map[string]string{
 			{
 				"name":    "community.kubernetes",
-				"version": "2.0.1",
+				"version": kubernetesColVer,
+			},
+			{
+				"name":    "community.grafana",
+				"version": grafanaColVer,
 			},
 		},
 	}
 
-	var result []byte
-	result, err = yaml.Marshal(requirements)
-	if err != nil {
+	if bytes, err = yaml.Marshal(requirements); err != nil {
 		merry.Prepend(err, "Error then marshaling requirements to yaml format")
 	}
-	var l int
-	if l, err = f.Write(result); err != nil {
-		return merry.Prepend(err, "Error then writing requirements.yml")
-	}
-	llog.Tracef("%v bytes successfully writed to requirements.yml\n", l)
 
-	return
+	if file, err = os.Create(path.Join(workDir, "requirements.yml")); err != nil {
+		return merry.Prepend(err, "Error then creating file requirements.yml")
+	}
+
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating requirements.yml file")
+	}
+
+	llog.Tracef(
+		"%v bytes successfully written to %v",
+		length,
+		path.Join(workDir, "requirements.yml"),
+	)
+
+	return nil
 }
 
-/// Install ansible galaxy reqiurements
-func installGalaxyRoles() (err error) {
-    cmd := exec.Command("ansible-galaxy", "install", "-fr", "requrements.yml")
-    var stdout []byte 
-    stdout, err = cmd.Output()
-    if err != nil {
-        return merry.Prepend(err, "Error then installing ansible requrements")
-    }
-    llog.Debug(string(stdout))
-    return
+// Install ansible galaxy requirements.
+func installGalaxyRoles() error {
+	var (
+		err    error
+		stdout []byte
+	)
+
+	command := exec.Command("ansible-galaxy", "install", "-fr", "requirements.yml")
+	if stdout, err = command.Output(); err != nil {
+		return merry.Prepend(err, "Error then installing ansible requirements")
+	}
+
+	llog.Tracef("roles installation stdout:\n%s", string(stdout))
+
+	command = exec.Command("ansible-galaxy", "collection", "install", "-fr", "requirements.yml")
+	if stdout, err = command.Output(); err != nil {
+		return merry.Prepend(err, "Error then installing ansible requirements")
+	}
+
+	llog.Tracef("collection installation stdout:\n%s", string(stdout))
+
+	return nil
+}
+
+// Create request and return response.
+func sendGetWithContext(ctx context.Context, body io.Reader, url string) (*http.Response, error) {
+	var (
+		req *http.Request
+		res *http.Response
+		err error
+	)
+
+	if req, err = http.NewRequestWithContext(ctx, http.MethodGet, url, body); err != nil {
+		return nil, merry.Prepend(err, "Error then constructing request")
+	}
+
+	if res, err = http.DefaultClient.Do(req); err != nil {
+		return nil, merry.Prepend(err, fmt.Sprintf("Error then executing reqest to %s", url))
+	}
+
+	return res, nil
+}
+
+func createAnsibleOpts(
+	inventoryPath string,
+) (*options.AnsibleConnectionOptions, *playbook.AnsiblePlaybookOptions) {
+	ansibleConnectionOpts := &options.AnsibleConnectionOptions{
+		AskPass:       false,
+		Connection:    "ssh",
+		PrivateKey:    "",
+		SCPExtraArgs:  "",
+		SFTPExtraArgs: "",
+		SSHCommonArgs: "",
+		SSHExtraArgs:  "",
+		Timeout:       0,
+		User:          "",
+	}
+
+	ansiblePlaybookOptions := &playbook.AnsiblePlaybookOptions{
+		AskVaultPassword:  false,
+		Check:             false,
+		Diff:              false,
+		ExtraVars:         map[string]interface{}{},
+		ExtraVarsFile:     []string{},
+		FlushCache:        false,
+		ForceHandlers:     false,
+		Forks:             "",
+		Inventory:         inventoryPath,
+		Limit:             "",
+		ListHosts:         false,
+		ListTags:          false,
+		ListTasks:         false,
+		ModulePath:        "",
+		SkipTags:          "",
+		StartAtTask:       "",
+		Step:              false,
+		SyntaxCheck:       false,
+		Tags:              "",
+		VaultID:           "",
+		VaultPasswordFile: "",
+		Verbose:           false,
+		Version:           false,
+	}
+
+	return ansibleConnectionOpts, ansiblePlaybookOptions
 }

@@ -43,8 +43,17 @@ type ClusterTunnel struct {
 	LocalPort *int
 }
 
-func CreateCluster(dbConfig *config.DatabaseSettings,
-	sc ssh.Client, k *kubernetes.Kubernetes, wd string) (_cluster Cluster, err error) {
+//nolint // for future refactoring
+func CreateCluster(
+	dbConfig *config.DatabaseSettings,
+	sshClient ssh.Client,
+	kube *kubernetes.Kubernetes,
+	workDir string,
+) (Cluster, error) {
+	var (
+		dbcluster Cluster
+		err       error
+	)
 
 	// если кол-во соединений не задано, приравниваем к кол-ву воркеров
 	if dbConfig.ConnectPoolSize == 0 {
@@ -56,23 +65,54 @@ func CreateCluster(dbConfig *config.DatabaseSettings,
 		err = merry.Errorf("unknown database type '%s'", dbConfig.DBType)
 
 	case cluster.Postgres:
-		_cluster = createPostgresCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+		dbcluster = createPostgresCluster(
+			sshClient,
+			kube,
+			workDir,
+			dbConfig.DBURL,
+			dbConfig.ConnectPoolSize,
+		)
 
 	case cluster.Foundation:
-		_cluster = createFoundationCluster(sc, k, wd, dbConfig.DBURL)
+		dbcluster = createFoundationCluster(sshClient, kube, workDir, dbConfig.DBURL)
 
 	case cluster.MongoDB:
-		_cluster = createMongoCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize, dbConfig.Sharded)
+		dbcluster = createMongoCluster(
+			sshClient,
+			kube,
+			workDir,
+			dbConfig.DBURL,
+			dbConfig.ConnectPoolSize,
+			dbConfig.Sharded,
+		)
 
 	case cluster.Cockroach:
-		_cluster = createCockroachCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+		dbcluster = createCockroachCluster(
+			sshClient,
+			kube,
+			workDir,
+			dbConfig.DBURL,
+			dbConfig.ConnectPoolSize,
+		)
 
 	case cluster.Cartridge:
-		_cluster = createCartridgeCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
+		dbcluster = createCartridgeCluster(
+			sshClient,
+			kube,
+			workDir,
+			dbConfig.DBURL,
+			dbConfig.ConnectPoolSize,
+		)
 
-    case cluster.Yandex:
-        _cluster = createYandexCluster(sc, k, wd, dbConfig.DBURL, dbConfig.ConnectPoolSize)
-    }
+	case cluster.YandexDB:
+		dbcluster = createYandexDBCluster(
+			sshClient,
+			kube,
+			workDir,
+			dbConfig.DBURL,
+			dbConfig.ConnectPoolSize,
+		)
+	}
 
-	return
+	return dbcluster, err
 }

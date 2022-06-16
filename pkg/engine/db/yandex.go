@@ -1,50 +1,565 @@
 package db
 
 import (
+	"context"
+	"fmt"
+	"io/fs"
+	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
+	"time"
 
+	"github.com/ansel1/merry"
+	helmclient "github.com/mittwald/go-helm-client"
+	llog "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gopkg.in/yaml.v2"
+	"helm.sh/helm/v3/pkg/release"
+	"helm.sh/helm/v3/pkg/repo"
+)
+
+const (
+	databasesDir    string = "third_party/extra/manifests/databases"
+	yandexDirectory string = "yandexdb"
+	ydbHelmRepo     string = "https://charts.ydb.tech"
+	timeout         int    = 300
+	step            int    = 20
+	helmTimeout     int    = 300000000000
+	castingError    string = "Error then casting type into interface"
+	roAll           int    = 0o644
 )
 
 type yandexCluster struct {
-	*commonCluster
+	wd            string
+	commonCluster *commonCluster
 }
-func createYandexCluster(
+
+//nolint // should be fixed in future
+// Create createYandexDBCluster.
+func createYandexDBCluster(
 	sc engineSsh.Client,
 	k *kubernetes.Kubernetes,
 	wd string,
 	dbURL string,
 	connectionPoolSize int,
-) (yandex Cluster) {
-	yandex = &yandexCluster{
+) Cluster {
+	return &yandexCluster{
+		wd: wd,
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, dbWorkingDirectory, cartridgeDirectory),
-			cartridgeDirectory,
+			filepath.Join(wd, dbWorkingDirectory, yandexDirectory),
+			yandexDirectory,
 			dbURL,
 			connectionPoolSize,
 			false,
 		),
 	}
-
-	return
 }
 
-// Connect implements Cluster
-func (*yandexCluster) Connect() (interface{}, error) {
-	panic("unimplemented")
+// Deploy Yandex Database Cluster
+// Implementation of YDB deploy completely differs from others,
+// the helm operator will be connected first. The operator is always
+// installed from the Yandex repository. Then the store and database
+// manifests will be deserialized and parameterized.
+func (yc *yandexCluster) Deploy() error {
+	var err error
+
+	if err = yc.deployYandexDBOperator(); err != nil {
+		return merry.Prepend(err, "Error then deploying ydb operator")
+	}
+
+	if err = yc.deployStorage(); err != nil {
+		return merry.Prepend(err, "Error then deploying storage")
+	}
+
+	if err = waitObjectReady(
+		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-storage.yml"),
+		"storage",
+	); err != nil {
+		return merry.Prepend(err, "Error while waiting for YDB storage")
+	}
+
+	if err = yc.deployDatabase(); err != nil {
+		return merry.Prepend(err, "Error then deploying storage")
+	}
+
+	if err = waitObjectReady(
+		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-database.yml"),
+		"database",
+	); err != nil {
+		return merry.Prepend(err, "Error while waiting for YDB database")
+	}
+
+	return err
 }
 
-// Deploy implements Cluster
-func (*yandexCluster) Deploy() error {
-	panic("unimplemented")
+// Get clusterSpec.
+func (yc *yandexCluster) GetSpecification() ClusterSpec {
+	return yc.commonCluster.clusterSpec
 }
 
-// GetSpecification implements Cluster
-func (*yandexCluster) GetSpecification() ClusterSpec {
-	panic("unimplemented")
+//nolint:funlen // because logic of this function is inseparable
+// Deploy yandex db operator via helmclient library.
+func (yc *yandexCluster) deployYandexDBOperator() error {
+	var (
+		client helmclient.Client
+		rel    *release.Release
+	)
+
+	kubeconfig, err := os.ReadFile(path.Join(os.Getenv("HOME"), ".kube/config"))
+	if err != nil {
+		return merry.Prepend(err, "Error then reading kubeconfig file")
+	}
+
+	options := &helmclient.KubeConfClientOptions{
+		Options: &helmclient.Options{
+			// TODO Change this to the namespace you wish the client to operate in.
+
+			Namespace: "default", RepositoryCache: "/tmp/.helmcache",
+			RepositoryConfig: "/tmp/.helmrepo",
+			RegistryConfig:   "/tmp/.config/helm",
+			Debug:            true,
+			Linting:          true,
+			DebugLog:         func(format string, v ...interface{}) {},
+			Output:           os.Stdout,
+		},
+		KubeContext: "",
+		KubeConfig:  kubeconfig,
+	}
+
+	if client, err = helmclient.NewClientFromKubeConf(options); err != nil {
+		return merry.Prepend(err, "Error then creating helm client")
+	}
+
+	// Add YandexDB helm repository
+	chartRepo := repo.Entry{
+		Name:                  "ydb",
+		URL:                   ydbHelmRepo,
+		Username:              "",
+		Password:              "",
+		CertFile:              "",
+		KeyFile:               "",
+		CAFile:                "",
+		InsecureSkipTLSverify: false,
+		PassCredentialsAll:    false,
+	}
+
+	// Add a chart-repository to the client.
+	if err = client.AddOrUpdateChartRepo(chartRepo); err != nil {
+		return merry.Prepend(err, "Error then adding ydb helm repository")
+	}
+
+	// Define the chart to be installed
+	chartSpec := helmclient.ChartSpec{
+		ReleaseName:      "ydb-operator",
+		ChartName:        "ydb/operator",
+		Namespace:        "default",
+		ValuesYaml:       "",
+		Version:          "",
+		CreateNamespace:  false,
+		DisableHooks:     false,
+		Replace:          false,
+		Wait:             true,
+		WaitForJobs:      false,
+		DependencyUpdate: false,
+		Timeout:          time.Duration(helmTimeout),
+		GenerateName:     false,
+		NameTemplate:     "",
+		Atomic:           false,
+		SkipCRDs:         false,
+		UpgradeCRDs:      true,
+		SubNotes:         false,
+		Force:            false,
+		ResetValues:      false,
+		ReuseValues:      false,
+		Recreate:         false,
+		MaxHistory:       0,
+		CleanupOnFail:    false,
+		DryRun:           false,
+	}
+
+	if rel, err = client.InstallOrUpgradeChart(context.Background(), &chartSpec, nil); err != nil {
+		return merry.Prepend(err, "Error then upgrading/installing ydb-operator release")
+	}
+
+	llog.Infof("Release '%s' with YDB operator successfully deployed", rel.Name)
+
+	return nil
 }
 
+//nolint:varnamelen // ok is typecasting boolean
+// Deploy YDB storage
+// Parse manifest and deploy yandex db storage via kubectl.
+func (yc *yandexCluster) deployStorage() error {
+	var (
+		err     error
+		bytes   []byte
+		storage map[interface{}]interface{}
+	)
 
+	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+
+	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
+		return merry.Prepend(err, "Error then reading file")
+	}
+
+	llog.Tracef("%v bytes read from storage.yml\n", len(bytes))
+
+	if err = yaml.Unmarshal(bytes, &storage); err != nil {
+		return merry.Prepend(err, "Error then deserizalizing storage manifest")
+	}
+
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	// TODO: get it from terraform.tfstate
+	// https://github.com/picodata/stroppy/issues/94
+	spec["nodes"] = 4
+
+	resources, ok := spec["resources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	resources["limits"] = map[string]interface{}{
+		// TODO: replace to formula based on host resources
+		// https://github.com/picodata/stroppy/issues/94
+		// resources can fe fetched from terraform.tfstate
+		"cpu":    "1000m",
+		"memory": "2048Mi",
+	}
+
+	if bytes, err = paramStorageConfig(storage); err != nil {
+		return merry.Prepend(err, "Error then parameterizing storage configuration")
+	}
+
+	spec["configuration"] = string(bytes)
+
+	if bytes, err = yaml.Marshal(storage); err != nil {
+		return merry.Prepend(err, "Error then serializing storage")
+	}
+
+	if err = os.WriteFile(
+		path.Join(mpath, "stroppy-storage.yml"),
+		bytes,
+		fs.FileMode(roAll),
+	); err != nil {
+		return merry.Prepend(err, "Error then writing storage.yml")
+	}
+
+	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
+}
+
+//nolint // ok is typecasting boolean and logic of this function is inseparable
+// Deploy YDB database
+// Parse manifest and deploy yandex db database via kubectl.
+func (yc *yandexCluster) deployDatabase() error {
+	var (
+		err     error
+		bytes   []byte
+		storage map[interface{}]interface{}
+	)
+
+	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+
+	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
+	if err != nil {
+		return merry.Prepend(err, "Error then reading database.yml")
+	}
+
+	llog.Tracef("%v bytes read from database.yml\n", len(bytes))
+
+	if err = yaml.Unmarshal(bytes, &storage); err != nil {
+		return merry.Prepend(err, "Error then deserializing database manifest")
+	}
+
+	// TODO: get it from terraform.tfstate
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+    // TODO: replace based on tfstate resources
+    // https://github.com/picodata/stroppy/issues/94
+	spec["nodes"] = 1
+
+	resources, ok := spec["resources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	resources["storageUnits"] = []interface{}{
+		map[string]interface{}{
+			// TODO: replace to formula based on host resources
+			// https://github.com/picodata/stroppy/issues/94
+			// resources can fe fetched from terraform.tfstate
+			"count":    1,
+			"unitKind": "ssd",
+		},
+	}
+
+	containerResources, ok := resources["containerResources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	containerResources["limits"] = map[interface{}]interface{}{
+		// TODO: replace to formula based on host resources
+		// https://github.com/picodata/stroppy/issues/94
+		// resources can fe fetched from terraform.tfstate
+		"cpu":    "500m",
+		"memory": "512Mi",
+	}
+
+	if bytes, err = yaml.Marshal(storage); err != nil {
+		return merry.Prepend(err, "Error then serializing database.yml")
+	}
+
+	if err = os.WriteFile(
+		path.Join(mpath, "stroppy-database.yml"),
+		bytes,
+		fs.FileMode(roAll),
+	); err != nil {
+		return merry.Prepend(err, "Error then writing stroppy-database.yml")
+	}
+
+	return applyManifest(path.Join(mpath, "stroppy-database.yml"))
+}
+
+// Run kubectl and apply manifest.
+func applyManifest(manifestName string) error {
+	var (
+		stdout []byte
+		err    error
+	)
+
+	// TODO: Replace with k8s api bindings
+	// https://github.com/picodata/stroppy/issues/100
+	cmd := exec.Command("kubectl", "apply", "-f", manifestName, "--output", "json")
+	if stdout, err = cmd.Output(); err != nil {
+		llog.Tracef("kubectl stdout:\n%v", stdout)
+
+		return merry.Prepend(
+			err,
+			fmt.Sprintf("Error then applying %s manifest", manifestName),
+		)
+	}
+
+	llog.Debugf("Manifest %s succesefully applyed", manifestName)
+
+	return nil
+}
+
+// Run `n` times `kubectl get -f path` until the `Ready` status is received.
+func waitObjectReady(fpath, name string) error {
+	var (
+		err    error
+		output []byte
+	)
+
+	for index := 0; index <= timeout; index += step {
+		// TODO: https://github.com/picodata/stroppy/issues/99
+		cmd := exec.Command("kubectl", "get", "-f", fpath, "--output", "json")
+		if output, err = cmd.Output(); err != nil {
+			llog.Warnf("Error then executing 'kubectl get': %s", err)
+		}
+
+		status := gjson.Get(string(output), "status.state").String()
+
+		if status == "Ready" {
+			llog.Infof("%s deployed successfully", name)
+
+			break
+		}
+
+		if index == timeout {
+			return merry.Prepend(err, "Timeout exceeded objects still in not 'Ready' state")
+		}
+
+		llog.Debugf(
+			"Object %s in '%s' state, waiting %v seconds... \n",
+			name,
+			status,
+			timeout-index,
+		)
+		time.Sleep(time.Duration(step) * time.Second)
+	}
+
+	return nil
+}
+
+// Connect to freshly deployed cluster.
+func (yc *yandexCluster) Connect() (interface{}, error) {
+	var (
+		connection *cluster.YandexDBCluster
+		err        error
+	)
+
+	// to be able to connect to the cluster from localhost
+	// TODO: Replace to right YandexDB url and add connection to database
+	// https://github.com/picodata/stroppy/issues/95
+	if yc.commonCluster.DBUrl == "" {
+		yc.commonCluster.DBUrl = "grpc://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
+		llog.Infoln("changed DBURL on", yc.commonCluster.DBUrl)
+	}
+
+	if connection, err = cluster.NewYandexDBCluster(
+		yc.commonCluster.DBUrl,
+		yc.commonCluster.connectionPoolSize,
+	); err != nil {
+		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
+	}
+
+	return connection, nil
+}
+
+//nolint // ok is typecasting boolean and logic of this function is inseparable
+// Generate parameters for `storage` CRD.
+func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
+	var (
+		confMap map[interface{}]interface{}
+		bytes   []byte
+		err     error
+	)
+
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	configuration, ok := spec["configuration"].(string)
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	if err = yaml.Unmarshal(
+		[]byte(configuration),
+		&confMap,
+	); err != nil {
+		return nil, merry.Prepend(err, "Error then deserializing storage manifest")
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
+	hostConfigs, ok := confMap["host_configs"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	hostConfigsFirst, ok := hostConfigs[0].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	drive, ok := hostConfigsFirst["drive"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	drive[0] = map[interface{}]interface{}{
+		"path": "SectorMap:1:64",
+		"type": "SSD",
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
+	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	stateStorage, ok := domainsConfig["state_storage"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	stateStorage[0] = map[string]interface{}{
+		"ring": map[string]interface{}{
+			"node": []interface{}{
+				1,
+			},
+			"nto_select": 1, //nolint:misspell // nto_select is parameter for nto
+		},
+		"ssid": 1,
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
+	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	serviceSet, ok := blobStorageConfig["service_set"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	failDomains := map[string]interface{}{
+		"fail_domains": []interface{}{
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        1,
+						"path":           "SectorMap:1:64",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+		},
+	}
+
+	serviceSet["groups"] = []interface{}{
+		map[string]interface{}{
+			"erasure_species": "none",
+			"rings": []interface{}{
+				failDomains,
+			},
+		},
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
+	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	profile, ok := chProfileConfig["profile"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	profile[0] = map[string]interface{}{
+		"channel": []interface{}{
+			map[string]interface{}{
+				"erasure_species":   "none",
+				"pdisk_category":    1,
+				"storage_pool_kind": "ssd",
+			},
+			map[string]interface{}{
+				"erasure_species":   "none",
+				"pdisk_category":    1,
+				"storage_pool_kind": "ssd",
+			},
+			map[string]interface{}{
+				"erasure_species":   "none",
+				"pdisk_category":    1,
+				"storage_pool_kind": "ssd",
+			},
+		},
+	}
+
+	if bytes, err = yaml.Marshal(configuration); err != nil {
+		return []byte{}, merry.Prepend(err, "Error then serializing storage configuration")
+	}
+
+	return bytes, nil
+}

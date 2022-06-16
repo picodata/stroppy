@@ -13,7 +13,7 @@ func createScenario(name, wd string) (s scenario) {
 		scenarioName:     name,
 		scenarioFileName: scenarioFileName,
 
-		destinationPath: filepath.Join("/home/ubuntu", scenarioFileName),
+		destinationPath: filepath.Join(wd, ".tmp", "databases", scenarioFileName),
 		sourcePath:      filepath.Join(wd, scenarioFileName),
 
 		isRunning: false,

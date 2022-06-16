@@ -11,6 +11,7 @@
     - facts
 
 - name: Upload certificates so they are fresh and not expired
+  become: true
   command: >-
     {{ bin_dir }}/kubeadm init phase
     --config {{ kube_config_dir }}/kubeadm-config.yaml
@@ -51,6 +52,7 @@
     msg: "{{ kubeadm_already_run.stat.exists }}"
 
 - name: Reset cert directory
+  become: true
   shell: >-
     if [ -f /etc/kubernetes/manifests/kube-apiserver.yaml ]; then
     {{ bin_dir }}/kubeadm reset -f --cert-dir {{ kube_cert_dir }};

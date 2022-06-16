@@ -61,8 +61,21 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 		return
 	}
 
-	connectCmd := fmt.Sprintf("ubuntu@%v:/home/ubuntu/%v", e.AddressMap["external"]["master"], filePath)
-	copyFromMasterCmd := exec.Command("scp", "-i", e.sshKeyFileName, "-o", "StrictHostKeyChecking=no", connectCmd, ".")
+	connectCmd := fmt.Sprintf(
+		"stroppy@%v:/home/stroppy/%v",
+		e.AddressMap["external"]["master"],
+		filePath,
+	)
+	//#nosec
+	copyFromMasterCmd := exec.Command(
+		"scp",
+		"-i",
+		e.sshKeyFileName,
+		"-o",
+		"StrictHostKeyChecking=no",
+		connectCmd,
+		".",
+	)
 	copyFromMasterCmd.Dir = e.WorkingDirectory
 
 	llog.Infoln(copyFromMasterCmd.String())
@@ -70,7 +83,11 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 
 	var output []byte
 	if output, err = copyFromMasterCmd.CombinedOutput(); err != nil {
-		return merry.Prependf(err, "failed to execute command copy from master, output: %s", string(output))
+		return merry.Prependf(
+			err,
+			"failed to execute command copy from master, output: %s",
+			string(output),
+		)
 	}
 
 	return
@@ -82,7 +99,7 @@ func (e *Engine) installSshKeyFileOnMaster() (err error) {
 	}
 
 	masterExternalIP := e.AddressMap["external"]["master"]
-	mastersConnectionString := fmt.Sprintf("ubuntu@%v:/home/ubuntu/.ssh", masterExternalIP)
+	mastersConnectionString := fmt.Sprintf("stroppy@%v:/home/stroppy/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp",
 		"-i", e.sshKeyFileName,
 		"-o", "StrictHostKeyChecking=no",
@@ -97,7 +114,11 @@ func (e *Engine) installSshKeyFileOnMaster() (err error) {
 	for i := 0; i <= ConnectionRetryCount; i++ {
 		copyMasterCmdResult, err := copyPrivateKeyCmd.CombinedOutput()
 		if err != nil {
-			llog.Errorf("failed to copy private key key onto master: %v %v \n", string(copyMasterCmdResult), err)
+			llog.Errorf(
+				"failed to copy private key key onto master: %v %v \n",
+				string(copyMasterCmdResult),
+				err,
+			)
 			copyPrivateKeyCmd = exec.Command("scp",
 				"-i", e.sshKeyFileName,
 				"-o", "StrictHostKeyChecking=no",
@@ -119,7 +140,9 @@ func (e *Engine) installSshKeyFileOnMaster() (err error) {
 }
 
 // nolint
-func (e *Engine) parseKubernetesFilePath(path string) (podName, containerName, internalPath string) {
+func (e *Engine) parseKubernetesFilePath(
+	path string,
+) (podName, containerName, internalPath string) {
 	parts := strings.Split(path, "://")
 	if len(parts) < 2 {
 		return
@@ -145,9 +168,15 @@ func (e *Engine) parseKubernetesFilePath(path string) (podName, containerName, i
 	return
 }
 
+//nolint // will be fixed in future
 // ExecuteGetingMonImages собирает данные мониторинга.
 // Осуществляется запуском скрипта get_png.sh, результат работы которого - архив с набором png-файлов
-func (e Engine) CollectMonitoringData(startTime int64, finishTime int64, monitoringPort int, monImagesArchName string) error {
+func (e Engine) CollectMonitoringData(
+	startTime int64,
+	finishTime int64,
+	monitoringPort int,
+	monImagesArchName string,
+) error {
 	llog.Infoln("Starting to get monitoring images...")
 
 	llog.Debugln("start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())

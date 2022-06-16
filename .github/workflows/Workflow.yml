@@ -10,7 +10,7 @@ jobs:
     name: Sync with picogit
     runs-on: [self-hosted, stroppy]
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Install SSH Key
@@ -44,10 +44,7 @@ jobs:
           POSTGRES_DB: stroppy
           PGDATA: /var/lib/postgresql/data/pgdata
       foundationdb:
-        image: docker-public.binary.picodata.io/stroppy-foundationdb:6.3.23
-        env:
-          FDB_COORDINATOR: foundationdb
-          FDB_COORDINATOR_PORT: 4500
+        image: foundationdb/foundationdb:6.3.23
         ports:
           - 4500:4500
         volumes:
@@ -61,15 +58,6 @@ jobs:
         ports:
           - 27017:27017
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-        with:
-          repository: picodata/stroppy
-          path: stroppy
-          ref: develop
-          fetch-depth: 0
-      - run: rm -rf stroppy
-      - run: current_branch=$(git rev-parse --abbrev-ref HEAD); if current_branch=develop; then (git checkout --track origin/develop && git checkout $current_branch) fi
       - run: make test
       - run: rm -rf ..?* .[!.]* *
         if: always()
@@ -106,4 +94,3 @@ jobs:
         run: cartridge pack docker --tag docker.io/picodata/stroppy-test-cartridge:latest
       - name: push image
         run: docker push docker.io/picodata/stroppy-test-cartridge:latest
-

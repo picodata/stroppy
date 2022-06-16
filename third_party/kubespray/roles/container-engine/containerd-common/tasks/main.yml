@@ -1,5 +1,6 @@
 ---
 - name: containerd-common | check if fedora coreos
+  become: true
   stat:
     path: /run/ostree-booted
     get_attributes: no
@@ -8,6 +9,7 @@
   register: ostree
 
 - name: containerd-common | set is_ostree
+  become: true
   set_fact:
     is_ostree: "{{ ostree.stat.exists }}"
 

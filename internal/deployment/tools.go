@@ -22,7 +22,10 @@ import (
 
 const dateFormat = "02-01-2006_15_04_05"
 
-func (sh *shell) executeRemotePay(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
+//nolint:nonamedreturns // should be fixed in future
+func (sh *shell) executeRemotePay(
+	settings *config.DatabaseSettings,
+) (beginTime, endTime int64, err error) {
 	payTestCommand := []string{
 		"/root/stroppy", "pay",
 		"--dir", "/root",
@@ -82,7 +85,10 @@ func (sh *shell) executePay(_ string) (err error) {
 	return
 }
 
-func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime, endTime int64, err error) {
+//nolint:nonamedreturns // should be fixed in future
+func (sh *shell) executeRemotePop(
+	settings *config.DatabaseSettings,
+) (beginTime, endTime int64, err error) {
 	popTestCommand := []string{
 		"/root/stroppy", "pop",
 		"--dir", "/root",
@@ -102,11 +108,16 @@ func (sh *shell) executeRemotePop(settings *config.DatabaseSettings) (beginTime,
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "", popTestCommand, logFileName)
-	if err != nil {
-		err = merry.Prepend(err, "failed to execute remote populate test")
+	if beginTime, endTime, err = sh.k.ExecuteRemoteCommand(
+		stroppy.PodName,
+		"",
+		popTestCommand,
+		logFileName,
+	); err != nil {
+		return 0, 0, merry.Prepend(err, "failed to execute remote populate test")
 	}
-	return
+
+	return beginTime, endTime, nil
 }
 
 // executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
@@ -180,12 +191,19 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 		return
 	}
 
-	if cmdType == "pop" {
+	switch cmdType {
+	case "pop":
 		settings.Count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
-	} else if cmdType == "pay" {
-		settings.Count = int(gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int())
+	case "pay":
+		settings.Count = int(
+			gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int(),
+		)
 		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
-		settings.Zipfian = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("zipfian").Bool()
+		settings.Zipfian = gjson.Parse(string(data)).
+			Get("cmd.1").
+			Get("pay").
+			Get("zipfian").
+			Bool()
 		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
 	}
 

@@ -10,6 +10,7 @@
     containerd_package: "{{ ansible_facts.packages.keys() | select('search', '^containerd*') }}"
 
 - name: Docker | Stop all running container
+  become: true
   shell: "set -o pipefail && {{ docker_bin_dir }}/docker ps -q | xargs -r {{ docker_bin_dir }}/docker kill"
   args:
     executable: /bin/bash
@@ -22,6 +23,7 @@
   when: docker_packages_list|length>0
 
 - name: reset | remove all containers
+  become: true
   shell: "set -o pipefail && {{ docker_bin_dir }}/docker ps -aq | xargs -r docker rm -fv"
   args:
     executable: /bin/bash
@@ -32,6 +34,7 @@
   when: docker_packages_list|length>0
 
 - name: Docker | Stop docker service
+  become: true
   service:
     name: "{{ item }}"
     enabled: false
@@ -53,6 +56,7 @@
     - "{{ containerd_package }}"
 
 - name: Docker | Remove docker package
+  become: true
   package:
     name: "{{ item }}"
     state: absent
@@ -66,6 +70,7 @@
     - docker_packages_list|length > 0
 
 - name: Docker | ensure docker-ce repository is removed
+  become: true
   apt_repository:
     repo: "{{ item }}"
     state: absent
@@ -73,12 +78,14 @@
   when: ansible_pkg_mgr == 'apt'
 
 - name: Docker | Remove docker repository on Fedora
+  become: true
   file:
     name: "{{ yum_repo_dir }}/docker.repo"
     state: absent
   when: ansible_distribution == "Fedora" and not is_ostree
 
 - name: Docker | Remove docker repository on RedHat/CentOS/Oracle/AlmaLinux Linux
+  become: true
   file:
     name: "{{ yum_repo_dir }}/docker-ce.repo"
     state: absent
@@ -88,6 +95,7 @@
     - not is_ostree
 
 - name: Docker | Remove docker configuration files
+  become: true
   file:
     name: "{{ item }}"
     state: absent
@@ -101,5 +109,6 @@
     - /etc/docker
 
 - name: Docker | systemctl daemon-reload  # noqa 503
+  become: true
   systemd:
     daemon_reload: true

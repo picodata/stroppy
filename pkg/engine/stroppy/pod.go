@@ -64,11 +64,11 @@ func (pod *Pod) Deploy() (err error) {
 		return merry.Prepend(err, "failed to get clientset for stroppy secret")
 	}
 
-	if err = pod.prepareDeploy(clientSet); err != nil {
-		return
-	}
-
-	deployConfigStroppyPath := filepath.Join(pod.e.WorkingDirectory, "cluster", deployConfigFile)
+	deployConfigStroppyPath := filepath.Join(
+		pod.e.WorkingDirectory,
+		"third_party", "extra", "manifests",
+		deployConfigFile,
+	)
 
 	var deployConfigBytes []byte
 	if deployConfigBytes, err = ioutil.ReadFile(deployConfigStroppyPath); err != nil {
@@ -160,47 +160,5 @@ func (pod *Pod) Deploy() (err error) {
 	}
 
 	llog.Infoln("Applying the stroppy pod: success")
-	return
-}
-
-func (pod *Pod) prepareDeploy(clientSet *kubernetes.Clientset) (err error) {
-	llog.Infoln("Preparing of stroppy pod deploy")
-
-	if err = pod.e.ExecuteCommand(dockerRepLoginCmd); err != nil {
-		return merry.Prepend(err, "failed to login in prvivate repository")
-	}
-	llog.Infoln("logging in private repository: success")
-
-	secretFilePath := filepath.Join(pod.e.WorkingDirectory, "cluster", secretFile)
-
-	var secretFile []byte
-	if secretFile, err = ioutil.ReadFile(secretFilePath); err != nil {
-		return merry.Prepend(err, "failed to read config file for stroppy secret")
-	}
-	secret := applyconfig.Secret("stroppy-secret", "default")
-
-	// используем github.com/ghodss/yaml, т.к она поддерживает работу с зашифрованными строками
-	if err = yaml.Unmarshal(secretFile, &secret); err != nil {
-		return merry.Prepend(err, "failed to unmarshall stroppy secret configuration")
-	}
-
-	llog.Infoln("Applying the stroppy secret...")
-	err = tools.Retry("apply stroppy secret",
-		func() (err error) {
-			_, err = clientSet.CoreV1().Secrets("default").Apply(context.TODO(), secret, metav1.ApplyOptions{
-				TypeMeta:     metav1.TypeMeta{},
-				DryRun:       []string{},
-				Force:        false,
-				FieldManager: fieldManagerName,
-			})
-			return
-		},
-		tools.RetryStandardRetryCount,
-		tools.RetryStandardWaitingTime)
-	if err != nil {
-		return merry.Prepend(err, "failed to apply stroppy secret")
-	}
-
-	llog.Infoln("applying of k8s secret: success")
 	return
 }

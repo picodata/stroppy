@@ -7,7 +7,8 @@ package yandex
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"os"
+	"path"
 	"sync"
 
 	"github.com/tidwall/gjson"
@@ -22,17 +23,16 @@ import (
 )
 
 const (
-	yandexPrivateKeyFile = "id_rsa"
-	yandexPublicKeyFile  = "id_rsa.pub"
+	SSH_DIR       = ".ssh"                                   //nolint
+	PRIV_KEY_NAME = "id_rsa"                                 //nolint
+	PUB_KEY_NAME  = "id_rsa.pub"                             //nolint
+	CAST_ERR      = "Error then casting type into interface" //nolint
 )
 
+// Create YandexCloud provider
+// TODO: Switch stroppy to work with HCL files instead of yaml #issue96.
 func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provider, err error) {
-	clusterDeploymentDirectory := filepath.Join(wd, "cluster", "provider", "yandex")
-
 	var templatesConfig *provider.ClusterConfigurations
-	if templatesConfig, err = provider.LoadClusterTemplate(clusterDeploymentDirectory); err != nil {
-		return nil, merry.Prepend(err, "failed to read templates for create yandex provider")
-	}
 
 	_provider := Provider{
 		templatesConfig:  templatesConfig,
@@ -100,6 +100,8 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 	yp.tfStateData = data
 }
 
+//nolint:varnamelen // ok name is ok!
+// Parse `terraform.tfstate` and get all important ip address.
 func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	if yp.tfStateData == nil {
 		err = errors.New("tf state data empty")
@@ -110,18 +112,30 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)
+	yp.addressMap = make(map[string]map[string]string)
 
-	decode_str := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
+	decodeStr := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
 		`.network_interface.0.{nat_ip_address,ip_address},resources.` +
 		`#(type="yandex_compute_instance_group")#.instances.#.attributes.` +
 		`instances.#.network_interface.0.{nat_ip_address,ip_address}].` +
 		`@flatten.@flatten.@flatten`
-	nodes := gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
-	master := nodes[0].(map[string]interface{})
+
+	nodes, ok := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
+	if !ok {
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	}
+
+	master, ok := nodes[0].(map[string]interface{})
+	if !ok {
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	}
+
 	internalAddress["master"] = master["ip_address"].(string)
 	externalAddress["master"] = master["nat_ip_address"].(string)
+
 	for i := 1; i < len(nodes); i++ {
 		node := nodes[i].(map[string]interface{})
+		llog.Tracef("index: %v node: %v", i, node)
 		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)
 		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string)
 	}
@@ -129,22 +143,37 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	llog.Tracef("external address %#v", externalAddress)
 	llog.Tracef("internal address %#v", internalAddress)
 
-    decode_str = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` + 
-        `attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
-	nodes = gjson.Parse(string(yp.tfStateData)).Get(decode_str).Value().([]interface{})
-   
-    yp.addressMap["subnet"] = map[string]string{"ip_v4": nodes[0].(string)}
+	decodeStr = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` +
+		`attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
 
-	yp.addressMap = make(map[string]map[string]string)
+	nodes, ok = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
+	if !ok {
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	}
+
+	llog.Tracef("parsed ip_v4: %v", nodes) //nolint:asasalint // here is debug print
+
+	ipV4, ok := nodes[0].(string)
+	if !ok {
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	}
+
+	yp.addressMap["subnet"] = map[string]string{"ip_v4": ipV4}
+
+	llog.Tracef("subnet: %v", yp.addressMap["subnet"])
+
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
 
-    llog.Infof("Addresses map: %v\n", yp.addressMap)
+	llog.Infof("Addresses map: %v\n", yp.addressMap)
 
-    return
+	return nil
 }
 
-func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+//nolint // old function that should be refactored in future
+func (yp *Provider) GetAddressMap(
+	nodes int,
+) (mapIPAddresses map[string]map[string]string, err error) {
 	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 	 * своя пара - внешний (NAT) и внутренний ip.
 	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
@@ -173,30 +202,87 @@ func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 	return yp.addressMap, err
 }
 
-func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {
-	var isFoundPrivateKey bool
-	var isFoundPublicKey bool
+//nolint:nosnakecase // constant
+// Check ssh key files and directory existence
+// 1. Check .ssh directory
+// 2. Create .ssh directory
+// 3. If directory was been created in step 2, try to copy ssh private key from project dir
+// 4. If step 4 failed ask next action
+//      - Copy key files from user home ~/.ssh
+//      - Crete new key files
+//      - Abort execution
+func (yp *Provider) CheckSSHKeyFiles(workDir string) error {
+	var err error
 
-	llog.Infoln("checking of private key for yandex provider...")
-	isFoundPrivateKey = engine.IsFileExists(workingDirectory, yandexPrivateKeyFile)
-	if !isFoundPrivateKey {
-		llog.Infoln("checking of private key for yandex provider: unsuccess")
+	llog.Infof("Checking if `.ssh` directory exists in the project directory `%s`", workDir)
+
+	if err = engine.IsDirExists(path.Join(workDir, ".ssh")); err != nil {
+		llog.Warnf("Directory `%s/.ssh` does not exists. %s", workDir, err)
+
+		// Create ssh config directory
+		if err = os.Mkdir(path.Join(workDir, ".ssh"), os.ModePerm); err != nil {
+			return merry.Prepend(
+				err,
+				fmt.Sprintf("Error then creating `%s/.ssh` directory", workDir),
+			)
+		}
+
+		llog.Infof("Directory `%s/.ssh` successefully created", workDir)
 	} else {
-		llog.Infoln("checking of private key for yandex provider: success")
+		llog.Infof("Directory `%s/.ssh` already exists", workDir)
 	}
 
-	llog.Infoln("checking of public key for yandex provider...")
-	if isFoundPublicKey = engine.IsFileExists(workingDirectory, yandexPublicKeyFile); !isFoundPublicKey {
+	llog.Infoln("Checking of private key for yandex provider")
+
+	if !engine.IsFileExists(path.Join(workDir, ".ssh"), PRIV_KEY_NAME) {
+		llog.Warnf(
+			"Private key for yandex provider `%s/.ssh/id_rsa` does not exist",
+			workDir,
+		)
+
+		llog.Infof(
+			"Check if the key exists in the working directory of the project `%s`",
+			workDir,
+		)
+		// if .ssh directory does not contains id_rsa trying to copy id_rsa file
+		// from project root dir
+		if err = engine.CopyFileContents(
+			path.Join(workDir, "id_rsa"),
+			path.Join(workDir, ".ssh", "id_rsa"),
+			os.FileMode(engine.RW_ROOT_MODE),
+		); err != nil {
+			llog.Warnf(
+				"Failed to copy %s/id_rsa to %s/.shh/id_rsa: %v",
+				workDir,
+				workDir,
+				err,
+			)
+			llog.Infof("Project working directory does not contains private key")
+		}
+
+		if err = engine.AskNextAction(workDir); err != nil {
+			return merry.Prepend(err, "Error then creating private key file")
+		}
+	} else {
+		llog.Infof("Private key founded in `%s`", path.Join(workDir, ".ssh"))
+	}
+
+	if !engine.IsFileExists(workDir, PUB_KEY_NAME) {
 		llog.Infoln("checking of public key for yandex provider: unsuccess")
+
+		if err = engine.CreatePublicKey(
+			path.Join(workDir, SSH_DIR, PRIV_KEY_NAME),
+			path.Join(workDir, SSH_DIR, PUB_KEY_NAME),
+		); err != nil {
+			return merry.Prepend(err, "Error then creating ssh public key")
+		}
+
+		llog.Infoln("public private key successefully created")
+	} else {
+		llog.Infoln("checking of public key for yandex provider: success")
 	}
 
-	if isFoundPrivateKey && isFoundPublicKey {
-		llog.Infoln("checking of authtorized keys for yandex provider: success")
-		return true
-	}
-
-	llog.Errorln("checking of authtorized keys for yandex provider: unsuccess")
-	return false
+	return nil
 }
 
 func (yp *Provider) Name() string {

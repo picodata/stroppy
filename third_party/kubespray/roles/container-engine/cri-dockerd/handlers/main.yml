@@ -7,6 +7,7 @@
     - cri-dockerd | reload cri-dockerd.service
 
 - name: cri-dockerd | reload systemd
+  become: true
   systemd:
     name: cri-dockerd
     daemon_reload: true

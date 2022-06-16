@@ -4,6 +4,7 @@
 # or when changing resolvconf_mode)
 
 - name: Remove kubespray specific config from dhclient config
+  become: true
   blockinfile:
     path: "{{ dhclientconffile }}"
     state: absent
@@ -12,6 +13,7 @@
   notify: Preinstall | propagate resolvconf to k8s components
 
 - name: Remove kubespray specific dhclient hook
+  become: true
   file:
     path: "{{ dhclienthookfile }}"
     state: absent

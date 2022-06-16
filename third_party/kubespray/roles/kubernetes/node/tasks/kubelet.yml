@@ -16,6 +16,7 @@
     - kubeadm
 
 - name: Write kubelet environment config file (kubeadm)
+  become: true
   template:
     src: "kubelet.env.{{ kubeletConfig_api_version }}.j2"
     dest: "{{ kube_config_dir }}/kubelet.env"
@@ -28,6 +29,7 @@
     - kubeadm
 
 - name: Write kubelet config file
+  become: true
   template:
     src: "kubelet-config.{{ kubeletConfig_api_version }}.yaml.j2"
     dest: "{{ kube_config_dir }}/kubelet-config.yaml"
@@ -38,6 +40,7 @@
     - kubeadm
 
 - name: Write kubelet systemd init file
+  become: true
   template:
     src: "kubelet.service.j2"
     dest: "/etc/systemd/system/kubelet.service"
@@ -49,9 +52,11 @@
     - kubeadm
 
 - name: flush_handlers and reload-systemd
+  become: true
   meta: flush_handlers
 
 - name: Enable kubelet
+  become: true
   service:
     name: kubelet
     enabled: yes
