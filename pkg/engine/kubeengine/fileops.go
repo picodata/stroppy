@@ -31,8 +31,13 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 
 	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
 	var clientSSHConfig ssh.ClientConfig
-	clientSSHConfig, err = auth.PrivateKey("stroppy", e.sshKeyFilePath, ssh.InsecureIgnoreHostKey())
-	if err != nil {
+
+	//#nosec
+	if clientSSHConfig, err = auth.PrivateKey(
+		"stroppy",
+		e.sshKeyFilePath,
+		ssh.InsecureIgnoreHostKey(),
+	); err != nil {
 		return
 	}
 
@@ -65,7 +70,7 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	return
 }
 
-/// Run few shell commands on remote host, and copy files via scp
+/// Run few shell commands on remote host, and copy files via scp.
 func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
 	if err = e.ExecuteF(`mkdir -p "%s"`, destinationPath); err != nil {
 		err = fmt.Errorf("path creation failed: %v", err)
@@ -108,13 +113,17 @@ func (e Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err er
 	return
 }
 
+//nolint:funlen // here is only logic for loading pod
 func (e *Engine) LoadFileToPod(
 	podName, containerName, sourcePath, destinationPath string,
-) (err error) {
-	var restConfig *rest.Config
+) error {
+	var (
+		restConfig *rest.Config
+		err        error
+	)
+
 	if restConfig, err = e.GetKubeConfig(); err != nil {
-		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
-		return
+		return merry.Prepend(err, "failed to get kubeconfig for clientSet")
 	}
 
 	restConfig.Host = "localhost:6444"
@@ -166,7 +175,7 @@ func (e *Engine) LoadFileToPod(
 		return merry.Prependf(err, "command exec failed, stderr: `%s`", stderr.String())
 	}
 
-	return
+	return nil
 }
 
 func (e *Engine) CopyFileFromPodToPod(sourcePath string, destinationPath string) (err error) {

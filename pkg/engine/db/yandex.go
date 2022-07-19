@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path"
@@ -27,6 +28,9 @@ const (
 	ydbHelmRepo     string = "https://charts.ydb.tech"
 	timeout         int    = 300
 	step            int    = 20
+	helmTimeout     int    = 300000000000
+	castingError    string = "Error then casting type into interface"
+	roAll           int    = 0o644
 )
 
 type yandexCluster struct {
@@ -34,14 +38,17 @@ type yandexCluster struct {
 	commonCluster *commonCluster
 }
 
+//nolint // should be fixed in future
+// Create createYandexDBCluster.
 func createYandexDBCluster(
 	sc engineSsh.Client,
 	k *kubernetes.Kubernetes,
 	wd string,
 	dbURL string,
 	connectionPoolSize int,
-) (yandex Cluster) {
-	yandex = &yandexCluster{
+) Cluster {
+    return &yandexCluster{
+		wd: wd,
 		commonCluster: createCommonCluster(
 			sc,
 			k,
@@ -52,8 +59,6 @@ func createYandexDBCluster(
 			false,
 		),
 	}
-
-	return
 }
 
 // Deploy Yandex Database Cluster
@@ -68,7 +73,7 @@ func (yc *yandexCluster) Deploy() error {
 		return merry.Prepend(err, "Error then deploying ydb operator")
 	}
 
-	if _, err = yc.deployStorage(); err != nil {
+	if err = yc.deployStorage(); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
@@ -78,7 +83,8 @@ func (yc *yandexCluster) Deploy() error {
 	); err != nil {
 		return merry.Prepend(err, "Error then waiting YDB storage")
 	}
-	if _, err = yc.deployDatabase(); err != nil {
+
+	if err = yc.deployDatabase(); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
@@ -97,6 +103,7 @@ func (yc *yandexCluster) GetSpecification() ClusterSpec {
 	return yc.commonCluster.clusterSpec
 }
 
+//nolint:funlen // because logic of this function is inseparable
 // Deploy yandex db operator via helmclient library.
 func (yc *yandexCluster) deployYandexDBOperator() error {
 	var (
@@ -111,12 +118,15 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 
 	options := &helmclient.KubeConfClientOptions{
 		Options: &helmclient.Options{
-			Namespace:        "default", //nolint //TODO: Change this to the namespace you wish the client to operate in.
-			RepositoryCache:  "/tmp/.helmcache",
+			// TODO Change this to the namespace you wish the client to operate in.
+
+			Namespace: "default", RepositoryCache: "/tmp/.helmcache",
 			RepositoryConfig: "/tmp/.helmrepo",
+			RegistryConfig:   "/tmp/.config/helm",
 			Debug:            true,
 			Linting:          true,
 			DebugLog:         func(format string, v ...interface{}) {},
+			Output:           os.Stdout,
 		},
 		KubeContext: "",
 		KubeConfig:  kubeconfig,
@@ -128,8 +138,15 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 
 	// Add YandexDB helm repository
 	chartRepo := repo.Entry{
-		Name: "ydb",
-		URL:  ydbHelmRepo,
+		Name:                  "ydb",
+		URL:                   ydbHelmRepo,
+		Username:              "",
+		Password:              "",
+		CertFile:              "",
+		KeyFile:               "",
+		CAFile:                "",
+		InsecureSkipTLSverify: false,
+		PassCredentialsAll:    false,
 	}
 
 	// Add a chart-repository to the client.
@@ -139,133 +156,201 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 
 	// Define the chart to be installed
 	chartSpec := helmclient.ChartSpec{
-		ReleaseName: "ydb-operator",
-		ChartName:   "ydb/operator",
-		Namespace:   "default",
-		UpgradeCRDs: true,
-		Wait:        true,
-		Timeout:     time.Duration(time.Duration(5 * time.Minute)),
+		ReleaseName:      "ydb-operator",
+		ChartName:        "ydb/operator",
+		Namespace:        "default",
+		ValuesYaml:       "",
+		Version:          "",
+		CreateNamespace:  false,
+		DisableHooks:     false,
+		Replace:          false,
+		Wait:             true,
+		WaitForJobs:      false,
+		DependencyUpdate: false,
+		Timeout:          time.Duration(helmTimeout),
+		GenerateName:     false,
+		NameTemplate:     "",
+		Atomic:           false,
+		SkipCRDs:         false,
+		UpgradeCRDs:      true,
+		SubNotes:         false,
+		Force:            false,
+		ResetValues:      false,
+		ReuseValues:      false,
+		Recreate:         false,
+		MaxHistory:       0,
+		CleanupOnFail:    false,
+		DryRun:           false,
 	}
 
 	if rel, err = client.InstallOrUpgradeChart(context.Background(), &chartSpec, nil); err != nil {
 		return merry.Prepend(err, "Error then upgrading/installing ydb-operator release")
 	}
+
 	llog.Infof("Release '%s' with YDB operator successfully deployed", rel.Name)
 
-	return err
+	return nil
 }
 
+//nolint:varnamelen // ok is typecasting boolean
 // Deploy YDB storage
 // Parse manifest and deploy yandex db storage via kubectl.
-func (yc *yandexCluster) deployStorage() ([]byte, error) {
-	var err error
-	var bytes []byte
-	var storage map[interface{}]interface{}
+func (yc *yandexCluster) deployStorage() error {
+	var (
+		err     error
+		bytes   []byte
+		storage map[interface{}]interface{}
+	)
 
 	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
 
-	bytes, err = os.ReadFile(path.Join(mpath, "storage.yml"))
-	if err != nil {
-		return []byte{}, merry.Prepend(err, "Error then reading file")
+	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
+		return merry.Prepend(err, "Error then reading file")
 	}
+
 	llog.Tracef("%v bytes read from storage.yml\n", len(bytes))
 
 	if err = yaml.Unmarshal(bytes, &storage); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then deserizalizing storage manifest")
+		return merry.Prepend(err, "Error then deserizalizing storage manifest")
 	}
-	spec := storage["spec"].(map[interface{}]interface{})
-	spec["resources"].(map[interface{}]interface{})["limits"] = map[string]interface{}{
-		"cpu":    "1000m",  //nolint //TODO: replace to formula based on host resources #issue94
-		"memory": "2048Mi", //  resources can fe fetched from terraform.tfstate
+    
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
 	}
-	spec["nodes"] = 4 //nolint //TODO: get it from terraform.tfstate #issue94
+
+	spec["nodes"] = 4 // TODO: get it from terraform.tfstate #issue94
+
+	resources, ok := spec["resources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	resources["limits"] = map[string]interface{}{
+		"cpu":    "1000m",  // TODO: replace to formula based on host resources #issue94
+		"memory": "2048Mi", // resources can fe fetched from terraform.tfstate
+	}
 
 	if bytes, err = paramStorageConfig(storage); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then parameterizing storage configuration")
+		return merry.Prepend(err, "Error then parameterizing storage configuration")
 	}
 
-	storage["spec"].(map[interface{}]interface{})["configuration"] = string(bytes)
+	spec["configuration"] = string(bytes)
 
 	if bytes, err = yaml.Marshal(storage); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then serializing storage")
+		return merry.Prepend(err, "Error then serializing storage")
 	}
 
-	if err = os.WriteFile(path.Join(mpath, "stroppy-storage.yml"), bytes, 0644); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then writing storage.yml")
+	if err = os.WriteFile(
+		path.Join(mpath, "stroppy-storage.yml"),
+		bytes,
+		fs.FileMode(roAll),
+	); err != nil {
+		return merry.Prepend(err, "Error then writing storage.yml")
 	}
 
 	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
 }
 
+//nolint // ok is typecasting boolean and logic of this function is inseparable
 // Deploy YDB database
 // Parse manifest and deploy yandex db database via kubectl.
-func (yc *yandexCluster) deployDatabase() ([]byte, error) {
-	var err error
-	var bytes []byte
-	var storage map[interface{}]interface{}
+func (yc *yandexCluster) deployDatabase() error {
+	var (
+		err     error
+		bytes   []byte
+		storage map[interface{}]interface{}
+	)
 
 	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
 
 	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
 	if err != nil {
-		return []byte{}, merry.Prepend(err, "Error then reading database.yml")
+		return merry.Prepend(err, "Error then reading database.yml")
 	}
+
 	llog.Tracef("%v bytes read from database.yml\n", len(bytes))
 
 	if err = yaml.Unmarshal(bytes, &storage); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then deserializing database manifest")
+		return merry.Prepend(err, "Error then deserializing database manifest")
 	}
 
-	//nolint //TODO: get it from terraform.tfstate
-	storage["spec"].(map[interface{}]interface{})["nodes"] = 1
+	// TODO: get it from terraform.tfstate
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
 
-	resources := storage["spec"].(map[interface{}]interface{})["resources"]
-	resources.(map[interface{}]interface{})["storageUnits"] = []interface{}{
+	spec["nodes"] = 1
+
+	resources, ok := spec["resources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	resources["storageUnits"] = []interface{}{
 		map[string]interface{}{
-			"count":    1,     //nolint //TODO: replace to formula based on host resources #issue94
-			"unitKind": "ssd", //  resources can fe fetched from terraform.tfstate
+			"count":    1,     // TODO: replace to formula based on host resources #issue94
+			"unitKind": "ssd", // resources can fe fetched from terraform.tfstate
 		},
 	}
 
-	containerResources := resources.(map[interface{}]interface{})["containerResources"]
-	containerResources.(map[interface{}]interface{})["limits"] = map[interface{}]interface{}{
-		"cpu":    "500m",  //nolint //TODO: replace to formula based on host resources #issue94
+	containerResources, ok := resources["containerResources"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	containerResources["limits"] = map[interface{}]interface{}{
+		"cpu":    "500m",  // TODO: replace to formula based on host resources #issue94
 		"memory": "512Mi", // resources can fe fetched from terraform.tfstate
 	}
 
 	if bytes, err = yaml.Marshal(storage); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then serializing database.yml")
+		return merry.Prepend(err, "Error then serializing database.yml")
 	}
 
-	if err = os.WriteFile(path.Join(mpath, "stroppy-database.yml"), bytes, 0644); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then writing database.yml")
+	if err = os.WriteFile(
+		path.Join(mpath, "stroppy-database.yml"),
+		bytes,
+		fs.FileMode(roAll),
+	); err != nil {
+		return merry.Prepend(err, "Error then writing stroppy-database.yml")
 	}
+
 	return applyManifest(path.Join(mpath, "stroppy-database.yml"))
 }
 
 // Run kubectl and apply manifest.
-func applyManifest(manifestName string) ([]byte, error) {
-	var err error
-	var cmd *exec.Cmd
-	var stdout []byte
-	cmd = exec.Command("kubectl", "apply", "-f", manifestName, "--output", "json")
+func applyManifest(manifestName string) error {
+	var (
+		stdout []byte
+		err    error
+	)
+
+	cmd := exec.Command("kubectl", "apply", "-f", manifestName, "--output", "json")
 	if stdout, err = cmd.Output(); err != nil {
-		return stdout, merry.Prepend(
+		llog.Tracef("kubectl stdout:\n%v", stdout)
+
+		return merry.Prepend(
 			err,
 			fmt.Sprintf("Error then applying %s manifest", manifestName),
 		)
 	}
+
 	llog.Debugf("Manifest %s succesefully applyed", manifestName)
-	return stdout, err
+
+	return nil
 }
 
 // Run `n` times `kubectl get -f path` until the `Ready` status is received.
-func waitObjectReady(path string, name string) error {
-	var err error
-	var output []byte
+func waitObjectReady(fpath, name string) error {
+	var (
+		err    error
+		output []byte
+	)
 
 	for index := 0; index <= timeout; index += step {
-		cmd := exec.Command("kubectl", "get", "-f", path, "--output", "json")
+		cmd := exec.Command("kubectl", "get", "-f", fpath, "--output", "json")
 		if output, err = cmd.Output(); err != nil {
 			llog.Warnf("Error then executing 'kubectl get': %s", err)
 		}
@@ -274,8 +359,10 @@ func waitObjectReady(path string, name string) error {
 
 		if status == "Ready" {
 			llog.Infof("%s deployed successfully", name)
+
 			break
 		}
+
 		if index == timeout {
 			return merry.Prepend(err, "Timeout exceeded objects still in not 'Ready' state")
 		}
@@ -288,82 +375,148 @@ func waitObjectReady(path string, name string) error {
 		)
 		time.Sleep(time.Duration(step) * time.Second)
 	}
+
 	return nil
 }
 
 // Connect to freshly deployed cluster.
 func (yc *yandexCluster) Connect() (interface{}, error) {
+	var (
+		connection *cluster.YandexDBCluster
+		err        error
+	)
+
 	// to be able to connect to the cluster from localhost
-	//nolint //TODO: Replace to right YandexDB url and add connection to database issue95
+	// TODO: Replace to right YandexDB url and add connection to database issue95
 	if yc.commonCluster.DBUrl == "" {
-		yc.commonCluster.DBUrl = "ydb://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
+		yc.commonCluster.DBUrl = "grpc://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", yc.commonCluster.DBUrl)
 	}
-	connetion, err := cluster.NewYandexDBCluster(
+
+	if connection, err = cluster.NewYandexDBCluster(
 		yc.commonCluster.DBUrl,
 		yc.commonCluster.connectionPoolSize,
-	)
-	return connetion, err
-}
-
-func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
-	var (
-		configuration map[interface{}]interface{}
-		bytes         []byte
-		err           error
-	)
-
-	if err = yaml.Unmarshal(
-		[]byte(storage["spec"].(map[interface{}]interface{})["configuration"].(string)),
-		&configuration,
 	); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then deserializing storage manifest")
+		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
 	}
 
-	//nolint //TODO: replace to config based on resources from terraform.tfstate #issue94
-	drive := configuration["host_configs"].([]interface{})[0]
-	drive.(map[interface{}]interface{})["drive"].([]interface{})[0] = map[interface{}]interface{}{
+	return connection, nil
+}
+
+//nolint // ok is typecasting boolean and logic of this function is inseparable
+// Generate parameters for `storage` CRD.
+func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
+	var (
+		confMap map[interface{}]interface{}
+		bytes   []byte
+		err     error
+	)
+
+	spec, ok := storage["spec"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	configuration, ok := spec["configuration"].(string)
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	if err = yaml.Unmarshal(
+		[]byte(configuration),
+		&confMap,
+	); err != nil {
+		return nil, merry.Prepend(err, "Error then deserializing storage manifest")
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	hostConfigs, ok := confMap["host_configs"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	hostConfigsFirst, ok := hostConfigs[0].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	drive, ok := hostConfigsFirst["drive"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	drive[0] = map[interface{}]interface{}{
 		"path": "SectorMap:1:64",
 		"type": "SSD",
 	}
 
-	//nolint //TODO: replace to config based on resources from terraform.tfstate #issue94
-	ring := configuration["domains_config"].(map[interface{}]interface{})["state_storage"]
-	ring.([]interface{})[0] = map[string]interface{}{
+	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	stateStorage, ok := domainsConfig["state_storage"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	stateStorage[0] = map[string]interface{}{
 		"ring": map[string]interface{}{
 			"node": []interface{}{
 				1,
 			},
-			"nto_select": 1,
+			"nto_select": 1, //nolint:misspell // nto_select is parameter for nto
 		},
 		"ssid": 1,
 	}
 
-	//nolint //TODO: replace to config based on resources from terraform.tfstate #issue94
-	serviceSet := configuration["blob_storage_config"].(map[interface{}]interface{})["service_set"]
-	serviceSet.(map[interface{}]interface{})["groups"] = []interface{}{
-		map[string]interface{}{
-			"erasure_species": "none",
-			"rings": []interface{}{
-				map[string]interface{}{
-					"fail_domains": []interface{}{
-						map[string]interface{}{
-							"vdisk_locations": []interface{}{
-								map[string]interface{}{
-									"node_id":        1,
-									"path":           "SectorMap:1:64",
-									"pdisk_category": "SSD",
-								},
-							},
-						},
+	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	serviceSet, ok := blobStorageConfig["service_set"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	failDomains := map[string]interface{}{
+		"fail_domains": []interface{}{
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        1,
+						"path":           "SectorMap:1:64",
+						"pdisk_category": "SSD",
 					},
 				},
 			},
 		},
 	}
-	//nolint //TODO: replace to config based on resources from terraform.tfstate #issue94
-	profile := configuration["channel_profile_config"].(map[interface{}]interface{})["profile"]
-	profile.([]interface{})[0] = map[string]interface{}{
+
+	serviceSet["groups"] = []interface{}{
+		map[string]interface{}{
+			"erasure_species": "none",
+			"rings": []interface{}{
+				failDomains,
+			},
+		},
+	}
+
+	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	profile, ok := chProfileConfig["profile"].([]interface{})
+	if !ok {
+		return nil, merry.Prepend(err, castingError)
+	}
+
+	profile[0] = map[string]interface{}{
 		"channel": []interface{}{
 			map[string]interface{}{
 				"erasure_species":   "none",

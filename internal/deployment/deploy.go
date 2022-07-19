@@ -93,7 +93,10 @@ func Deploy(settings *config.Settings) (shell Shell, err error) {
 	return
 }
 
-func (sh *shell) prepareTerraform() (err error) {
+//nolint // id_rsa check outside preparing terraform has no sence
+func (sh *shell) prepareTerraform() error {
+	var err error
+
 	deploymentSettings := sh.settings.DeploymentSettings
 
 	sh.tf = terraform.CreateTerraform(deploymentSettings, sh.workingDirectory, sh.workingDirectory)
@@ -116,60 +119,67 @@ func (sh *shell) prepareTerraform() (err error) {
 			path.Join(sh.workingDirectory, "id_rsa"),
 			path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
 		); err == nil {
-			return
+			return nil
 		}
+
 		llog.Warnf("failed to copy id_rsa to .ssh/id_rsa: %v", err)
 
 		// if ssh key
 		reader := bufio.NewReader(os.Stdin)
+
 		fmt.Print("stroppy can not find ssh keys, do you want to create them (yes/no)? ") // nolint
+
 		for {
 			answer, _ := reader.ReadString('\n')
 			answer = strings.ReplaceAll(answer, "\n", "")
 
 			switch {
-			case strings.Compare("yes", strings.ToLower(answer)) == 0:
-				{
-					llog.Infoln("Creating new ssh key pair...")
-					var privateKey *rsa.PrivateKey
-					var publicKey ssh.PublicKey
+			case strings.EqualFold(strings.ToLower(answer), "yes"):
+				var (
+					privateKey *rsa.PrivateKey
+					publicKey  ssh.PublicKey
+				)
 
-					if privateKey, err = rsa.GenerateKey(rand.Reader, rsaBits); err != nil {
-						return merry.Prepend(err, "Error then generating ssh private key")
-					}
+				llog.Infoln("Creating new ssh key pair...")
 
-					if err = privateKey.Validate(); err != nil {
-						return merry.Prepend(err, "Error then validating ssh private key")
-					}
-
-					if publicKey, err = ssh.NewPublicKey(privateKey.Public()); err != nil {
-						return merry.Prepend(err, "Error then generating ssh public key")
-					}
-
-					if err = os.WriteFile(
-						path.Join(sh.workingDirectory, ".ssh", "id_rsa.pub"),
-						ssh.MarshalAuthorizedKey(publicKey),
-						fs.FileMode(rwRoot),
-					); err != nil {
-						return merry.Prepend(err, "Error then writing id_rsa private key file")
-					}
-
-					if err = os.WriteFile(
-						path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
-						pem.EncodeToMemory(&pem.Block{
-							Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
-						}),
-						fs.FileMode(rwRoot),
-					); err != nil {
-						return merry.Prepend(err, "Error then writing id_rsa private key file")
-					}
-					llog.Infoln("New ssh keypair successfully created")
-
-					return
+				if privateKey, err = rsa.GenerateKey(rand.Reader, rsaBits); err != nil {
+					return merry.Prepend(err, "Error then generating ssh private key")
 				}
-			case strings.Compare("no", strings.ToLower(answer)) == 0:
+
+				if err = privateKey.Validate(); err != nil {
+					return merry.Prepend(err, "Error then validating ssh private key")
+				}
+
+				if publicKey, err = ssh.NewPublicKey(privateKey.Public()); err != nil {
+					return merry.Prepend(err, "Error then generating ssh public key")
+				}
+
+				if err = os.WriteFile(
+					path.Join(sh.workingDirectory, ".ssh", "id_rsa.pub"),
+					ssh.MarshalAuthorizedKey(publicKey),
+					fs.FileMode(rwRoot),
+				); err != nil {
+					return merry.Prepend(err, "Error then writing id_rsa private key file")
+				}
+
+				if err = os.WriteFile(
+					path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
+					pem.EncodeToMemory(&pem.Block{
+						Type:    "RSA PRIVATE KEY",
+						Headers: map[string]string{},
+						Bytes:   x509.MarshalPKCS1PrivateKey(privateKey),
+					}),
+					fs.FileMode(rwRoot),
+				); err != nil {
+					return merry.Prepend(err, "Error then writing id_rsa private key file")
+				}
+
+				llog.Infoln("New ssh keypair successfully created")
+
+				return nil
+			case strings.EqualFold(strings.ToLower(answer), "no"):
 				return merry.Errorf(
-					"ssh key pair does not exists, please create manualy, exiting...",
+					"ssh key pair does not exists, please create manually, exiting...",
 				)
 			default:
 				fmt.Print("Please type 'yes' or 'no': ") // nolint
@@ -177,7 +187,7 @@ func (sh *shell) prepareTerraform() (err error) {
 		}
 	}
 
-	return
+	return nil
 }
 
 func (sh *shell) prepareEngine() (err error) {
@@ -234,24 +244,27 @@ func (sh *shell) preparePayload() error {
 	return nil
 }
 
-func (sh *shell) deploy() (err error) {
+//nolint:funlen // because this rule is stupid
+func (sh *shell) deploy() error {
+	var err error
+
 	llog.Traceln(sh.settings)
 
 	// Build terraform script
 	if err = sh.prepareTerraform(); err != nil {
-		return
+		return merry.Prepend(err, "Error then preparing terraform")
 	}
 
 	llog.Traceln(sh.tf)
 
 	// Apply terraform scirpt
 	if err = sh.tf.Run(); err != nil {
-		return merry.Prepend(err, "terraform run failed")
+		return merry.Prepend(err, "Terraform run failed")
 	}
 
 	// Create and check ssh client
 	if err = sh.prepareEngine(); err != nil {
-		return
+		return merry.Prepend(err, "Error then stroppy ssh engine")
 	}
 
 	// Fully functional k8s cluster deploy via ansible
@@ -262,8 +275,9 @@ func (sh *shell) deploy() (err error) {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 
-	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes)
-	if err != nil {
+	if err = sh.tf.Provider.PerformAdditionalOps(
+		sh.settings.DeploymentSettings.Nodes,
+	); err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}
 
@@ -273,8 +287,9 @@ func (sh *shell) deploy() (err error) {
 	}
 
 	if err = sh.preparePayload(); err != nil {
-		return
+		return merry.Prepend(err, "Error then preparing stroppy payload")
 	}
+
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(
 			err,
@@ -295,33 +310,47 @@ func (sh *shell) deploy() (err error) {
 
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 
-	return
+	return nil
 }
 
 // copyFileContents copies the contents of the file named src to the file named
 // by dst. The file will be created if it does not already exist. If the
 // destination file exists, all it's contents will be replaced by the contents
 // of the source file.
-func copyFileContents(src string, dst string) (err error) {
-	input, err := os.Open(src)
-	if err != nil {
-		return
+func copyFileContents(src, dst string) error {
+	var (
+		err          error
+		sourcef      *os.File
+		destinationf *os.File
+		length       int64
+	)
+
+	if sourcef, err = os.Open(src); err != nil {
+		return merry.Prepend(err, fmt.Sprintf("Error then opening file %s", src))
 	}
-	defer input.Close()
-	out, err := os.Create(dst)
-	if err != nil {
-		return
+	defer sourcef.Close()
+
+	if destinationf, err = os.Create(dst); err != nil {
+		return merry.Prepend(err, fmt.Sprintf("Error then creating file %s", dst))
 	}
+
 	defer func() {
-		cerr := out.Close()
+		cerr := destinationf.Close()
 		if err == nil {
 			err = cerr
 		}
 	}()
-	if _, err = io.Copy(out, input); err != nil {
-		return
-	}
-	err = out.Sync()
 
-	return
+	if length, err = io.Copy(sourcef, destinationf); err != nil {
+		return merry.Prepend(
+			err,
+			fmt.Sprintf("Error then copying bytes from %s to %s", src, dst),
+		)
+	}
+
+	llog.Debugf("Successfully writed %v bytes then copying file from %s to %s", length, src, dst)
+
+	err = destinationf.Sync()
+
+	return nil
 }

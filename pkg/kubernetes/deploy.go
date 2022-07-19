@@ -7,6 +7,7 @@ package kubernetes
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -43,7 +44,9 @@ Host master
   ControlPath ansible-kubespray-%r@%h:%p
   ControlPersist 5m
 `
-	InventoryName string = "inventory.yml"
+	inventoryName string = "inventory.yml"
+	grafanaPort   int    = 3000
+	exitCode127   int    = 127
 )
 
 type SshK8SOpts struct {
@@ -112,7 +115,7 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 	}
 
 	// 8. generate inventory and run kubespray ansible playbook
-	if err = k.deployKubernetes(wd); err != nil {
+	if err = k.deploySelf(wd); err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
@@ -155,198 +158,234 @@ func (k *Kubernetes) Shutdown() {
 	k.MonitoringPort.Tunnel.Close()
 }
 
+//nolint:funlen // deploy all monitoring components
 // Deploy monitoring (grafana, node_exporter, promtail)
-func (k *Kubernetes) deployMonitoring(wd string) (err error) {
-	wd = path.Join(wd, "third_party/monitoring")
-
+func (k *Kubernetes) deployMonitoring(workDir string) error {
 	// create monitoring inventory
-	var file *os.File
-	var l int
-	var b []byte
-	var resp *http.Response
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		resp   *http.Response
+		err    error
+	)
 
-	if b, err = k.GenerateMonitoringInventory(); err != nil {
+	workDir = path.Join(workDir, "third_party/monitoring")
+
+	if bytes, err = k.GenerateMonitoringInventory(); err != nil {
 		return merry.Prepend(err, "Error then serializing monitoring inventory")
 	}
-	if file, err = os.OpenFile(path.Join(wd, InventoryName), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644); err == nil {
-		if l, err = file.Write(b); err != nil {
+
+	if file, err = os.OpenFile(
+		path.Join(workDir, inventoryName),
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC, //nolint:nosnakecase // os consts
+		os.FileMode(roAll),
+	); err == nil {
+		if length, err = file.Write(bytes); err != nil {
 			return merry.Prepend(err, "Error then writing monitoring inventory")
 		}
-		llog.Tracef("%v bytes successfully written to %v", l, path.Join(wd, InventoryName))
+
+		llog.Tracef(
+			"%v bytes successfully written to %v",
+			length,
+			path.Join(workDir, inventoryName),
+		)
 	}
+
 	// next variables is wrappers around ansible
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection: "ssh",
-	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(wd, InventoryName),
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, inventoryName))
+
+	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{
+		Become:        false,
+		BecomeMethod:  "",
+		BecomeUser:    "",
+		AskBecomePass: false,
 	}
 
 	// check that grafana is deployed
-	resp, err = http.DefaultClient.Get(
-		fmt.Sprintf("http://%s:%v", k.Engine.AddressMap["external"]["master"], 3000),
-	)
-	llog.Tracef("grafana uri http://%s:%v", k.Engine.AddressMap["external"]["master"], 3000)
-	if err != nil || resp.StatusCode != 200 {
+	llog.Tracef("grafana uri http://%s:%v", k.Engine.AddressMap["external"]["master"], grafanaPort)
+
+	if resp, err = sendGetWithContext(
+		context.Background(),
+		nil,
+		net.JoinHostPort(k.Engine.AddressMap["external"]["master"], fmt.Sprint(grafanaPort)),
+	); err != nil || resp.StatusCode != 200 {
 		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
-		pb := &playbook.AnsiblePlaybookCmd{
-			Playbooks:         []string{path.Join(wd, "grafana.yml")},
-			ConnectionOptions: ansible_connection_options,
-			Options:           ansible_playbook_opts,
+
+		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{
+			Binary:                     "",
+			Exec:                       nil,
+			Playbooks:                  []string{path.Join(workDir, "grafana.yml")},
+			Options:                    PBOpts,
+			ConnectionOptions:          connOpts,
+			PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+			StdoutCallback:             "",
 		}
 
-		if err = pb.Run(context.TODO()); err != nil {
+		if err = grafanaPlaybook.Run(context.TODO()); err != nil {
 			return merry.Prepend(err, "Error then running monitoring playbooks")
 		}
 	} else {
 		llog.Infoln("Grafana already deployed. skipping")
 	}
 
-	pb := &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "nodeexp.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+	resp.Body.Close()
+
+	nodePlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "nodeexp.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+		StdoutCallback:             "",
 	}
 
-	if err = pb.Run(context.TODO()); err != nil {
+	if err = nodePlaybook.Run(context.TODO()); err != nil {
 		return merry.Prepend(err, "Error then running monitoring playbooks")
 	}
 
-	return
+	return nil
 }
 
 // Deploy kubernetes cluster and all dependent software
 // Function execution order
 // 1. Check that kubernetes already deployed
 // 2. Deploy kubernetes via kubespray
-func (k *Kubernetes) deployKubernetes(wd string) (err error) {
-	inventoryDir := path.Join(wd, "third_party", "kubespray", "inventory", "stroppy")
-
+func (k *Kubernetes) deploySelf(workDir string) error {
 	// create kubespray inventory
-	var file *os.File
-	var l int
-	var b []byte
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		err    error
+	)
+
+	inventoryDir := path.Join(workDir, "third_party", "kubespray", "inventory", "stroppy")
 
 	// run on bastion (master) host shell command `kubectl get pods`
 	// if command returns something (0 or 127 exit code) kubernetes is deployed
 	if k.checkMasterDeploymentStatus() {
-		return
+		return nil
 	}
 
-	if b, err = k.generateK8sInventory(); err != nil {
+	if bytes, err = k.generateK8sInventory(); err != nil {
 		return merry.Prepend(err, "Error then serializing kubespray inventory")
 	}
-	file, err = os.OpenFile(
-		path.Join(inventoryDir, InventoryName),
-		os.O_RDWR|os.O_CREATE|os.O_TRUNC,
-		0o644,
+
+	if file, err = os.Create(path.Join(inventoryDir, inventoryName)); err != nil {
+		return merry.Prepend(err, "Error then creating kubespray inventory file")
+	}
+
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating kubespray inventory")
+	}
+
+	llog.Tracef(
+		"%v bytes successfully written to %v",
+		length,
+		path.Join(inventoryDir, inventoryName),
 	)
-	if err == nil {
-		if l, err = file.Write(b); err != nil {
-			return merry.Prepend(err, "Error then creating kubespray inventory")
-		}
-		llog.Tracef(
-			"%v bytes successfully written to %v",
-			l,
-			path.Join(inventoryDir, InventoryName),
-		)
-	} else {
-		if file, err = os.Create(path.Join(inventoryDir, InventoryName)); err != nil {
-			return merry.Prepend(err, "Error then creating kubespray inventory")
-		}
-		if l, err = file.Write(b); err != nil {
-			return merry.Prepend(err, "Error then writing kubespray inventory")
-		}
-		llog.Tracef("%v bytes successfully written to %v", l, path.Join(inventoryDir, InventoryName))
+	// next variable is an ansible interaction objects
+	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, inventoryName))
+
+	ansiblePrivelegeOptions := &options.AnsiblePrivilegeEscalationOptions{
+		Become:        true,
+		BecomeMethod:  "",
+		BecomeUser:    "ubuntu",
+		AskBecomePass: false,
 	}
 
-	// next variables is an ansible interaction objects
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection: "ssh",
-	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(inventoryDir, InventoryName),
-	}
-	ansible_privilege_opts := &options.AnsiblePrivilegeEscalationOptions{
-		Become: true,
-	}
+	workDir = path.Join(workDir, "third_party", "kubespray")
 
-	wd = path.Join(wd, "third_party", "kubespray")
 	playbook := &playbook.AnsiblePlaybookCmd{
-		Playbooks:                  []string{path.Join(wd, "cluster.yml")},
-		ConnectionOptions:          ansible_connection_options,
-		Options:                    ansible_playbook_opts,
-		PrivilegeEscalationOptions: ansible_privilege_opts,
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "cluster.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: ansiblePrivelegeOptions,
+		StdoutCallback:             "",
 	}
 
 	// run kubespray ansible playbook
-	if err = playbook.Run(context.TODO()); err != nil {
+	if err = playbook.Run(context.Background()); err != nil {
 		return merry.Prepend(err, "Error then running kubespray playbook")
 	}
 
-	return
+	return nil
 }
 
 // Function for final k8s deployment steps
 // 1. Get kube config from master node
 // 2. Install grafana ingress into cluster
 // 3. Install metrics server
-func (k *Kubernetes) finalizeDeployment(wd string) (err error) {
+func (k *Kubernetes) finalizeDeployment(workDir string) error {
 	llog.Debugln("Run 'finalize deployment' playbooks")
-	wd = path.Join(wd, "third_party/extra")
 
 	// create generic inventory
-	var file *os.File
-	var l int
-	var b []byte
-	if b, err = k.generateSimpleInventory(); err != nil {
+	var (
+		file   *os.File
+		length int
+		bytes  []byte
+		err    error
+	)
+
+	workDir = path.Join(workDir, "third_party/extra")
+
+	if bytes, err = k.generateSimpleInventory(); err != nil {
 		return merry.Prepend(err, "Error then serializing generic inventory")
 	}
-	file, err = os.OpenFile(path.Join(wd, InventoryName), os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o644)
-	if err == nil {
-		if l, err = file.Write(b); err != nil {
-			return merry.Prepend(err, "Error then creating generic inventory")
-		}
-		llog.Tracef("%v bytes successfully written to %v", l, path.Join(wd, InventoryName))
-	} else {
-		if file, err = os.Create(path.Join(wd, InventoryName)); err != nil {
-			return merry.Prepend(err, "Error then creating generic inventory")
-		}
-		if l, err = file.Write(b); err != nil {
-			return merry.Prepend(err, "Error then creating generic inventory")
-		}
-		llog.Tracef("%v bytes successfully written to %v", l, path.Join(wd, InventoryName))
+
+	if file, err = os.Create(path.Join(workDir, inventoryName)); err != nil {
+		return merry.Prepend(err, "Error then creating ansible inventory")
 	}
+
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating generic inventory")
+	}
+
+	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, inventoryName))
 
 	// next variables is wrappers around ansible
-	ansible_connection_options := &options.AnsibleConnectionOptions{
-		Connection:   "ssh",
-		SSHExtraArgs: "-F .ssh/config",
-	}
-	ansible_playbook_opts := &playbook.AnsiblePlaybookOptions{
-		Inventory: path.Join(wd, InventoryName),
-	}
-	ansPlaybook := &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "finalize.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, inventoryName))
+
+	privOpts := options.AnsiblePrivilegeEscalationOptions{
+		Become:        false,
+		BecomeMethod:  "",
+		BecomeUser:    "",
+		AskBecomePass: false,
 	}
 
-	if err = ansPlaybook.Run(context.TODO()); err != nil {
+	finalizePlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "finalize.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &privOpts,
+		StdoutCallback:             "",
+	}
+
+	if err = finalizePlaybook.Run(context.Background()); err != nil {
 		return merry.Prepend(err, "Error then finalizing deployment with finalize playbook")
 	}
 
-	ansPlaybook = &playbook.AnsiblePlaybookCmd{
-		Playbooks:         []string{path.Join(wd, "manifests.yml")},
-		ConnectionOptions: ansible_connection_options,
-		Options:           ansible_playbook_opts,
+	manifestsPlaybook := &playbook.AnsiblePlaybookCmd{
+		Binary:                     "",
+		Exec:                       nil,
+		Playbooks:                  []string{path.Join(workDir, "manifests.yml")},
+		Options:                    PBOpts,
+		ConnectionOptions:          connOpts,
+		PrivilegeEscalationOptions: &privOpts,
+		StdoutCallback:             "",
 	}
 
-	if err = ansPlaybook.Run(context.TODO()); err != nil {
+	if err = manifestsPlaybook.Run(context.Background()); err != nil {
 		return merry.Prepend(err, "Error then finalizing deployment with manifests playbook")
 	}
 
-	return
+	return nil
 }
 
 func (k *Kubernetes) Stop() {
@@ -357,10 +396,12 @@ func (k *Kubernetes) Stop() {
 // Run kubectl command and try to retrieve all not running pods
 // If command executed with non zero (or 127) exit code then return false.
 func (k *Kubernetes) checkMasterDeploymentStatus() bool {
-	var err error
-	var cmd *exec.Cmd
-	var stdout []byte
-	var json map[string]interface{}
+	var (
+		err    error
+		cmd    *exec.Cmd
+		stdout []byte
+		json   map[string]interface{}
+	)
 
 	cmd = exec.Command(
 		"kubectl",
@@ -373,25 +414,38 @@ func (k *Kubernetes) checkMasterDeploymentStatus() bool {
 		"--output",
 		"json",
 	)
+
 	llog.Tracef("kubectl command '%s'", cmd)
+
 	if stdout, err = cmd.Output(); err != nil {
 		llog.Warnln("kubectl command has non zero exit code")
-		if cmd.ProcessState.ExitCode() != 127 {
+
+		if cmd.ProcessState.ExitCode() != exitCode127 {
 			llog.Warnf("Error then retrieving k8s cluster status: %v", err)
+
 			return false
 		}
 	}
+
 	llog.Tracef("kubectl stdout:\n%v", string(stdout))
 
 	if err = yaml.Unmarshal(stdout, &json); err != nil {
 		llog.Warnf("Error then deserializing kubectl response: %v", err)
+
 		return false
 	}
 
-	if len(json["items"].([]interface{})) > 0 {
-		llog.Warnln("Cluster already deployed but not healthy")
+	items, ok := json["items"].([]interface{})
+	if !ok {
 		return false
 	}
+
+	if len(items) > 0 {
+		llog.Warnln("Cluster already deployed but not healthy")
+
+		return false
+	}
+
 	llog.Infoln("Cluster already deployed and running")
 
 	return true

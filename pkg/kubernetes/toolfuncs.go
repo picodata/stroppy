@@ -5,9 +5,12 @@
 package kubernetes
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
+	"net/http"
 	"os"
 	"os/exec"
 	"path"
@@ -16,6 +19,8 @@ import (
 	"time"
 
 	"github.com/ansel1/merry"
+	"github.com/apenella/go-ansible/pkg/options"
+	"github.com/apenella/go-ansible/pkg/playbook"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	kube_engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
@@ -419,4 +424,67 @@ func installGalaxyRoles() error {
 	}
 	llog.Tracef("collection installation stdout:\n%s", string(stdout))
 	return err
+}
+
+// Create request and return response.
+func sendGetWithContext(ctx context.Context, body io.Reader, url string) (*http.Response, error) {
+	var (
+		req *http.Request
+		res *http.Response
+		err error
+	)
+
+	if req, err = http.NewRequestWithContext(ctx, http.MethodGet, url, body); err != nil {
+		return nil, merry.Prepend(err, "Error then constructing request")
+	}
+
+	if res, err = http.DefaultClient.Do(req); err != nil {
+		return nil, merry.Prepend(err, fmt.Sprintf("Error then executing reqest to %s", url))
+	}
+
+	return res, nil
+}
+
+func createAnsibleOpts(
+	inventoryPath string,
+) (*options.AnsibleConnectionOptions, *playbook.AnsiblePlaybookOptions) {
+	ansibleConnectionOpts := &options.AnsibleConnectionOptions{
+		AskPass:       false,
+		Connection:    "ssh",
+		PrivateKey:    "",
+		SCPExtraArgs:  "",
+		SFTPExtraArgs: "",
+		SSHCommonArgs: "",
+		SSHExtraArgs:  "",
+		Timeout:       0,
+		User:          "",
+	}
+
+	ansiblePlaybookOptions := &playbook.AnsiblePlaybookOptions{
+		AskVaultPassword:  false,
+		Check:             false,
+		Diff:              false,
+		ExtraVars:         map[string]interface{}{},
+		ExtraVarsFile:     []string{},
+		FlushCache:        false,
+		ForceHandlers:     false,
+		Forks:             "",
+		Inventory:         inventoryPath,
+		Limit:             "",
+		ListHosts:         false,
+		ListTags:          false,
+		ListTasks:         false,
+		ModulePath:        "",
+		SkipTags:          "",
+		StartAtTask:       "",
+		Step:              false,
+		SyntaxCheck:       false,
+		Tags:              "",
+		VaultID:           "",
+		VaultPasswordFile: "",
+		Verbose:           false,
+		Version:           false,
+	}
+
+	return ansibleConnectionOpts, ansiblePlaybookOptions
 }
