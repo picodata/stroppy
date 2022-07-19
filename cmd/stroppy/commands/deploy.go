@@ -44,19 +44,26 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		PreRunE: nil,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
+			var (
+				shell deployment.Shell
+				err   error
+			)
+
 			if settings.EnableProfile {
 				go func() {
 					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
 				}()
 			}
-			sh, err := deployment.Deploy(settings)
-			if err != nil {
+
+			if shell, err = deployment.Deploy(settings); err != nil {
 				llog.Fatalf("status of exit: %v", err)
 			}
-			if err = sh.ReadEvalPrintLoop(); err != nil {
+
+			if err = shell.ReadEvalPrintLoop(); err != nil {
 				llog.Fatalf("repl failed with error %v", err)
 			}
+
 			llog.Infoln("status of exit: success")
 		},
 		RunE:               nil,
@@ -79,33 +86,33 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 	}
 
 	deployCmd.PersistentFlags().StringVar(
-        &deploySettings.Provider,
+		&deploySettings.Provider,
 		"cloud",
 		deploySettings.Provider,
 		"name of cloud provider",
-    )
+	)
 
 	deployCmd.PersistentFlags().StringVar(
-        &deploySettings.Flavor,
+		&deploySettings.Flavor,
 		"flavor",
 		deploySettings.Flavor,
 		"name of cluster configuration from templates.yml",
-    )
+	)
 
 	deployCmd.PersistentFlags().IntVar(
-        &deploySettings.Nodes,
+		&deploySettings.Nodes,
 		"nodes",
 		deploySettings.Nodes,
 		"count nodes of cluster",
-    )
+	)
 
 	deployCmd.PersistentFlags().BoolVarP(
-        &settings.DatabaseSettings.Sharded,
+		&settings.DatabaseSettings.Sharded,
 		"sharded", "",
 		false,
-		"Use to populate accounts in sharded MongoDB cluster. " + 
-        "Default false - populate accounts in MongoDB replicasets cluster",
-    )
+		"Use to populate accounts in sharded MongoDB cluster. "+
+			"Default false - populate accounts in MongoDB replicasets cluster",
+	)
 
 	return deployCmd
 }

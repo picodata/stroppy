@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -138,7 +137,8 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 }
 
 // "Deprecated: deployment script replaced to ansible inventory, and go-ansible wrapper"
-// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini для использования при деплое k8s кластера.
+// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini
+// для использования при деплое k8s кластера.
 func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string) {
 	var workersAddressString string
 	var masterAddressString string
@@ -184,10 +184,17 @@ func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string)
 
 // Generate monitoring inventory based on hosts.
 func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
+	var (
+		bytes []byte
+		err   error
+	)
+
 	hosts := make(map[string]map[string]string)
+
 	for k, v := range k.Engine.AddressMap["internal"] {
 		hosts[k] = map[string]string{"ansible_host": v}
 	}
+
 	//  vars:
 	//  prometheus_targets:
 	//    node:
@@ -237,14 +244,23 @@ func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
 		},
 	}
 
-	result, err := yaml.Marshal(inventory)
-	llog.Tracef("Serialized monitoring inventory %v", string(result))
-	return result, err
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
+	}
+
+	llog.Tracef("Serialized monitoring inventory %v", string(bytes))
+
+	return bytes, nil
 }
 
 // Generate kubespray inventory based on hosts addresses list.
 func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
-	var empty map[string]interface{}
+	var (
+		empty map[string]interface{}
+		bytes []byte
+		err   error
+	)
+
 	inventory := Inventory{
 		All: All{
 			Vars: map[string]interface{}{
@@ -286,7 +302,9 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 		k.Engine.AddressMap["internal"]["master"],
 		k.Engine.AddressMap["internal"]["master"],
 	}
+
 	hosts := make(map[string]interface{})
+
 	for k, v := range k.Engine.AddressMap["internal"] {
 		if k == "master" {
 			continue
@@ -294,24 +312,37 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 		inventory.All.Hosts[k] = Host{v, v, v}
 		hosts[k] = empty
 	}
+
 	inventory.All.Children["kube_node"] = map[string]interface{}{
 		"hosts": hosts,
 	}
+
 	inventory.All.Children["etcd"] = map[string]interface{}{
 		"hosts": hosts,
 	}
 
-	result, err := yaml.Marshal(inventory)
-	llog.Tracef("Serialized kubespray inventory %v", string(result))
-	return result, err
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
+	}
+
+	llog.Tracef("Serialized kubespray inventory %v", string(bytes))
+
+	return bytes, nil
 }
 
 // Generate `default` inventory for any another actions related with ansible.
 func (k *Kubernetes) generateSimpleInventory() ([]byte, error) {
+	var (
+		bytes []byte
+		err   error
+	)
+
 	hosts := make(map[string]map[string]string)
+
 	for k, v := range k.Engine.AddressMap["internal"] {
 		hosts[k] = map[string]string{"ansible_host": v}
 	}
+
 	inventory := map[string]map[string]interface{}{
 		"all": {
 			"vars": map[string]interface{}{
@@ -325,35 +356,45 @@ func (k *Kubernetes) generateSimpleInventory() ([]byte, error) {
 		},
 	}
 
-	result, err := yaml.Marshal(inventory)
-	llog.Tracef("Serialized generic inventory %v\n", string(result))
-	return result, err
+	if bytes, err = yaml.Marshal(inventory); err != nil {
+		return nil, merry.Prepend(err, "Error then serializing inventory")
+	}
+
+	llog.Tracef("Serialized generic inventory %v\n", string(bytes))
+
+	return bytes, nil
 }
 
 // Write ansible config from const.
-func writeAnsibleConfig(wd string) error {
-	var length int
+func writeAnsibleConfig(workDir string) error {
+	var (
+		file   *os.File
+		length int
+		err    error
+	)
 
-	file, err := os.OpenFile(path.Join(wd, "ansible.cfg"), os.O_WRONLY, fs.FileMode(roAll))
-	if err == nil {
-		if length, err = file.WriteString(ConfigTemplate); err != nil {
-			return merry.Prepend(err, "Error then creating ansible.cfg file")
-		}
-		llog.Tracef("%v bytes successfully written to %v", length, path.Join(wd, "ansible.cfg"))
-		return merry.Prepend(err, "Error then writing ansible.cfg file")
-	}
-	if file, err = os.Create(path.Join(wd, "ansible.cfg")); err != nil {
+	if file, err = os.Create(path.Join(workDir, "ansible.cfg")); err != nil {
 		return merry.Prepend(err, "Error then creating ansible.cfg file")
 	}
+
 	if length, err = file.WriteString(ConfigTemplate); err != nil {
 		return merry.Prepend(err, "Error then writing ansible.cfg file")
 	}
-	llog.Tracef("%v bytes successfully written to %v", length, path.Join(wd, "ansible.cfg"))
-	return err
+
+	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, "ansible.cfg"))
+
+	return nil
 }
 
 // Write ansible requirements file.
-func writeAnsibleRequirements(wd string) (err error) {
+func writeAnsibleRequirements(workDir string) error {
+	var (
+		file   *os.File
+		bytes  []byte
+		length int
+		err    error
+	)
+
 	requirements := map[string]interface{}{
 		"roles": []map[string]string{
 			{
@@ -377,53 +418,49 @@ func writeAnsibleRequirements(wd string) (err error) {
 		},
 	}
 
-	var result []byte
-	result, err = yaml.Marshal(requirements)
-	if err != nil {
+	if bytes, err = yaml.Marshal(requirements); err != nil {
 		merry.Prepend(err, "Error then marshaling requirements to yaml format")
 	}
-	var f *os.File
-	f, err = os.OpenFile(path.Join(wd, "requirements.yml"), os.O_WRONLY, fs.FileMode(roAll))
-	if err == nil {
-		var l int
-		if l, err = f.Write(result); err != nil {
-			return merry.Prepend(err, "Error then creating requirements.yml file")
-		}
-		llog.Tracef("%v bytes successfully written to %v", l, path.Join(wd, "requirements.yml"))
-		return
-	}
-	if f, err = os.Create(path.Join(wd, "requirements.yml")); err != nil {
-		return merry.Prepend(err, "Error then creating requirements.yml file")
-	}
-	var l int
-	if l, err = f.Write(result); err != nil {
-		return merry.Prepend(err, "Error then creating requirements.yml file")
-	}
-	llog.Tracef("%v bytes successfully written to %v", l, path.Join(wd, "requirements.yml"))
 
-	return
+	if file, err = os.Create(path.Join(workDir, "requirements.yml")); err != nil {
+		return merry.Prepend(err, "Error then creating file requirements.yml")
+	}
+
+	if length, err = file.Write(bytes); err != nil {
+		return merry.Prepend(err, "Error then creating requirements.yml file")
+	}
+
+	llog.Tracef(
+		"%v bytes successfully written to %v",
+		length,
+		path.Join(workDir, "requirements.yml"),
+	)
+
+	return nil
 }
 
-// Install ansible galaxy requirements
+// Install ansible galaxy requirements.
 func installGalaxyRoles() error {
-	var err error
-	var stdout []byte
-	var cmd *exec.Cmd
+	var (
+		err    error
+		stdout []byte
+	)
 
-	cmd = exec.Command("ansible-galaxy", "install", "-fr", "requirements.yml")
-	stdout, err = cmd.Output()
-	if err != nil {
+	command := exec.Command("ansible-galaxy", "install", "-fr", "requirements.yml")
+	if stdout, err = command.Output(); err != nil {
 		return merry.Prepend(err, "Error then installing ansible requirements")
 	}
+
 	llog.Tracef("roles installation stdout:\n%s", string(stdout))
 
-	cmd = exec.Command("ansible-galaxy", "collection", "install", "-fr", "requirements.yml")
-	stdout, err = cmd.Output()
-	if err != nil {
+	command = exec.Command("ansible-galaxy", "collection", "install", "-fr", "requirements.yml")
+	if stdout, err = command.Output(); err != nil {
 		return merry.Prepend(err, "Error then installing ansible requirements")
 	}
+
 	llog.Tracef("collection installation stdout:\n%s", string(stdout))
-	return err
+
+	return nil
 }
 
 // Create request and return response.

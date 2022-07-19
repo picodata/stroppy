@@ -244,7 +244,6 @@ func (sh *shell) preparePayload() error {
 	return nil
 }
 
-//nolint:funlen // because this rule is stupid
 func (sh *shell) deploy() error {
 	var err error
 

@@ -26,17 +26,24 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
-func createPostgresCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (pc Cluster) {
-	pc = &postgresCluster{
-		commonCluster: createCommonCluster(sc,
-			k,
-			filepath.Join(wd, dbWorkingDirectory, cluster.Postgres),
+//nolint // don't known how to fix ireturn
+func createPostgresCluster(
+	sshClient engineSsh.Client,
+	kube *kubernetes.Kubernetes,
+	workDir, dbURL string,
+	connectionPoolSize int,
+) Cluster {
+	return &postgresCluster{
+		commonCluster: createCommonCluster(
+			sshClient,
+			kube,
+			filepath.Join(workDir, dbWorkingDirectory, cluster.Postgres),
 			cluster.Postgres,
 			dbURL,
 			connectionPoolSize,
-			false),
+			false,
+		),
 	}
-	return
 }
 
 type postgresCluster struct {
@@ -44,15 +51,22 @@ type postgresCluster struct {
 }
 
 func (pc *postgresCluster) Connect() (interface{}, error) {
-    var c interface{}
-    var err error
+	var (
+		pgCluster interface{}
+		err       error
+	)
+
 	// для возможности подключиться к БД в кластере с локальной машины
 	if pc.DBUrl == "" {
 		pc.DBUrl = "postgres://stroppy:stroppy@localhost:6432/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", pc.DBUrl)
 	}
-    c, err = cluster.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize)
-	return c, err
+
+	if pgCluster, err = cluster.NewPostgresCluster(pc.DBUrl, pc.connectionPoolSize); err != nil {
+		return nil, merry.Prepend(err, "Error then creating postgres cluster")
+	}
+
+	return pgCluster, nil
 }
 
 // Deploy

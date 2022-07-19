@@ -47,7 +47,7 @@ func createYandexDBCluster(
 	dbURL string,
 	connectionPoolSize int,
 ) Cluster {
-    return &yandexCluster{
+	return &yandexCluster{
 		wd: wd,
 		commonCluster: createCommonCluster(
 			sc,
@@ -213,7 +213,7 @@ func (yc *yandexCluster) deployStorage() error {
 	if err = yaml.Unmarshal(bytes, &storage); err != nil {
 		return merry.Prepend(err, "Error then deserizalizing storage manifest")
 	}
-    
+
 	spec, ok := storage["spec"].(map[interface{}]interface{})
 	if !ok {
 		return merry.Prepend(err, castingError)

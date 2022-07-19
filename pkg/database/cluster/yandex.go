@@ -16,6 +16,7 @@ type YandexDBCluster struct {
 	db ydb.Connection
 }
 
+//nolint // ydb cluster creation in future
 func NewYandexDBCluster(dbURL string, _ int) (*YandexDBCluster, error) {
 	llog.Infof("Establishing connection to YDB on %v", dbURL)
 
@@ -40,30 +41,32 @@ func (*YandexDBCluster) GetClusterType() DBClusterType {
 	return YandexDBClusterType
 }
 
+//nolint // will be fixed with ydb crud mr
 func (y *YandexDBCluster) BootstrapDB(count, seed int) error {
+	var err error
+
 	llog.Infof("Creating the tables...")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err := y.db.Table().Do(
+	if err = y.db.Table().Do(
 		ctx,
 		func(ctx context.Context, s table.Session) error {
-			err := s.CreateTable(ctx, path.Join(y.db.Name(), "series"),
+			if err = s.CreateTable(ctx, path.Join(y.db.Name(), "series"),
 				options.WithColumn("series_id", types.Optional(types.TypeUint64)),
 				options.WithColumn("title", types.Optional(types.TypeUTF8)),
 				options.WithColumn("series_info", types.Optional(types.TypeUTF8)),
 				options.WithColumn("release_date", types.Optional(types.TypeDate)),
 				options.WithColumn("comment", types.Optional(types.TypeUTF8)),
 				options.WithPrimaryKeyColumn("series_id"),
-			)
-			if err != nil {
+			); err != nil {
 				return merry.Prepend(err, "Error then creating YDB table")
 			}
+
 			return nil
 		},
-	)
-	if err != nil {
+	); err != nil {
 		return merry.Prepend(err, "Error then creating YDB table")
 	}
 

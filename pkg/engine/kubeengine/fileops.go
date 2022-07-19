@@ -113,7 +113,6 @@ func (e Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err er
 	return
 }
 
-//nolint:funlen // here is only logic for loading pod
 func (e *Engine) LoadFileToPod(
 	podName, containerName, sourcePath, destinationPath string,
 ) error {

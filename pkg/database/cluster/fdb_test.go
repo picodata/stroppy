@@ -35,8 +35,10 @@ func (cluster *FDBCluster) TruncateTable() error {
 }
 
 func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Account, err error) {
-	var value accountValue
-	var valueSrc []byte
+	var (
+		value    accountValue
+		valueSrc []byte
+	)
 
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.accounts.Pack(tuple.Tuple{Bic, Ban})
@@ -65,10 +67,17 @@ func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Acc
 	return account, nil
 }
 
+//nolint:gocritic // fix in future
 func (cluster *FDBCluster) GetTransfer(
 	expectedTransfer model.Transfer,
-) (transfer model.Transfer, err error) {
-	var value transferValue
+) (model.Transfer, error) {
+	var (
+		value    transferValue
+		transfer model.Transfer
+		valueSrc []byte
+		err      error
+	)
+
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.transfers.Pack(
 			tuple.Tuple{
@@ -78,17 +87,19 @@ func (cluster *FDBCluster) GetTransfer(
 				expectedTransfer.Acs[1].Bic,
 				expectedTransfer.Acs[1].Ban,
 			})
-		valueSrc, err := tx.Get(key).Get()
-		if err != nil {
+
+		if valueSrc, err = tx.Get(key).Get(); err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		if len(valueSrc) == 0 {
 			return nil, ErrNoRows
 		}
-		err = json.Unmarshal(valueSrc, &value)
-		if err != nil {
+
+		if err = json.Unmarshal(valueSrc, &value); err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		return nil, nil
 	})
 
@@ -103,6 +114,7 @@ func (cluster *FDBCluster) GetTransfer(
 		Amount:    value.Amount,
 		State:     "",
 	}
+
 	return transfer, nil
 }
 
@@ -246,11 +258,15 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 		State:     "",
 	}
 
-	if err = fdbCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
+	if err = fdbCluster.MakeAtomicTransfer(
+		&expectedTransfer,
+		uuid.UUID(rand.NewClientID()),
+	); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
+
 	if receivedTransfer, err = fdbCluster.GetTransfer(expectedTransfer); err != nil {
-		t.Errorf("GetTransfer() recieved error %v, but expected nil", err)
+		t.Errorf("GetTransfer() received error %v, but expected nil", err)
 	}
 
 	if receivedTransfer.Acs[0].Bic != expectedTransfer.Acs[0].Bic {

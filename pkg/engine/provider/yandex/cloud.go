@@ -23,7 +23,9 @@ import (
 const (
 	yandexPrivateKeyFile = ".ssh/id_rsa"
 	yandexPublicKeyFile  = ".ssh/id_rsa.pub"
+	castingError         = "Error then casting type into interface"
 )
+
 // Create YandexCloud provider
 // TODO: Switch stroppy to work with HCL files instead of yaml #issue96.
 func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provider, err error) {
@@ -95,6 +97,7 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 	yp.tfStateData = data
 }
 
+//nolint:varnamelen // ok name is ok!
 // Parse `terraform.tfstate` and get all important ip address.
 func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	if yp.tfStateData == nil {
@@ -106,21 +109,30 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 
 	externalAddress := make(map[string]string)
 	internalAddress := make(map[string]string)
-    yp.addressMap = make(map[string]map[string]string)
-	
-    decodeStr := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
+	yp.addressMap = make(map[string]map[string]string)
+
+	decodeStr := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
 		`.network_interface.0.{nat_ip_address,ip_address},resources.` +
 		`#(type="yandex_compute_instance_group")#.instances.#.attributes.` +
 		`instances.#.network_interface.0.{nat_ip_address,ip_address}].` +
 		`@flatten.@flatten.@flatten`
-	nodes := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
-	master := nodes[0].(map[string]interface{})
+
+	nodes, ok := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	master, ok := nodes[0].(map[string]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
 
 	internalAddress["master"] = master["ip_address"].(string)
 	externalAddress["master"] = master["nat_ip_address"].(string)
+
 	for i := 1; i < len(nodes); i++ {
 		node := nodes[i].(map[string]interface{})
-        llog.Tracef("index: %v node: %v", i, node)
+		llog.Tracef("index: %v node: %v", i, node)
 		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)
 		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string)
 	}
@@ -128,24 +140,37 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 	llog.Tracef("external address %#v", externalAddress)
 	llog.Tracef("internal address %#v", internalAddress)
 
-    decodeStr = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` + 
-        `attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
-	nodes = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
-  
-    llog.Tracef("parsed ip_v4: %v", nodes)
-    yp.addressMap["subnet"] = map[string]string{"ip_v4": nodes[0].(string)}
+	decodeStr = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` +
+		`attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
 
-    llog.Tracef("subnet: %v", yp.addressMap["subnet"])
+	nodes, ok = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	llog.Tracef("parsed ip_v4: %v", nodes) //nolint:asasalint // here is debug print
+
+	ipV4, ok := nodes[0].(string)
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	yp.addressMap["subnet"] = map[string]string{"ip_v4": ipV4}
+
+	llog.Tracef("subnet: %v", yp.addressMap["subnet"])
 
 	yp.addressMap["external"] = externalAddress
 	yp.addressMap["internal"] = internalAddress
 
-    llog.Infof("Addresses map: %v\n", yp.addressMap)
+	llog.Infof("Addresses map: %v\n", yp.addressMap)
 
-    return
+	return nil
 }
 
-func (yp *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+//nolint // old function that should be refactored in future
+func (yp *Provider) GetAddressMap(
+	nodes int,
+) (mapIPAddresses map[string]map[string]string, err error) {
 	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 	 * своя пара - внешний (NAT) и внутренний ip.
 	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,

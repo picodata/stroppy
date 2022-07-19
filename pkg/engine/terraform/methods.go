@@ -28,22 +28,40 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
+const pauseAfterTFApply = 30
+
 func CreateTerraform(
 	settings *config.DeploymentSettings,
 	exeFolder, cfgFolder string,
-) (t *Terraform) {
+) *Terraform {
+	var tfobj *Terraform
+
 	addressMap := make(map[string]map[string]string)
 
-	t = &Terraform{
+	tfobj = &Terraform{
 		settings:      settings,
 		exePath:       filepath.Join(exeFolder, "terraform"),
+		stateFilePath: "",
 		addressMap:    addressMap,
 		isInit:        false,
 		WorkDirectory: cfgFolder,
+		version: &version{
+			major:  0,
+			minor:  0,
+			bugfix: 0,
+		},
+		Provider: nil,
+		data:     []byte{},
 	}
-	t.stateFilePath = filepath.Join(t.WorkDirectory, "third_party", "terraform", stateFileName)
 
-	return
+	tfobj.stateFilePath = filepath.Join(
+		tfobj.WorkDirectory,
+		"third_party",
+		"terraform",
+		stateFileName,
+	)
+
+	return tfobj
 }
 
 // --- Public methods ---------------
@@ -164,7 +182,7 @@ func (t *Terraform) apply() (err error) {
 
 	llog.Debug("Waiting for terraform to form a state")
 
-	time.Sleep(20 * time.Second)
+	time.Sleep(pauseAfterTFApply * time.Second)
 
 	llog.Printf("Terraform applied\n")
 
