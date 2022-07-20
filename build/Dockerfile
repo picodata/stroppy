@@ -6,22 +6,25 @@ RUN go build -o bin/stroppy ./cmd/stroppy
 
 
 FROM docker-proxy.binary.picodata.io/debian:bullseye-slim
-ARG FDB_VERSION=6.3.23
-ARG COMMIT_HASH
-ENV PATH "${PATH}:/root"
+ARG COMMIT_HASH \
+    FDB_VERSION=6.3.23 \
+    TF_VERSION=1.2.5
 ENV COMMIT_HASH ${COMMIT_HASH:-manual_build} \
     PATH=$PATH:~/.local/bin
-
-COPY third_party .
+RUN useradd -m stroppy
+    #&& usermod -aG sudo stroppy
+COPY third_party /home/stroppy/third_party
 RUN apt update \
-    && apt install -y ca-certificates wget curl python3 pip \
+    && apt install -y ca-certificates wget curl python3 pip unzip \
     && apt clean
-RUN pip install -r third_party/kubespray/requirements.txt
-RUN wget "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb" \
-    && dpkg -i foundationdb-clients_${FDB_VERSION}-1_amd64.deb
-WORKDIR /root
-
-
-#добавляем директорию с файлами для деплоя и конфигурирования stroppy
-COPY --from=0 stroppy/bin/stroppy .
+RUN pip install -r /home/stroppy/third_party/kubespray/requirements.txt \
+    && wget "https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb" \
+    && dpkg -i foundationdb-clients_${FDB_VERSION}-1_amd64.deb \
+    && curl -fsLO https://binary.picodata.io/repository/raw/terraform/terraform_${TF_VERSION}_amd64.deb \
+    && dpkg -i terraform_1.2.5_amd64.deb \
+    && rm -f foundationdb-clients_${FDB_VERSION}-1_amd64.deb terraform_${TF_VERSION}_amd64.deb \
+    && chown -R stroppy:stroppy /home/stroppy
+COPY --from=0 stroppy/bin/stroppy /usr/local/bin/stroppy
+USER stroppy:stroppy
+WORKDIR /home/stroppy
 CMD ["/bin/bash"]
