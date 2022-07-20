@@ -41,7 +41,7 @@ linters-settings:
     lines: 80
 
 issues:
-  new-from-rev: develop
+  new-from-rev: origin/develop
 
 linters:
   enable-all: true

@@ -20,10 +20,6 @@ services:
       - FDB_NETWORKING_MODE=container
     ports:
       - 4500:4500
-    command:
-      - "fdbcli"
-      - "--exec"
-      - '"configure new single memory"'
 
   cdb:
     image: cockroachdb/cockroach:latest
