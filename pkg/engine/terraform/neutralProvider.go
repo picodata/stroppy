@@ -13,17 +13,26 @@ func createNeutralProvider() (op *neutralProvider) {
 
 type neutralProvider struct{}
 
+//nolint
 func (np *neutralProvider) Prepare() (err error) {
-	err = errors.New("neutral provider does not support deployment preparaion, please specify yandex or oracle")
+	err = errors.New(
+		"neutral provider does not support deployment preparaion, please specify yandex or oracle",
+	)
 	return
 }
 
+//nolint
 func (np *neutralProvider) PerformAdditionalOps(_ int) (err error) {
-	err = errors.New("neutral provider does not support deployment additional step operation, use yandex or oracle")
+	err = errors.New(
+		"neutral provider does not support deployment additional step operation, use yandex or oracle",
+	)
 	return
 }
 
-func (np *neutralProvider) GetAddressMap(_ int) (mapIPAddresses map[string]map[string]string, _ error) {
+//nolint
+func (np *neutralProvider) GetAddressMap(
+	_ int,
+) (mapIPAddresses map[string]map[string]string, _ error) {
 	mapIPAddresses = make(map[string]map[string]string)
 	return
 }
@@ -45,4 +54,8 @@ func (np *neutralProvider) GetDeploymentCommands() (firstStep, thirdStep string)
 	firstStep = neutralEcho
 	thirdStep = neutralEcho
 	return
+}
+
+func (np *neutralProvider) CheckSSHKeyFiles(workDir string) error {
+	return nil
 }

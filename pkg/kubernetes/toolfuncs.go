@@ -331,7 +331,7 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 }
 
 // Generate `default` inventory for any another actions related with ansible.
-func (k *Kubernetes) generateSimpleInventory() ([]byte, error) {
+func (k *Kubernetes) generateSimplifiedInventory() ([]byte, error) {
 	var (
 		bytes []byte
 		err   error

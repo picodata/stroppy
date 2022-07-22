@@ -6,19 +6,9 @@ package deployment
 
 import (
 	"bufio"
-	"crypto/rand"
-	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
-	"fmt"
-	"io"
-	"io/fs"
 	"os"
-	"path"
-	"strings"
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
-	"golang.org/x/crypto/ssh"
 
 	"gitlab.com/picodata/stroppy/internal/payload"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -30,11 +20,6 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-)
-
-const (
-	rwRoot  int = 0o600
-	rsaBits int = 4096
 )
 
 func createShell(config *config.Settings) (d *shell) {
@@ -106,85 +91,8 @@ func (sh *shell) prepareTerraform() error {
 		return merry.Prepend(err, "failed to init provider")
 	}
 
-	if ok := sh.tf.Provider.IsPrivateKeyExist(sh.tf.WorkDirectory); !ok {
-		// Create ssh config directory
-		err = os.Mkdir(path.Join(sh.workingDirectory, ".ssh"), os.ModePerm)
-		if err != nil {
-			return merry.Prepend(err, "Error then creating ssh config directory")
-		}
-
-		// if .ssh directory does not contains id_rsa trying to copy id_rsa file
-		// from project root dir
-		if err = copyFileContents(
-			path.Join(sh.workingDirectory, "id_rsa"),
-			path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
-		); err == nil {
-			return nil
-		}
-
-		llog.Warnf("failed to copy id_rsa to .ssh/id_rsa: %v", err)
-
-		// if ssh key
-		reader := bufio.NewReader(os.Stdin)
-
-		fmt.Print("stroppy can not find ssh keys, do you want to create them (yes/no)? ") // nolint
-
-		for {
-			answer, _ := reader.ReadString('\n')
-			answer = strings.ReplaceAll(answer, "\n", "")
-
-			switch {
-			case strings.EqualFold(strings.ToLower(answer), "yes"):
-				var (
-					privateKey *rsa.PrivateKey
-					publicKey  ssh.PublicKey
-				)
-
-				llog.Infoln("Creating new ssh key pair...")
-
-				if privateKey, err = rsa.GenerateKey(rand.Reader, rsaBits); err != nil {
-					return merry.Prepend(err, "Error then generating ssh private key")
-				}
-
-				if err = privateKey.Validate(); err != nil {
-					return merry.Prepend(err, "Error then validating ssh private key")
-				}
-
-				if publicKey, err = ssh.NewPublicKey(privateKey.Public()); err != nil {
-					return merry.Prepend(err, "Error then generating ssh public key")
-				}
-
-				if err = os.WriteFile(
-					path.Join(sh.workingDirectory, ".ssh", "id_rsa.pub"),
-					ssh.MarshalAuthorizedKey(publicKey),
-					fs.FileMode(rwRoot),
-				); err != nil {
-					return merry.Prepend(err, "Error then writing id_rsa private key file")
-				}
-
-				if err = os.WriteFile(
-					path.Join(sh.workingDirectory, ".ssh", "id_rsa"),
-					pem.EncodeToMemory(&pem.Block{
-						Type:    "RSA PRIVATE KEY",
-						Headers: map[string]string{},
-						Bytes:   x509.MarshalPKCS1PrivateKey(privateKey),
-					}),
-					fs.FileMode(rwRoot),
-				); err != nil {
-					return merry.Prepend(err, "Error then writing id_rsa private key file")
-				}
-
-				llog.Infoln("New ssh keypair successfully created")
-
-				return nil
-			case strings.EqualFold(strings.ToLower(answer), "no"):
-				return merry.Errorf(
-					"ssh key pair does not exists, please create manually, exiting...",
-				)
-			default:
-				fmt.Print("Please type 'yes' or 'no': ") // nolint
-			}
-		}
+	if err = sh.tf.Provider.CheckSSHKeyFiles(sh.tf.WorkDirectory); err != nil {
+		return merry.Prepend(err, "Error then checking ssh keys files")
 	}
 
 	return nil
@@ -308,48 +216,6 @@ func (sh *shell) deploy() error {
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
 
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
-
-	return nil
-}
-
-// copyFileContents copies the contents of the file named src to the file named
-// by dst. The file will be created if it does not already exist. If the
-// destination file exists, all it's contents will be replaced by the contents
-// of the source file.
-func copyFileContents(src, dst string) error {
-	var (
-		err          error
-		sourcef      *os.File
-		destinationf *os.File
-		length       int64
-	)
-
-	if sourcef, err = os.Open(src); err != nil {
-		return merry.Prepend(err, fmt.Sprintf("Error then opening file %s", src))
-	}
-	defer sourcef.Close()
-
-	if destinationf, err = os.Create(dst); err != nil {
-		return merry.Prepend(err, fmt.Sprintf("Error then creating file %s", dst))
-	}
-
-	defer func() {
-		cerr := destinationf.Close()
-		if err == nil {
-			err = cerr
-		}
-	}()
-
-	if length, err = io.Copy(sourcef, destinationf); err != nil {
-		return merry.Prepend(
-			err,
-			fmt.Sprintf("Error then copying bytes from %s to %s", src, dst),
-		)
-	}
-
-	llog.Debugf("Successfully writed %v bytes then copying file from %s to %s", length, src, dst)
-
-	err = destinationf.Sync()
 
 	return nil
 }

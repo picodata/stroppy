@@ -62,7 +62,7 @@ func createYandexDBCluster(
 }
 
 // Deploy Yandex Database Cluster
-// This realization completely different then another when deploying,
+// Implementation of YDB deploy completely differs from others,
 // the helm operator will be connected first. The operator is always
 // installed from the Yandex repository. Then the store and database
 // manifests will be deserialized and parameterized.
@@ -81,7 +81,7 @@ func (yc *yandexCluster) Deploy() error {
 		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-storage.yml"),
 		"storage",
 	); err != nil {
-		return merry.Prepend(err, "Error then waiting YDB storage")
+		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
 
 	if err = yc.deployDatabase(); err != nil {
@@ -92,7 +92,7 @@ func (yc *yandexCluster) Deploy() error {
 		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-database.yml"),
 		"database",
 	); err != nil {
-		return merry.Prepend(err, "Error then waiting YDB database")
+		return merry.Prepend(err, "Error while waiting for YDB database")
 	}
 
 	return err
@@ -219,7 +219,9 @@ func (yc *yandexCluster) deployStorage() error {
 		return merry.Prepend(err, castingError)
 	}
 
-	spec["nodes"] = 4 // TODO: get it from terraform.tfstate #issue94
+	// TODO: get it from terraform.tfstate
+	// https://github.com/picodata/stroppy/issues/94
+	spec["nodes"] = 4
 
 	resources, ok := spec["resources"].(map[interface{}]interface{})
 	if !ok {
@@ -227,8 +229,11 @@ func (yc *yandexCluster) deployStorage() error {
 	}
 
 	resources["limits"] = map[string]interface{}{
-		"cpu":    "1000m",  // TODO: replace to formula based on host resources #issue94
-		"memory": "2048Mi", // resources can fe fetched from terraform.tfstate
+		// TODO: replace to formula based on host resources
+		// https://github.com/picodata/stroppy/issues/94
+		// resources can fe fetched from terraform.tfstate
+		"cpu":    "1000m",
+		"memory": "2048Mi",
 	}
 
 	if bytes, err = paramStorageConfig(storage); err != nil {
@@ -281,6 +286,8 @@ func (yc *yandexCluster) deployDatabase() error {
 		return merry.Prepend(err, castingError)
 	}
 
+    // TODO: replace based on tfstate resources
+    // https://github.com/picodata/stroppy/issues/94
 	spec["nodes"] = 1
 
 	resources, ok := spec["resources"].(map[interface{}]interface{})
@@ -290,8 +297,11 @@ func (yc *yandexCluster) deployDatabase() error {
 
 	resources["storageUnits"] = []interface{}{
 		map[string]interface{}{
-			"count":    1,     // TODO: replace to formula based on host resources #issue94
-			"unitKind": "ssd", // resources can fe fetched from terraform.tfstate
+			// TODO: replace to formula based on host resources
+			// https://github.com/picodata/stroppy/issues/94
+			// resources can fe fetched from terraform.tfstate
+			"count":    1,
+			"unitKind": "ssd",
 		},
 	}
 
@@ -301,8 +311,11 @@ func (yc *yandexCluster) deployDatabase() error {
 	}
 
 	containerResources["limits"] = map[interface{}]interface{}{
-		"cpu":    "500m",  // TODO: replace to formula based on host resources #issue94
-		"memory": "512Mi", // resources can fe fetched from terraform.tfstate
+		// TODO: replace to formula based on host resources
+		// https://github.com/picodata/stroppy/issues/94
+		// resources can fe fetched from terraform.tfstate
+		"cpu":    "500m",
+		"memory": "512Mi",
 	}
 
 	if bytes, err = yaml.Marshal(storage); err != nil {
@@ -327,6 +340,8 @@ func applyManifest(manifestName string) error {
 		err    error
 	)
 
+	// TODO: Replace with k8s api bindings
+	// https://github.com/picodata/stroppy/issues/100
 	cmd := exec.Command("kubectl", "apply", "-f", manifestName, "--output", "json")
 	if stdout, err = cmd.Output(); err != nil {
 		llog.Tracef("kubectl stdout:\n%v", stdout)
@@ -350,6 +365,7 @@ func waitObjectReady(fpath, name string) error {
 	)
 
 	for index := 0; index <= timeout; index += step {
+		// TODO: https://github.com/picodata/stroppy/issues/99
 		cmd := exec.Command("kubectl", "get", "-f", fpath, "--output", "json")
 		if output, err = cmd.Output(); err != nil {
 			llog.Warnf("Error then executing 'kubectl get': %s", err)
@@ -387,7 +403,8 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	)
 
 	// to be able to connect to the cluster from localhost
-	// TODO: Replace to right YandexDB url and add connection to database issue95
+	// TODO: Replace to right YandexDB url and add connection to database
+	// https://github.com/picodata/stroppy/issues/95
 	if yc.commonCluster.DBUrl == "" {
 		yc.commonCluster.DBUrl = "grpc://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
 		llog.Infoln("changed DBURL on", yc.commonCluster.DBUrl)
@@ -429,7 +446,8 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 		return nil, merry.Prepend(err, "Error then deserializing storage manifest")
 	}
 
-	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
 	hostConfigs, ok := confMap["host_configs"].([]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -450,7 +468,8 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 		"type": "SSD",
 	}
 
-	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
 	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -471,7 +490,8 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 		"ssid": 1,
 	}
 
-	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
 	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -505,7 +525,8 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 		},
 	}
 
-	// TODO: replace to config based on resources from terraform.tfstate #issue94
+	// TODO: replace to config based on resources from terraform.tfstate
+    // https://github.com/picodata/stroppy/issues/94
 	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)

@@ -7,6 +7,8 @@ package yandex
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"sync"
 
 	"github.com/tidwall/gjson"
@@ -21,9 +23,10 @@ import (
 )
 
 const (
-	yandexPrivateKeyFile = ".ssh/id_rsa"
-	yandexPublicKeyFile  = ".ssh/id_rsa.pub"
-	castingError         = "Error then casting type into interface"
+	SSH_DIR       = ".ssh"                                   //nolint
+	PRIV_KEY_NAME = "id_rsa"                                 //nolint
+	PUB_KEY_NAME  = "id_rsa.pub"                             //nolint
+	CAST_ERR      = "Error then casting type into interface" //nolint
 )
 
 // Create YandexCloud provider
@@ -119,12 +122,12 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 
 	nodes, ok := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
 	if !ok {
-		return merry.Prepend(err, castingError)
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
 	}
 
 	master, ok := nodes[0].(map[string]interface{})
 	if !ok {
-		return merry.Prepend(err, castingError)
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
 	}
 
 	internalAddress["master"] = master["ip_address"].(string)
@@ -145,14 +148,14 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 
 	nodes, ok = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
 	if !ok {
-		return merry.Prepend(err, castingError)
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
 	}
 
 	llog.Tracef("parsed ip_v4: %v", nodes) //nolint:asasalint // here is debug print
 
 	ipV4, ok := nodes[0].(string)
 	if !ok {
-		return merry.Prepend(err, castingError)
+		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
 	}
 
 	yp.addressMap["subnet"] = map[string]string{"ip_v4": ipV4}
@@ -199,30 +202,87 @@ func (yp *Provider) GetAddressMap(
 	return yp.addressMap, err
 }
 
-func (yp *Provider) IsPrivateKeyExist(workingDirectory string) bool {
-	var isFoundPrivateKey bool
-	var isFoundPublicKey bool
+//nolint:nosnakecase // constant
+// Check ssh key files and directory existence
+// 1. Check .ssh directory
+// 2. Create .ssh directory
+// 3. If directory was been created in step 2, try to copy ssh private key from project dir
+// 4. If step 4 failed ask next action
+//      - Copy key files from user home ~/.ssh
+//      - Crete new key files
+//      - Abort execution
+func (yp *Provider) CheckSSHKeyFiles(workDir string) error {
+	var err error
 
-	llog.Infoln("checking of private key for yandex provider...")
-	isFoundPrivateKey = engine.IsFileExists(workingDirectory, yandexPrivateKeyFile)
-	if !isFoundPrivateKey {
-		llog.Infoln("checking of private key for yandex provider: unsuccess")
+	llog.Infof("Checking if `.ssh` directory exists in the project directory `%s`", workDir)
+
+	if err = engine.IsDirExists(path.Join(workDir, ".ssh")); err != nil {
+		llog.Warnf("Directory `%s/.ssh` does not exists. %s", workDir, err)
+
+		// Create ssh config directory
+		if err = os.Mkdir(path.Join(workDir, ".ssh"), os.ModePerm); err != nil {
+			return merry.Prepend(
+				err,
+				fmt.Sprintf("Error then creating `%s/.ssh` directory", workDir),
+			)
+		}
+
+		llog.Infof("Directory `%s/.ssh` successefully created", workDir)
 	} else {
-		llog.Infoln("checking of private key for yandex provider: success")
+		llog.Infof("Directory `%s/.ssh` already exists", workDir)
 	}
 
-	llog.Infoln("checking of public key for yandex provider...")
-	if isFoundPublicKey = engine.IsFileExists(workingDirectory, yandexPublicKeyFile); !isFoundPublicKey {
+	llog.Infoln("Checking of private key for yandex provider")
+
+	if !engine.IsFileExists(path.Join(workDir, ".ssh"), PRIV_KEY_NAME) {
+		llog.Warnf(
+			"Private key for yandex provider `%s/.ssh/id_rsa` does not exist",
+			workDir,
+		)
+
+		llog.Infof(
+			"Check if the key exists in the working directory of the project `%s`",
+			workDir,
+		)
+		// if .ssh directory does not contains id_rsa trying to copy id_rsa file
+		// from project root dir
+		if err = engine.CopyFileContents(
+			path.Join(workDir, "id_rsa"),
+			path.Join(workDir, ".ssh", "id_rsa"),
+			os.FileMode(engine.RW_ROOT_MODE),
+		); err != nil {
+			llog.Warnf(
+				"Failed to copy %s/id_rsa to %s/.shh/id_rsa: %v",
+				workDir,
+				workDir,
+				err,
+			)
+			llog.Infof("Project working directory does not contains private key")
+		}
+
+		if err = engine.AskNextAction(workDir); err != nil {
+			return merry.Prepend(err, "Error then creating private key file")
+		}
+	} else {
+		llog.Infof("Private key founded in `%s`", path.Join(workDir, ".ssh"))
+	}
+
+	if !engine.IsFileExists(workDir, PUB_KEY_NAME) {
 		llog.Infoln("checking of public key for yandex provider: unsuccess")
+
+		if err = engine.CreatePublicKey(
+			path.Join(workDir, SSH_DIR, PRIV_KEY_NAME),
+			path.Join(workDir, SSH_DIR, PUB_KEY_NAME),
+		); err != nil {
+			return merry.Prepend(err, "Error then creating ssh public key")
+		}
+
+		llog.Infoln("public private key successefully created")
+	} else {
+		llog.Infoln("checking of public key for yandex provider: success")
 	}
 
-	if isFoundPrivateKey && isFoundPublicKey {
-		llog.Infoln("checking of authtorized keys for yandex provider: success")
-		return true
-	}
-
-	llog.Errorln("checking of authtorized keys for yandex provider: unsuccess")
-	return false
+	return nil
 }
 
 func (yp *Provider) Name() string {

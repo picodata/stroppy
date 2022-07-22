@@ -14,6 +14,7 @@ import (
 	"path"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/apenella/go-ansible/pkg/options"
 	"github.com/apenella/go-ansible/pkg/playbook"
@@ -26,7 +27,8 @@ import (
 )
 
 const (
-	SSHConfig string = `
+	//nolint // constant
+	SSH_CONFIG string = `
 StrictHostKeyChecking no
 ConnectTimeout 120
 UserKnownHostsFile=/dev/null
@@ -44,9 +46,10 @@ Host master
   ControlPath ansible-kubespray-%r@%h:%p
   ControlPersist 5m
 `
-	inventoryName string = "inventory.yml"
-	grafanaPort   int    = 3000
-	exitCode127   int    = 127
+	INVENTORY_NAME      string        = "inventory.yml" //nolint // constant
+	GRAFANA_PORT        int           = 3000            //nolint // constant
+	GRAFANA_REQ_TIMEOUT time.Duration = 10              //nolint // constant
+	EXIT_CODE_127       int           = 127             //nolint // constant
 )
 
 type SshK8SOpts struct {
@@ -82,7 +85,7 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 	}
 
 	// replace template values to shh config variables
-	tmpl, err := template.New("config").Parse(SSHConfig)
+	tmpl, err := template.New("config").Parse(SSH_CONFIG) //nolint:nosnakecase // constant
 	if err != nil {
 		merry.Prepend(err, "Error then parsing ssh config template")
 	}
@@ -177,8 +180,8 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 	}
 
 	if file, err = os.OpenFile(
-		path.Join(workDir, inventoryName),
-		os.O_RDWR|os.O_CREATE|os.O_TRUNC, //nolint:nosnakecase // os consts
+		path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC,   //nolint:nosnakecase // constant
 		os.FileMode(roAll),
 	); err == nil {
 		if length, err = file.Write(bytes); err != nil {
@@ -188,12 +191,13 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		llog.Tracef(
 			"%v bytes successfully written to %v",
 			length,
-			path.Join(workDir, inventoryName),
+			path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
 		)
 	}
 
+	//nolint:nosnakecase // constant
 	// next variables is wrappers around ansible
-	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, inventoryName))
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
 
 	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{
 		Become:        false,
@@ -202,13 +206,26 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		AskBecomePass: false,
 	}
 
+	//nolint:nosnakecase // constant
 	// check that grafana is deployed
-	llog.Tracef("grafana uri http://%s:%v", k.Engine.AddressMap["external"]["master"], grafanaPort)
+	llog.Tracef(
+		"grafana uri http://%s:%v",
+		k.Engine.AddressMap["external"]["master"],
+		GRAFANA_PORT,
+	)
+
+	contextWithTimeout, closeFn := context.WithTimeout(
+		context.Background(),
+		GRAFANA_REQ_TIMEOUT*time.Second, //nolint // constant
+	)
 
 	if resp, err = sendGetWithContext(
-		context.Background(),
+		contextWithTimeout,
 		nil,
-		net.JoinHostPort(k.Engine.AddressMap["external"]["master"], fmt.Sprint(grafanaPort)),
+		net.JoinHostPort(
+			k.Engine.AddressMap["external"]["master"],
+			fmt.Sprint(GRAFANA_PORT), //nolint:nosnakecase // constant
+		),
 	); err != nil || resp.StatusCode != 200 {
 		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
 
@@ -222,14 +239,20 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 			StdoutCallback:             "",
 		}
 
+		closeFn()
+
 		if err = grafanaPlaybook.Run(context.TODO()); err != nil {
 			return merry.Prepend(err, "Error then running monitoring playbooks")
 		}
 	} else {
 		llog.Infoln("Grafana already deployed. skipping")
+
+		closeFn()
 	}
 
-	resp.Body.Close()
+	if resp != nil {
+		defer resp.Body.Close()
+	}
 
 	nodePlaybook := &playbook.AnsiblePlaybookCmd{
 		Binary:                     "",
@@ -273,7 +296,8 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 		return merry.Prepend(err, "Error then serializing kubespray inventory")
 	}
 
-	if file, err = os.Create(path.Join(inventoryDir, inventoryName)); err != nil {
+	//nolint:nosnakecase // constant
+	if file, err = os.Create(path.Join(inventoryDir, INVENTORY_NAME)); err != nil {
 		return merry.Prepend(err, "Error then creating kubespray inventory file")
 	}
 
@@ -284,15 +308,17 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 	llog.Tracef(
 		"%v bytes successfully written to %v",
 		length,
-		path.Join(inventoryDir, inventoryName),
+		path.Join(inventoryDir, INVENTORY_NAME), //nolint:nosnakecase // constant
 	)
+
+	//nolint:nosnakecase // constant
 	// next variable is an ansible interaction objects
-	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, inventoryName))
+	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, INVENTORY_NAME))
 
 	ansiblePrivelegeOptions := &options.AnsiblePrivilegeEscalationOptions{
 		Become:        true,
 		BecomeMethod:  "",
-		BecomeUser:    "ubuntu",
+		BecomeUser:    "",
 		AskBecomePass: false,
 	}
 
@@ -333,11 +359,12 @@ func (k *Kubernetes) finalizeDeployment(workDir string) error {
 
 	workDir = path.Join(workDir, "third_party/extra")
 
-	if bytes, err = k.generateSimpleInventory(); err != nil {
+	if bytes, err = k.generateSimplifiedInventory(); err != nil {
 		return merry.Prepend(err, "Error then serializing generic inventory")
 	}
 
-	if file, err = os.Create(path.Join(workDir, inventoryName)); err != nil {
+	//nolint:nosnakecase // constant
+	if file, err = os.Create(path.Join(workDir, INVENTORY_NAME)); err != nil {
 		return merry.Prepend(err, "Error then creating ansible inventory")
 	}
 
@@ -345,10 +372,12 @@ func (k *Kubernetes) finalizeDeployment(workDir string) error {
 		return merry.Prepend(err, "Error then creating generic inventory")
 	}
 
-	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, inventoryName))
+	//nolint:nosnakecase // constant
+	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, INVENTORY_NAME))
 
+	//nolint:nosnakecase // constant
 	// next variables is wrappers around ansible
-	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, inventoryName))
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
 
 	privOpts := options.AnsiblePrivilegeEscalationOptions{
 		Become:        false,
@@ -420,7 +449,7 @@ func (k *Kubernetes) checkMasterDeploymentStatus() bool {
 	if stdout, err = cmd.Output(); err != nil {
 		llog.Warnln("kubectl command has non zero exit code")
 
-		if cmd.ProcessState.ExitCode() != exitCode127 {
+		if cmd.ProcessState.ExitCode() != EXIT_CODE_127 { //nolint:nosnakecase // constant
 			llog.Warnf("Error then retrieving k8s cluster status: %v", err)
 
 			return false

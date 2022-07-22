@@ -45,16 +45,15 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		},
 		PreRunE: nil,
 		Run: func(_ *cobra.Command, _ []string) {
-			var (
-				shell deployment.Shell
-				err   error
-			)
-
 			if settings.EnableProfile {
 				go func() {
 					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
 				}()
 			}
+			var (
+				shell deployment.Shell
+				err   error
+			)
 
 			if shell, err = deployment.Deploy(settings); err != nil {
 				llog.Fatalf("status of exit: %v", err)
