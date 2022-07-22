@@ -1,5 +1,6 @@
 ---
 - name: check if fedora coreos
+  become: true
   stat:
     path: /run/ostree-booted
     get_attributes: no
@@ -8,6 +9,7 @@
   register: ostree
 
 - name: set is_ostree
+  become: true
   set_fact:
     is_ostree: "{{ ostree.stat.exists }}"
 
@@ -166,6 +168,7 @@
   import_tasks: systemd.yml
 
 - name: ensure docker service is started and enabled
+  become: true
   service:
     name: "{{ item }}"
     enabled: yes

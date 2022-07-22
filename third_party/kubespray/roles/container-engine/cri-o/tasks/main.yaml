@@ -1,5 +1,6 @@
 ---
 - name: check if fedora coreos
+  become: true
   stat:
     path: /run/ostree-booted
     get_attributes: no
@@ -8,10 +9,12 @@
   register: ostree
 
 - name: set is_ostree
+  become: true
   set_fact:
     is_ostree: "{{ ostree.stat.exists }}"
 
 - name: get ostree version
+  become: true
   shell: "set -o pipefail && rpm-ostree --version | awk -F\\' '/Version/{print $2}'"
   args:
     executable: /bin/bash

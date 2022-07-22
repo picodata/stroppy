@@ -1,5 +1,6 @@
 ---
 - name: Kubernetes Apps | Wait for kube-apiserver
+  become: true
   uri:
     url: "{{ kube_apiserver_endpoint }}/healthz"
     validate_certs: no

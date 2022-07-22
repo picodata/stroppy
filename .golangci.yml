@@ -21,7 +21,7 @@ linters-settings:
   misspell:
     locale: US
   lll:
-    line-length: 180
+    line-length: 100
   goimports:
     local-prefixes: github.com/golangci/golangci-lint
   gocritic:
@@ -31,9 +31,17 @@ linters-settings:
       - experimental
     disabled-checks:
       - wrapperFunc
+  godox:
+    # Default: ["TODO", "BUG", "FIXME"]
+    keywords:
+      - BUG
+      - FIXME
+  funlen:
+    # Default: 60
+    lines: 80
 
 issues:
-  new-from-rev: develop
+  new-from-rev: origin/develop
 
 linters:
   enable-all: true

@@ -28,6 +28,7 @@ func createShell(config *config.Settings) (d *shell) {
 		stdinScanner:     bufio.NewScanner(os.Stdin),
 		workingDirectory: config.WorkingDirectory,
 	}
+
 	return
 }
 
@@ -56,11 +57,13 @@ func (sh *shell) gracefulShutdown() (err error) {
 			return merry.Prepend(err, "failed to destroy terraform")
 		}
 	}
+
 	return
 }
 
 func (sh *shell) Shutdown() (err error) {
 	err = sh.gracefulShutdown()
+
 	return
 }
 
@@ -71,10 +74,14 @@ func Deploy(settings *config.Settings) (shell Shell, err error) {
 	}
 
 	shell = sh
+
 	return
 }
 
-func (sh *shell) prepareTerraform() (err error) {
+//nolint // id_rsa check outside preparing terraform has no sence
+func (sh *shell) prepareTerraform() error {
+	var err error
+
 	deploymentSettings := sh.settings.DeploymentSettings
 
 	sh.tf = terraform.CreateTerraform(deploymentSettings, sh.workingDirectory, sh.workingDirectory)
@@ -84,10 +91,11 @@ func (sh *shell) prepareTerraform() (err error) {
 		return merry.Prepend(err, "failed to init provider")
 	}
 
-	if ok := sh.tf.Provider.IsPrivateKeyExist(sh.tf.WorkDirectory); !ok {
-		return merry.Errorf("failed to check private key exist")
+	if err = sh.tf.Provider.CheckSSHKeyFiles(sh.tf.WorkDirectory); err != nil {
+		return merry.Prepend(err, "Error then checking ssh keys files")
 	}
-	return
+
+	return nil
 }
 
 func (sh *shell) prepareEngine() (err error) {
@@ -120,7 +128,8 @@ func (sh *shell) prepareEngine() (err error) {
 	return
 }
 
-func (sh *shell) preparePayload() (err error) {
+func (sh *shell) preparePayload() error {
+	var err error
 	sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
 		sh.sc,
@@ -128,7 +137,7 @@ func (sh *shell) preparePayload() (err error) {
 		sh.workingDirectory,
 	)
 	if err != nil {
-		return
+		return merry.Prepend(err, "Error then creating YDB cluster")
 	}
 
 	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
@@ -138,43 +147,44 @@ func (sh *shell) preparePayload() (err error) {
 
 		// \todo: Временное решение, убрать, как будут готовы функции загрузки файлов с подов
 		llog.Error(merry.Prepend(err, "failed to init foundation payload"))
-		err = nil
 	}
-	return
+
+	return nil
 }
 
-func (sh *shell) deploy() (err error) {
+func (sh *shell) deploy() error {
+	var err error
+
 	llog.Traceln(sh.settings)
 
 	// Build terraform script
 	if err = sh.prepareTerraform(); err != nil {
-		return
+		return merry.Prepend(err, "Error then preparing terraform")
 	}
 
 	llog.Traceln(sh.tf)
 
 	// Apply terraform scirpt
 	if err = sh.tf.Run(); err != nil {
-		return merry.Prepend(err, "terraform run failed")
+		return merry.Prepend(err, "Terraform run failed")
 	}
 
 	// Create and check ssh client
 	if err = sh.prepareEngine(); err != nil {
-		return
+		return merry.Prepend(err, "Error then stroppy ssh engine")
 	}
 
 	// Fully functional k8s cluster deploy via ansible
+	// 1. Deploy monitoring via grafana stack
+	// 2. Deploy kubernetes cluster
+	// 3. Deploy stroppy pod
 	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
 
-	// Forvard host ports for grafana
-	if err = sh.k.OpenPortForwarding(); err != nil {
-		return
-	}
-
-	err = sh.tf.Provider.PerformAdditionalOps(sh.settings.DeploymentSettings.Nodes)
-	if err != nil {
+	if err = sh.tf.Provider.PerformAdditionalOps(
+		sh.settings.DeploymentSettings.Nodes,
+	); err != nil {
 		return merry.Prepend(err, "failed to add network storages to provider")
 	}
 
@@ -184,8 +194,9 @@ func (sh *shell) deploy() (err error) {
 	}
 
 	if err = sh.preparePayload(); err != nil {
-		return
+		return merry.Prepend(err, "Error then preparing stroppy payload")
 	}
+
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(
 			err,
@@ -205,5 +216,6 @@ func (sh *shell) deploy() (err error) {
 	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
 
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
-	return
+
+	return nil
 }

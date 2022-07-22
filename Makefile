@@ -4,6 +4,8 @@ VERSION=$(shell build/get_version.sh)
 
 LDFLAGS="-s -w -X main.version=$(VERSION) -X main.commit=$(BUILD_COMMIT) -X main.date=$(BUILD_DATE)"
 
+fdb_file=$(shell pwd)/fdb.cluster
+
 cache:
 	go mod tidy
 	go mod vendor
@@ -51,5 +53,12 @@ deploy_yandex:
 configure_fdb:
 	fdbcli -C /var/fdb/fdb.cluster --exec 'configure new single memory'
 
+configure_fdb_local:
+	fdbcli -C ${fdb_file} --exec 'configure new single memory'
+
 test: configure_fdb lint
-	go test ./...
+	TEST_FDB_URL=/var/fdb/fdb.cluster go test ./...
+
+test_local: configure_fdb_local lint
+	TEST_FDB_URL=${fdb_file} go test ./...
+

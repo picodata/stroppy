@@ -1,7 +1,6 @@
 version: '3'
 services:
   pg:
-    # connection string: postgresql://htc:htc@localhost:5432/htc
     image: postgres:13.2-alpine
     ports:
       - 5432:5432
@@ -11,13 +10,14 @@ services:
       - POSTGRES_DB=stroppy
       - PGDATA=/var/lib/postgresql/data/pgdata
     volumes:
-      # CHANGE next line
       - ./_data/postgres.db:/var/lib/postgresql/data/pgdata
-      
+
   fdb:
-    image: foundationdb/foundationdb:6.2.30
+    image: foundationdb/foundationdb:6.3.23
     environment:
-      - FDB_COORDINATOR:fdb
+      - FDB_COORDINATOR=fdb
+      - FDB_COORDINATOR_PORT=4500
+      - FDB_NETWORKING_MODE=container
     ports:
       - 4500:4500
 
@@ -25,24 +25,16 @@ services:
     image: cockroachdb/cockroach:latest
     volumes:
       - ./data/cockroach/cockroach-data
-    command: start --insecure
-    ports:
-        - "26257:26257"
-
-  # initialization job for foundationdb
-  init:
-    image: foundationdb/foundationdb:6.2.30
     command:
-      [ "/bin/bash", "-c", 
-        "source /var/fdb/scripts/create_cluster_file.bash; 
-         FDB_COORDINATOR=fdb create_cluster_file; 
-         if [[ $$(fdbcli --exec 'configure new single ssd') == *'Database already exists'* ]];
-         then true;
-         else false;
-         fi" ]
-    environment:
-      - FDB_COORDINATOR:fdb
-    depends_on:
-      - fdb
-    restart: on-failure
+      - "start-single-node"
+      - "--insecure"
+    ports:
+      - "26257:26257"
 
+  mongo:
+    image: docker.binary.picodata.io/stroppy-mongodb:4.4.7
+    command:
+      - "--replSet"
+      - "rs"
+    ports:
+      - "27017:27017"

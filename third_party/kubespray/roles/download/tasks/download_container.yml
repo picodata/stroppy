@@ -116,6 +116,7 @@
         - download_force_cache
 
     - name: download_container | Remove container image from cache
+      become: true
       file:
         state: absent
         path: "{{ image_path_final }}"

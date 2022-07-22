@@ -1,6 +1,7 @@
 ---
 
 - name: Update server field in component kubeconfigs
+  become: true
   lineinfile:
     dest: "{{ kube_config_dir }}/{{ item }}"
     regexp: '^    server: https'
@@ -17,6 +18,7 @@
     - "Master | reload kubelet"
 
 - name: Update etcd-servers for apiserver
+  become: true
   lineinfile:
     dest: "{{ kube_config_dir }}/manifests/kube-apiserver.yaml"
     regexp: '^    - --etcd-servers='

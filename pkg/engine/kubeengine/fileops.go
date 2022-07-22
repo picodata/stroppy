@@ -31,8 +31,13 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 
 	// не уверен, что для кластера нам нужна проверка публичных ключей на совпадение, поэтому ssh.InsecureIgnoreHostKey
 	var clientSSHConfig ssh.ClientConfig
-	clientSSHConfig, err = auth.PrivateKey("ubuntu", e.sshKeyFilePath, ssh.InsecureIgnoreHostKey())
-	if err != nil {
+
+	//#nosec
+	if clientSSHConfig, err = auth.PrivateKey(
+		"stroppy",
+		e.sshKeyFilePath,
+		ssh.InsecureIgnoreHostKey(),
+	); err != nil {
 		return
 	}
 
@@ -40,7 +45,10 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 
 	client := scp.NewClient(masterFullAddress, &clientSSHConfig)
 	if err = client.Connect(); err != nil {
-		return merry.Prepend(err, "Couldn't establish a connection to the server for copy rsa to master")
+		return merry.Prepend(
+			err,
+			"Couldn't establish a connection to the server for copy rsa to master",
+		)
 	}
 
 	var sourceFile *os.File
@@ -48,7 +56,7 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 		return merry.Prependf(err, "failed to open local file '%s'", sourceFilePath)
 	}
 	defer func() {
-		if err := sourceFile.Close(); err != nil {
+		if err = sourceFile.Close(); err != nil {
 			llog.Warnf("failed to close local '%s' descriptor: %v",
 				sourceFilePath, err)
 		}
@@ -62,7 +70,7 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	return
 }
 
-/// Run few shell commands on remote host, and copy files via scp 
+/// Run few shell commands on remote host, and copy files via scp.
 func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
 	if err = e.ExecuteF(`mkdir -p "%s"`, destinationPath); err != nil {
 		err = fmt.Errorf("path creation failed: %v", err)
@@ -70,7 +78,7 @@ func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err
 	}
 
 	destinationPath = fmt.Sprintf(
-		"ubuntu@%s:%s",
+		"stroppy@%s:%s",
 		e.AddressMap["external"]["master"],
 		destinationPath,
 	)
@@ -84,8 +92,13 @@ func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err
 		destinationPath,
 	)
 
-	llog.Infof("now loading '%s' directory to kubernetes master destination '%s' (keyfile '%s', wd: '%s')",
-		directorySourcePath, destinationPath, e.sshKeyFilePath, copyDirectoryCmd.Dir)
+	llog.Infof(
+		"now loading '%s' directory to kubernetes master destination '%s' (keyfile '%s', wd: '%s')",
+		directorySourcePath,
+		destinationPath,
+		e.sshKeyFilePath,
+		copyDirectoryCmd.Dir,
+	)
 
 	var output []byte
 	if output, err = copyDirectoryCmd.CombinedOutput(); err != nil {
@@ -100,11 +113,16 @@ func (e Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err er
 	return
 }
 
-func (e *Engine) LoadFileToPod(podName, containerName, sourcePath, destinationPath string) (err error) {
-	var restConfig *rest.Config
+func (e *Engine) LoadFileToPod(
+	podName, containerName, sourcePath, destinationPath string,
+) error {
+	var (
+		restConfig *rest.Config
+		err        error
+	)
+
 	if restConfig, err = e.GetKubeConfig(); err != nil {
-		err = merry.Prepend(err, "failed to get kubeconfig for clientSet")
-		return
+		return merry.Prepend(err, "failed to get kubeconfig for clientSet")
 	}
 
 	restConfig.Host = "localhost:6444"
@@ -156,7 +174,7 @@ func (e *Engine) LoadFileToPod(podName, containerName, sourcePath, destinationPa
 		return merry.Prependf(err, "command exec failed, stderr: `%s`", stderr.String())
 	}
 
-	return
+	return nil
 }
 
 func (e *Engine) CopyFileFromPodToPod(sourcePath string, destinationPath string) (err error) {

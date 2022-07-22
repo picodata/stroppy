@@ -1,5 +1,6 @@
 ---
 - name: runc | set is_ostree
+  become: true
   set_fact:
     is_ostree: "{{ ostree.stat.exists }}"
 
@@ -16,6 +17,7 @@
     download: "{{ download_defaults | combine(downloads.runc) }}"
 
 - name: Copy runc binary from download dir
+  become: true
   copy:
     src: "{{ downloads.runc.dest }}"
     dest: "{{ runc_bin_dir }}/runc"

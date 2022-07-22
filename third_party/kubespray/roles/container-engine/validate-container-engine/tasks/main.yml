@@ -1,5 +1,6 @@
 ---
 - name: validate-container-engine | check if fedora coreos
+  become: true
   stat:
     path: /run/ostree-booted
     get_attributes: no
@@ -10,6 +11,7 @@
     - facts
 
 - name: validate-container-engine | set is_ostree
+  become: true
   set_fact:
     is_ostree: "{{ ostree.stat.exists }}"
   tags:
@@ -28,6 +30,7 @@
     - facts
 
 - name: Check if containerd is installed
+  become: true
   find:
     file_type: file
     recurse: yes
@@ -82,6 +85,7 @@
             - pre-remove
       when: kubelet_systemd_unit_exists.stat.exists
     - name: Stop kubelet
+      become: true
       service:
         name: kubelet
         state: stopped
@@ -109,6 +113,7 @@
             - pre-remove
       when: kubelet_systemd_unit_exists.stat.exists
     - name: Stop kubelet
+      become: true
       service:
         name: kubelet
         state: stopped
@@ -135,6 +140,7 @@
             - pre-remove
       when: kubelet_systemd_unit_exists.stat.exists
     - name: Stop kubelet
+      become: true
       service:
         name: kubelet
         state: stopped

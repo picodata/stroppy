@@ -1,4 +1,3 @@
-fdb.cluster
 .vagrant
 *.log
 
@@ -51,7 +50,11 @@ terraform.*
 /**/.terraform
 /tmp
 /.ssh/
-/.roles/
-/.collections/
-ansible.cfg
-requirements.yml
+**/.roles/
+**/.collections/
+**/ansible.cfg
+**/requirements.yml
+requrements.yml
+**/inventory.yml
+**/hosts.yaml
+/third_party/extra/manifests/databases/**/stroppy-*

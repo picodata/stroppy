@@ -6,10 +6,12 @@
     - Kubelet | restart kubelet
 
 - name: Kubelet | reload systemd
+  become: true
   systemd:
     daemon_reload: true
 
 - name: Kubelet | restart kubelet
+  become: true
   service:
     name: kubelet
     state: restarted

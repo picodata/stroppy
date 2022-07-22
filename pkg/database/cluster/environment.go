@@ -11,8 +11,8 @@ const (
 	defaultMongoDBUrl         = "mongodb://127.0.0.1:27017/stroppy"
 	expectedCount             = 10000
 	defaultBanRangeMultiplier = 1.1
-	defaultCockroachDBUrl     = "postgresql://root@Raider:26257/defaultdb?sslmode=disable"
-	defaultPostgresDBUrl      = "postgresql://postgresuser:postgrespass@localhost/stroppy?sslmode=disable"
+	defaultCockroachDBUrl     = "postgresql://root@localhost:26257/defaultdb?sslmode=disable"
+	defaultPostgresDBUrl      = "postgresql://stroppy:stroppy@localhost/stroppy?sslmode=disable"
 	defaultFoundationDBUrl    = "/etc/foundationdb/fdb.cluster"
 )
 

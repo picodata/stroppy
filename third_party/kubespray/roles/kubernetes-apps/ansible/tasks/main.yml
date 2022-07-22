@@ -1,5 +1,6 @@
 ---
 - name: Kubernetes Apps | Wait for kube-apiserver
+  become: true
   uri:
     url: "{{ kube_apiserver_endpoint }}/healthz"
     validate_certs: no
@@ -12,6 +13,7 @@
   when: inventory_hostname == groups['kube_control_plane'][0]
 
 - name: Kubernetes Apps | Cleanup DNS
+  become: true
   import_tasks: cleanup_dns.yml
   when:
     - inventory_hostname == groups['kube_control_plane'][0]

@@ -44,19 +44,25 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		PreRun: func(cmd *cobra.Command, args []string) {
 		},
 		PreRunE: nil,
-		Run: func(cmd *cobra.Command, args []string) {
+		Run: func(_ *cobra.Command, _ []string) {
 			if settings.EnableProfile {
 				go func() {
 					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
 				}()
 			}
-			sh, err := deployment.Deploy(settings)
-			if err != nil {
+			var (
+				shell deployment.Shell
+				err   error
+			)
+
+			if shell, err = deployment.Deploy(settings); err != nil {
 				llog.Fatalf("status of exit: %v", err)
 			}
-			if err = sh.ReadEvalPrintLoop(); err != nil {
+
+			if err = shell.ReadEvalPrintLoop(); err != nil {
 				llog.Fatalf("repl failed with error %v", err)
 			}
+
 			llog.Infoln("status of exit: success")
 		},
 		RunE:               nil,
@@ -78,25 +84,34 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		SuggestionsMinimumDistance: 0,
 	}
 
-	deployCmd.PersistentFlags().StringVar(&deploySettings.Provider,
+	deployCmd.PersistentFlags().StringVar(
+		&deploySettings.Provider,
 		"cloud",
 		deploySettings.Provider,
-		"name of cloud provider")
+		"name of cloud provider",
+	)
 
-	deployCmd.PersistentFlags().StringVar(&deploySettings.Flavor,
+	deployCmd.PersistentFlags().StringVar(
+		&deploySettings.Flavor,
 		"flavor",
 		deploySettings.Flavor,
-		"name of cluster configuration from templates.yml")
+		"name of cluster configuration from templates.yml",
+	)
 
-	deployCmd.PersistentFlags().IntVar(&deploySettings.Nodes,
+	deployCmd.PersistentFlags().IntVar(
+		&deploySettings.Nodes,
 		"nodes",
 		deploySettings.Nodes,
-		"count nodes of cluster")
+		"count nodes of cluster",
+	)
 
-	deployCmd.PersistentFlags().BoolVarP(&settings.DatabaseSettings.Sharded,
+	deployCmd.PersistentFlags().BoolVarP(
+		&settings.DatabaseSettings.Sharded,
 		"sharded", "",
 		false,
-		"Use to populate accounts in sharded MongoDB cluster. Default false - populate accounts in MongoDB replicasets cluster")
+		"Use to populate accounts in sharded MongoDB cluster. "+
+			"Default false - populate accounts in MongoDB replicasets cluster",
+	)
 
 	return deployCmd
 }

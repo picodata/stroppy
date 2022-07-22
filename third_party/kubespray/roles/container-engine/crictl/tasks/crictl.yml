@@ -5,6 +5,7 @@
     download: "{{ download_defaults | combine(downloads.crictl) }}"
 
 - name: Install crictl config
+  become: true
   template:
     src: crictl.yaml.j2
     dest: /etc/crictl.yaml
@@ -12,6 +13,7 @@
     mode: 0644
 
 - name: Copy crictl binary from download dir
+  become: true
   copy:
     src: "{{ local_release_dir }}/crictl"
     dest: "{{ bin_dir }}/crictl"

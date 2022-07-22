@@ -35,10 +35,14 @@ func (cluster *FDBCluster) TruncateTable() error {
 }
 
 func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Account, err error) {
-	var value accountValue
+	var (
+		value    accountValue
+		valueSrc []byte
+	)
+
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.accounts.Pack(tuple.Tuple{Bic, Ban})
-		valueSrc, err := tx.Get(key).Get()
+		valueSrc, err = tx.Get(key).Get()
 		if err != nil {
 			return nil, merry.Wrap(err)
 		}
@@ -63,27 +67,39 @@ func (cluster *FDBCluster) GetAccount(Bic string, Ban string) (account model.Acc
 	return account, nil
 }
 
-func (cluster *FDBCluster) GetTransfer(expectedTransfer model.Transfer) (transfer model.Transfer, err error) {
-	var value transferValue
+//nolint:gocritic // fix in future
+func (cluster *FDBCluster) GetTransfer(
+	expectedTransfer model.Transfer,
+) (model.Transfer, error) {
+	var (
+		value    transferValue
+		transfer model.Transfer
+		valueSrc []byte
+		err      error
+	)
+
 	_, err = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
 		key := cluster.model.transfers.Pack(
-			tuple.Tuple{tuple.UUID(expectedTransfer.Id),
+			tuple.Tuple{
+				tuple.UUID(expectedTransfer.Id),
 				expectedTransfer.Acs[0].Bic,
 				expectedTransfer.Acs[0].Ban,
 				expectedTransfer.Acs[1].Bic,
 				expectedTransfer.Acs[1].Ban,
 			})
-		valueSrc, err := tx.Get(key).Get()
-		if err != nil {
+
+		if valueSrc, err = tx.Get(key).Get(); err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		if len(valueSrc) == 0 {
 			return nil, ErrNoRows
 		}
-		err = json.Unmarshal(valueSrc, &value)
-		if err != nil {
+
+		if err = json.Unmarshal(valueSrc, &value); err != nil {
 			return nil, merry.Wrap(err)
 		}
+
 		return nil, nil
 	})
 
@@ -98,6 +114,7 @@ func (cluster *FDBCluster) GetTransfer(expectedTransfer model.Transfer) (transfe
 		Amount:    value.Amount,
 		State:     "",
 	}
+
 	return transfer, nil
 }
 
@@ -113,7 +130,8 @@ func (cluster *FDBCluster) isEmpty(tableName string) bool {
 	}
 	var r []fdb.KeyValue
 	_, _ = cluster.pool.ReadTransact(func(tx fdb.ReadTransaction) (interface{}, error) {
-		r = tx.GetRange(sw, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).GetSliceOrPanic()
+		r = tx.GetRange(sw, fdb.RangeOptions{Limit: 0, Mode: fdb.StreamingModeWantAll, Reverse: false}).
+			GetSliceOrPanic()
 		return nil, nil
 	})
 	return len(r) == 0
@@ -171,7 +189,7 @@ func FDBInsertAccount(t *testing.T) {
 
 	accounts := GenerateAccounts()
 	for _, expectedAccount := range accounts {
-		if err := fdbCluster.InsertAccount(expectedAccount); err != nil {
+		if err = fdbCluster.InsertAccount(expectedAccount); err != nil {
 			t.Errorf("TestFDBInsertAccount() received internal error %v, but expected nil", err)
 		}
 
@@ -181,7 +199,10 @@ func FDBInsertAccount(t *testing.T) {
 
 		if expectedAccount.Ban != receivedAccount.Ban ||
 			expectedAccount.Bic != receivedAccount.Bic ||
-			expectedAccount.Balance.UnscaledBig().Int64() != receivedAccount.Balance.UnscaledBig().Int64() {
+			expectedAccount.Balance.UnscaledBig().
+				Int64() !=
+				receivedAccount.Balance.UnscaledBig().
+					Int64() {
 			t.Fail()
 		}
 	}
@@ -197,17 +218,26 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	accounts := GenerateAccounts()
 
 	for _, expectedAccount := range accounts {
-		if err := fdbCluster.InsertAccount(expectedAccount); err != nil {
-			t.Errorf("TestFDBMakeAtomicTransfer() received internal error %v, but expected nil", err)
+		if err = fdbCluster.InsertAccount(expectedAccount); err != nil {
+			t.Errorf(
+				"TestFDBMakeAtomicTransfer() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if receivedAccount, err = fdbCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
-			t.Errorf("TestFDBMakeAtomicTransfer() received internal error %v, but expected nil", err)
+			t.Errorf(
+				"TestFDBMakeAtomicTransfer() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if expectedAccount.Ban != receivedAccount.Ban ||
 			expectedAccount.Bic != receivedAccount.Bic ||
-			expectedAccount.Balance.UnscaledBig().Int64() != receivedAccount.Balance.UnscaledBig().Int64() {
+			expectedAccount.Balance.UnscaledBig().
+				Int64() !=
+				receivedAccount.Balance.UnscaledBig().
+					Int64() {
 			t.Fail()
 		}
 	}
@@ -228,23 +258,45 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 		State:     "",
 	}
 
-	if err := fdbCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
+	if err = fdbCluster.MakeAtomicTransfer(
+		&expectedTransfer,
+		uuid.UUID(rand.NewClientID()),
+	); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
-	receivedTransfer, err = fdbCluster.GetTransfer(expectedTransfer)
+
+	if receivedTransfer, err = fdbCluster.GetTransfer(expectedTransfer); err != nil {
+		t.Errorf("GetTransfer() received error %v, but expected nil", err)
+	}
 
 	if receivedTransfer.Acs[0].Bic != expectedTransfer.Acs[0].Bic {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Bic, receivedTransfer.Acs[0].Bic)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[0].Bic,
+			receivedTransfer.Acs[0].Bic,
+		)
 	}
 	if receivedTransfer.Acs[0].Ban != expectedTransfer.Acs[0].Ban {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Ban, receivedTransfer.Acs[0].Ban)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[0].Ban,
+			receivedTransfer.Acs[0].Ban,
+		)
 	}
 
 	if receivedTransfer.Acs[1].Bic != expectedTransfer.Acs[1].Bic {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Bic, receivedTransfer.Acs[1].Bic)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[1].Bic,
+			receivedTransfer.Acs[1].Bic,
+		)
 	}
 	if receivedTransfer.Acs[1].Ban != expectedTransfer.Acs[1].Ban {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Ban, receivedTransfer.Acs[1].Ban)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[1].Ban,
+			receivedTransfer.Acs[1].Ban,
+		)
 	}
 
 	if receivedAccount, err = fdbCluster.GetAccount(expectedTransfer.Acs[0].Bic, expectedTransfer.Acs[0].Ban); err != nil {
@@ -252,17 +304,29 @@ func FDBMakeAtomicTransfer(t *testing.T) {
 	}
 
 	var res inf.Dec
-	expectedSourceBalance0 := res.Sub(expectedTransfer.Acs[0].Balance, expectedTransfer.Amount).UnscaledBig().Int64()
+	expectedSourceBalance0 := res.Sub(expectedTransfer.Acs[0].Balance, expectedTransfer.Amount).
+		UnscaledBig().
+		Int64()
 	if receivedAccount.Balance.UnscaledBig().Int64() != expectedSourceBalance0 {
-		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %d  but received %d", expectedSourceBalance0, receivedAccount.Balance.UnscaledBig().Int64())
+		t.Errorf(
+			"TestMakeAtomicTransfer() mismatched source balance; excepted %d  but received %d",
+			expectedSourceBalance0,
+			receivedAccount.Balance.UnscaledBig().Int64(),
+		)
 	}
 
 	if receivedAccount, err = fdbCluster.GetAccount(expectedTransfer.Acs[1].Bic, expectedTransfer.Acs[1].Ban); err != nil {
 		t.Errorf("TestInsertAccount() received internal error %v, but expected nil", err)
 	}
 
-	expectedSourceBalance1 := res.Add(expectedTransfer.Acs[1].Balance, expectedTransfer.Amount).UnscaledBig().Int64()
+	expectedSourceBalance1 := res.Add(expectedTransfer.Acs[1].Balance, expectedTransfer.Amount).
+		UnscaledBig().
+		Int64()
 	if receivedAccount.Balance.UnscaledBig().Int64() != expectedSourceBalance1 {
-		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %d  but received %d", expectedSourceBalance1, receivedAccount.Balance.UnscaledBig().Int64())
+		t.Errorf(
+			"TestMakeAtomicTransfer() mismatched source balance; excepted %d  but received %d",
+			expectedSourceBalance1,
+			receivedAccount.Balance.UnscaledBig().Int64(),
+		)
 	}
 }
