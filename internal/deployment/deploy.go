@@ -6,6 +6,7 @@ package deployment
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
@@ -130,14 +131,19 @@ func (sh *shell) prepareEngine() (err error) {
 
 func (sh *shell) preparePayload() error {
 	var err error
-	sh.cluster, err = db.CreateCluster(
+
+    llog.Infoln("Error then prepare database payload")
+
+	if sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
 		sh.sc,
 		sh.k,
 		sh.workingDirectory,
-	)
-	if err != nil {
-		return merry.Prepend(err, "Error then creating YDB cluster")
+	); err != nil {
+		return merry.Prepend(
+			err,
+			fmt.Sprintf("Error then creating '%s' cluster", sh.settings.DatabaseSettings.DBType),
+		)
 	}
 
 	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
@@ -178,6 +184,7 @@ func (sh *shell) deploy() error {
 	// 1. Deploy monitoring via grafana stack
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
+	// TODO: rename to deploy infrastructure
 	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
 		return merry.Prepend(err, "failed to start kubernetes")
 	}
@@ -197,6 +204,7 @@ func (sh *shell) deploy() error {
 		return merry.Prepend(err, "Error then preparing stroppy payload")
 	}
 
+	// Deploy database cluster
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(
 			err,
