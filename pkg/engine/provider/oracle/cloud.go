@@ -97,8 +97,9 @@ func (op *Provider) getIQNStorage(workersCount int) (iqnMap map[string]string, e
 	return
 }
 
+//nolint // autored by previous developers and should be refactored in future
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
-func (op *Provider) PerformAdditionalOps(nodes int) error {
+func (op *Provider) AddNetworkDisks(nodes int) error {
 	iqnMap, err := op.getIQNStorage(nodes)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")
@@ -135,7 +136,12 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 
 			err = tools.Retry("send targets",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, newLoginCmd, providerName)
+					_, err = engineSsh.ExecuteCommandWorker(
+						op.workingDirectory,
+						address,
+						newLoginCmd,
+						providerName,
+					)
 					return
 				},
 				tools.RetryStandardRetryCount,
@@ -146,18 +152,32 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 
 			err = tools.Retry("add automatic startup for node",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, updateTargetCmd, providerName)
+					_, err = engineSsh.ExecuteCommandWorker(
+						op.workingDirectory,
+						address,
+						updateTargetCmd,
+						providerName,
+					)
 					return
 				},
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "adding automatic startup for node is failed to worker %v", k)
+				return merry.Prependf(
+					err,
+					"adding automatic startup for node is failed to worker %v",
+					k,
+				)
 			}
 
 			err = tools.Retry("target login",
 				func() (err error) {
-					_, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, loginTargetCmd, providerName)
+					_, err = engineSsh.ExecuteCommandWorker(
+						op.workingDirectory,
+						address,
+						loginTargetCmd,
+						providerName,
+					)
 					return
 				},
 				tools.RetryStandardRetryCount,
@@ -171,50 +191,97 @@ func (op *Provider) PerformAdditionalOps(nodes int) error {
 		}
 
 		llog.Infoln("checking the partition of additional storage...")
-		ok, err = engineSsh.IsExistEntity(address, checkPartedCmd, "primary", op.workingDirectory, providerName)
+		ok, err = engineSsh.IsExistEntity(
+			address,
+			checkPartedCmd,
+			"primary",
+			op.workingDirectory,
+			providerName,
+		)
 		if err != nil {
 			return merry.Prepend(err, "failed to check the partition of additional storage")
 		}
 
 		if !ok {
 
-			if _, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, partedVolumeScript, providerName); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for additional storage partitioning %v", k)
+			if _, err = engineSsh.ExecuteCommandWorker(
+				op.workingDirectory,
+				address,
+				partedVolumeScript,
+				providerName,
+			); err != nil {
+				errorMessage := fmt.Sprintf(
+					"failed to execute commands for additional storage partitioning %v",
+					k,
+				)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Partition of  additional storage: success")
 		}
 
 		llog.Infoln("checking of additional storage file system exist...")
-		ok, err = engineSsh.IsExistEntity(address, checkExistFileSystemCmd, "ext4", op.workingDirectory, providerName)
+		ok, err = engineSsh.IsExistEntity(
+			address,
+			checkExistFileSystemCmd,
+			"ext4",
+			op.workingDirectory,
+			providerName,
+		)
 		if err != nil {
 			return merry.Prepend(err, "failed to check additional storage file system exist.")
 		}
 
 		if !ok {
-			if _, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, createFileSystemCmd, providerName); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for create additional storage file system %v", k)
+			if _, err = engineSsh.ExecuteCommandWorker(
+				op.workingDirectory,
+				address,
+				createFileSystemCmd,
+				providerName,
+			); err != nil {
+				errorMessage := fmt.Sprintf(
+					"failed to execute commands for create additional storage file system %v",
+					k,
+				)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Create additional storage filesystem: success")
 		}
 
 		llog.Infoln("checking of disk /dev/sdb1 mount ...")
-		ok, err = engineSsh.IsExistEntity(address, checkMountCmd, "/opt/local-path-provisioner", op.workingDirectory, providerName)
+		ok, err = engineSsh.IsExistEntity(
+			address,
+			checkMountCmd,
+			"/opt/local-path-provisioner",
+			op.workingDirectory,
+			providerName,
+		)
 		if err != nil {
 			return merry.Prepend(err, "failed to check checking of disk /dev/sdb1 mount")
 		}
 
 		if !ok {
 
-			if _, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, addDirectoryCmdTemplate, providerName); err != nil {
+			if _, err = engineSsh.ExecuteCommandWorker(
+				op.workingDirectory,
+				address,
+				addDirectoryCmdTemplate,
+				providerName,
+			); err != nil {
 				errorMessage := fmt.Sprintf("failed to execute commands for add directory to %v", k)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Added directory /opt/local-path-provisioner/: success")
 
-			if _, err = engineSsh.ExecuteCommandWorker(op.workingDirectory, address, mountLocalPathTemplate, providerName); err != nil {
-				errorMessage := fmt.Sprintf("failed to mount disk to /opt/local-path-provisioner/ %v", k)
+			if _, err = engineSsh.ExecuteCommandWorker(
+				op.workingDirectory,
+				address,
+				mountLocalPathTemplate,
+				providerName,
+			); err != nil {
+				errorMessage := fmt.Sprintf(
+					"failed to mount disk to /opt/local-path-provisioner/ %v",
+					k,
+				)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infof("Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success", k)
@@ -276,13 +343,19 @@ func (op *Provider) reparseAddressMap(nodes int) (err error) {
 	return
 }
 
-func (op *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[string]string, err error) {
+func (op *Provider) GetAddressMap(
+	nodes int,
+) (map[string]map[string]string, error) {
 	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
 	 * своя пара - внешний (NAT) и внутренний ip.
 	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
 	 * т.к. использование encoding/json
 	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
 	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
+	var (
+		mapIPAddresses map[string]map[string]string
+		err            error
+	)
 
 	defer func() {
 		mapIPAddresses = provider.DeepCopyAddressMap(op.addressMap)
@@ -293,11 +366,14 @@ func (op *Provider) GetAddressMap(nodes int) (mapIPAddresses map[string]map[stri
 	defer op.addressMapLock.Unlock()
 
 	if op.addressMap != nil {
-		return
+		return nil, merry.Prepend(err, "Address map not nil")
 	}
 
-	err = op.reparseAddressMap(nodes)
-	return
+	if err = op.reparseAddressMap(nodes); err != nil {
+		return nil, merry.Prepend(err, "Error then reserved parsing address map")
+	}
+
+	return mapIPAddresses, nil
 }
 
 func (op *Provider) IsPrivateKeyExist(workingDirectory string) bool {
@@ -345,5 +421,5 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 
 //nolint
 func (op *Provider) CheckSSHKeyFiles(workDir string) error {
-    return nil
+	return nil
 }
