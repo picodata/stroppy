@@ -71,7 +71,7 @@ type SshK8SOpts struct {
 /// 9. Apply grafana manifests
 /// 10. Deploy DB operator
 /// 11. Deploy container with stroppy
-func (k *Kubernetes) DeployAll(wd string) (err error) {
+func (k *Kubernetes) DeployK8S(wd string) (err error) {
 	// 2. Create and template ssh config
 	var file *os.File
 	file, err = os.Create(path.Join(wd, ".ssh/config"))

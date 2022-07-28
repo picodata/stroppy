@@ -18,7 +18,7 @@ var ErrChooseConfig = errors.New("failed to choose configuration. Unexpected con
 
 type Provider interface {
 	Prepare() error
-	PerformAdditionalOps(int) error
+	AddNetworkDisks(int) error
 	GetAddressMap(int) (map[string]map[string]string, error)
 	CheckSSHKeyFiles(string) error
 	RemoveProviderSpecificFiles()

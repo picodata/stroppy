@@ -129,10 +129,10 @@ func (sh *shell) prepareEngine() (err error) {
 	return
 }
 
-func (sh *shell) preparePayload() error {
+func (sh *shell) prepareDBForTests() error {
 	var err error
 
-    llog.Infoln("Error then prepare database payload")
+	llog.Infoln("Error then prepare database payload")
 
 	if sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
@@ -185,22 +185,22 @@ func (sh *shell) deploy() error {
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
 	// TODO: rename to deploy infrastructure
-	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
-		return merry.Prepend(err, "failed to start kubernetes")
+	if err = sh.k.DeployK8S(sh.workingDirectory); err != nil {
+		return merry.Prepend(err, "Failed to deploy kubernetes and infrastructure")
 	}
 
-	if err = sh.tf.Provider.PerformAdditionalOps(
+	if err = sh.tf.Provider.AddNetworkDisks(
 		sh.settings.DeploymentSettings.Nodes,
 	); err != nil {
-		return merry.Prepend(err, "failed to add network storages to provider")
+		return merry.Prepend(err, "Failed to add network storages to provider")
 	}
 
 	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
 	if err = sh.chaosMesh.Deploy(); err != nil {
-		return merry.Prepend(err, "failed to deploy and start chaos")
+		return merry.Prepend(err, "Failed to deploy and start chaos")
 	}
 
-	if err = sh.preparePayload(); err != nil {
+	if err = sh.prepareDBForTests(); err != nil {
 		return merry.Prepend(err, "Error then preparing stroppy payload")
 	}
 

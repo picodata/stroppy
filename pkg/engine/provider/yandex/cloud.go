@@ -77,7 +77,7 @@ func (yp *Provider) Prepare() (err error) {
 }
 
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
-func (yp *Provider) PerformAdditionalOps(nodes int) error {
+func (yp *Provider) AddNetworkDisks(nodes int) error {
 	iqnMap, err := yp.getIQNStorage(nodes, yp.workingDirectory)
 	if err != nil {
 		return merry.Prepend(err, "failed to get IQNs map")
