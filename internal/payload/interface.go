@@ -30,37 +30,46 @@ type Payload interface {
 func CreatePayload(
 	cluster db.Cluster,
 	settings *config.Settings,
-	chaos chaos.Controller,
+	chaosController chaos.Controller,
 ) (Payload, error) {
-	bp := &BasePayload{
+	basePayload := &BasePayload{
 		cluster:        cluster,
+		Cluster:        nil,
 		config:         settings.DatabaseSettings,
-		chaos:          chaos,
+		configLock:     sync.Mutex{},
+		chaos:          chaosController,
 		chaosParameter: settings.ChaosParameter,
+		oracle:         &database.Oracle{},
+		payFunc:        nil,
 	}
 
-	if bp.config.Oracle {
-		if predictableCluster, ok := bp.Cluster.(database.PredictableCluster); !ok {
-			return nil, merry.Errorf("oracle is not supported for %s cluster", bp.config.DBType)
+	llog.Warnf("sh.settings %v", settings)
+
+	if basePayload.config.Oracle {
+		if predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster); !ok {
+			return nil, merry.Errorf(
+				"Oracle is not supported for %s cluster",
+				basePayload.config.DBType,
+			)
 		} else {
-			bp.oracle = new(database.Oracle)
-			bp.oracle.Init(predictableCluster)
+			basePayload.oracle = new(database.Oracle)
+			basePayload.oracle.Init(predictableCluster)
 		}
 	}
 
-	if bp.config.UseCustomTx {
-		bp.payFunc = payCustomTx
+	if basePayload.config.UseCustomTx {
+		basePayload.payFunc = payCustomTx
 	} else {
-		bp.payFunc = payBuiltinTx
+		basePayload.payFunc = payBuiltinTx
 	}
 
 	llog.Infof(
 		"payload object constructed for database '%s', url '%s'",
-		bp.config.DBType,
-		bp.config.DBURL,
+		basePayload.config.DBType,
+		basePayload.config.DBURL,
 	)
 
-	return bp, nil
+	return basePayload, nil
 }
 
 type BasePayload struct {

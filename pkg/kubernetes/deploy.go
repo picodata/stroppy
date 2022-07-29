@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -58,6 +59,7 @@ type SshK8SOpts struct {
 	BastionPubIP  string
 }
 
+//nolint
 /// Deploy kubernetes and other infrastructure
 /// #steps:
 /// 1. Create directory for ssh config if it is not exists
@@ -71,9 +73,12 @@ type SshK8SOpts struct {
 /// 9. Apply grafana manifests
 /// 10. Deploy DB operator
 /// 11. Deploy container with stroppy
-func (k *Kubernetes) DeployK8S(wd string) (err error) {
-	// 2. Create and template ssh config
-	var file *os.File
+func (k *Kubernetes) DeployK8S(wd string) error {
+	var (
+		file *os.File
+		err  error
+	)
+
 	file, err = os.Create(path.Join(wd, ".ssh/config"))
 	if err != nil {
 		llog.Infoln("Error then creating ssh config file")
@@ -124,7 +129,7 @@ func (k *Kubernetes) DeployK8S(wd string) (err error) {
 
 	// 9. generate inventory and run kubespray ansible playbook
 	if err = k.finalizeDeployment(wd); err != nil {
-		return merry.Prepend(err, "failed to finalie k8s deploy")
+		return merry.Prepend(err, "failed to finalize k8s deploy")
 	}
 
 	// 10. set path variable to kubeconfig file
@@ -139,12 +144,12 @@ func (k *Kubernetes) DeployK8S(wd string) (err error) {
 	// 12. Create stroppy deployment with one pod on master node
 	k.StroppyPod = stroppy.CreateStroppyPod(k.Engine)
 	if err = k.StroppyPod.Deploy(); err != nil {
-		err = merry.Prepend(err, "failed to deploy stroppy pod")
-		return
+		return merry.Prepend(err, "failed to deploy stroppy pod")
 	}
 
 	llog.Infoln("status of stroppy pod deploy: success")
-	return
+
+	return nil
 }
 
 func (k *Kubernetes) OpenPortForwarding() (err error) {
@@ -206,12 +211,27 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		AskBecomePass: false,
 	}
 
+	grafanaURL := url.URL{
+		Scheme: "http",
+		Opaque: "",
+		User:   &url.Userinfo{},
+		Host: net.JoinHostPort(
+			k.Engine.AddressMap["external"]["master"],
+			fmt.Sprintf("%d", GRAFANA_PORT), //nolint
+		),
+		Path:        "",
+		RawPath:     "",
+		ForceQuery:  false,
+		RawQuery:    "",
+		Fragment:    "",
+		RawFragment: "",
+	}
+
 	//nolint:nosnakecase // constant
 	// check that grafana is deployed
 	llog.Tracef(
-		"grafana uri http://%s:%v",
-		k.Engine.AddressMap["external"]["master"],
-		GRAFANA_PORT,
+		"grafana uri %s",
+		grafanaURL.String,
 	)
 
 	contextWithTimeout, closeFn := context.WithTimeout(
@@ -222,12 +242,11 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 	if resp, err = sendGetWithContext(
 		contextWithTimeout,
 		nil,
-		net.JoinHostPort(
-			k.Engine.AddressMap["external"]["master"],
-			fmt.Sprint(GRAFANA_PORT), //nolint:nosnakecase // constant
-		),
-	); err != nil || resp.StatusCode != 200 {
+		grafanaURL.String(),
+	); err != nil || (resp.StatusCode > 500 && resp.StatusCode < 599) {
 		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
+
+		llog.Tracef("Response: %v", resp)
 
 		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{
 			Binary:                     "",
