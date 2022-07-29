@@ -132,7 +132,7 @@ func (sh *shell) prepareEngine() (err error) {
 func (sh *shell) prepareDBForTests() error {
 	var err error
 
-	llog.Infoln("Error then prepare database payload")
+	llog.Infoln("Prepating database payload")
 
 	if sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
@@ -201,7 +201,7 @@ func (sh *shell) deploy() error {
 	}
 
 	if err = sh.prepareDBForTests(); err != nil {
-		return merry.Prepend(err, "Error then preparing stroppy payload")
+		return merry.Prepend(err, "Error then preparing database")
 	}
 
 	// Deploy database cluster

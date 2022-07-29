@@ -34,7 +34,6 @@ const (
 )
 
 type yandexCluster struct {
-	wd            string
 	commonCluster *commonCluster
 }
 
@@ -48,7 +47,6 @@ func createYandexDBCluster(
 	connectionPoolSize int,
 ) Cluster {
 	return &yandexCluster{
-		wd: wd,
 		commonCluster: createCommonCluster(
 			sc,
 			k,
@@ -78,7 +76,12 @@ func (yc *yandexCluster) Deploy() error {
 	}
 
 	if err = waitObjectReady(
-		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-storage.yml"),
+		path.Join(
+			yc.commonCluster.k.Engine.WorkingDirectory,
+			databasesDir,
+			yandexDirectory,
+			"stroppy-storage.yml",
+		),
 		"storage",
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB storage")
@@ -89,7 +92,12 @@ func (yc *yandexCluster) Deploy() error {
 	}
 
 	if err = waitObjectReady(
-		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-database.yml"),
+		path.Join(
+			yc.commonCluster.k.Engine.WorkingDirectory,
+			databasesDir,
+			yandexDirectory,
+			"stroppy-database.yml",
+		),
 		"database",
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB database")
@@ -202,7 +210,7 @@ func (yc *yandexCluster) deployStorage() error {
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
 
 	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
 		return merry.Prepend(err, "Error then reading file")
@@ -267,7 +275,7 @@ func (yc *yandexCluster) deployDatabase() error {
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
 
 	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
 	if err != nil {
@@ -286,8 +294,8 @@ func (yc *yandexCluster) deployDatabase() error {
 		return merry.Prepend(err, castingError)
 	}
 
-    // TODO: replace based on tfstate resources
-    // https://github.com/picodata/stroppy/issues/94
+	// TODO: replace based on tfstate resources
+	// https://github.com/picodata/stroppy/issues/94
 	spec["nodes"] = 1
 
 	resources, ok := spec["resources"].(map[interface{}]interface{})
@@ -402,17 +410,17 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 		err        error
 	)
 
-	// to be able to connect to the cluster from localhost
-	// TODO: Replace to right YandexDB url and add connection to database
-	// https://github.com/picodata/stroppy/issues/95
 	if yc.commonCluster.DBUrl == "" {
-		yc.commonCluster.DBUrl = "grpc://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
+		yc.commonCluster.DBUrl = fmt.Sprintf(
+			"grpc://%s.ydb.svc.cluster.local:2136/root",
+			yc.commonCluster.k.Engine.AddressMap["external"]["master"],
+		)
+
 		llog.Infoln("changed DBURL on", yc.commonCluster.DBUrl)
 	}
 
 	if connection, err = cluster.NewYandexDBCluster(
 		yc.commonCluster.DBUrl,
-		yc.commonCluster.connectionPoolSize,
 	); err != nil {
 		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
 	}
@@ -447,7 +455,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	hostConfigs, ok := confMap["host_configs"].([]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -469,7 +477,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -491,7 +499,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -526,7 +534,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
