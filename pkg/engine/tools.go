@@ -300,7 +300,7 @@ func CreatePublicKey(privKeyFileName, pubKeyFileName string) error {
 		return merry.Prepend(err, "Error then writing id_rsa.pub key file")
 	}
 
-	llog.Infoln("New id_rsa key file successfully created")
+	llog.Infoln("New id_rsa.pub key file successfully created")
 
 	return nil
 }

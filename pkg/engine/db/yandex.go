@@ -360,7 +360,7 @@ func applyManifest(manifestName string) error {
 		)
 	}
 
-	llog.Debugf("Manifest %s succesefully applyed", manifestName)
+	llog.Debugf("Manifest %s successfully applied", manifestName)
 
 	return nil
 }

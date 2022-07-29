@@ -79,7 +79,7 @@ func (fc *foundationCluster) Deploy() (err error) {
 	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
 		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
 	}
-	llog.Debugf("fix_client_version.sh applyed successfully")
+	llog.Debugf("fix_client_version.sh applied successfully")
 
 	// \todo: Прокидываем порт foundationdb на локальную машину
 	if err := fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
