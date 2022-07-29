@@ -43,18 +43,34 @@ func CreatePayload(
 		payFunc:        nil,
 	}
 
-	llog.Warnf("sh.settings %v", settings)
+	llog.Debugf("DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
+		"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
+		"ConnectPoolSize: %d, Sharded: %v",
+		settings.DatabaseSettings.DBType,
+		settings.DatabaseSettings.Workers,
+		settings.DatabaseSettings.Zipfian,
+		settings.DatabaseSettings.Oracle,
+		settings.DatabaseSettings.Check,
+		settings.DatabaseSettings.DBURL,
+		settings.DatabaseSettings.UseCustomTx,
+		settings.DatabaseSettings.BanRangeMultiplier,
+		settings.DatabaseSettings.StatInterval,
+		settings.DatabaseSettings.ConnectPoolSize,
+		settings.DatabaseSettings.Sharded,
+	)
 
 	if basePayload.config.Oracle {
-		if predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster); !ok {
+		predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster)
+		if !ok {
 			return nil, merry.Errorf(
 				"Oracle is not supported for %s cluster",
 				basePayload.config.DBType,
 			)
-		} else {
-			basePayload.oracle = new(database.Oracle)
-			basePayload.oracle.Init(predictableCluster)
 		}
+
+		basePayload.oracle = new(database.Oracle)
+
+		basePayload.oracle.Init(predictableCluster)
 	}
 
 	if basePayload.config.UseCustomTx {
@@ -64,7 +80,7 @@ func CreatePayload(
 	}
 
 	llog.Infof(
-		"payload object constructed for database '%s', url '%s'",
+		"Payload object constructed for database '%s', url '%s'",
 		basePayload.config.DBType,
 		basePayload.config.DBURL,
 	)

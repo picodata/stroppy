@@ -21,10 +21,9 @@ import (
 const waitTimeQuantum = 10 * time.Second
 
 const (
-	workerTypeKey = "worker-type"
-
-	workerTypeStroppy = "stroppy-worker"
-	workerTypeDBMS    = "dbms-worker"
+	nodeTypeKey        = "node-type"
+	nodeNameForStroppy = "stroppy-worker"
+	nodeNameForDBMS    = "dbms-worker"
 )
 
 func (e *Engine) waitPodCreation(clientSet *kubernetes.Clientset,
@@ -86,7 +85,7 @@ func (e *Engine) WaitPodPhase(podName, namespace string,
 	)
 
 	if waitTime < waitTimeQuantum {
-        return nil, fmt.Errorf( //nolint // will be fixed in future
+		return nil, fmt.Errorf( //nolint // will be fixed in future
 			"input wait time %v (s) is less than quantum 10 seconds",
 			waitTime.Seconds(),
 		)
@@ -149,8 +148,11 @@ func (e *Engine) WaitPod(podName, namespace string,
 }
 
 // AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
-func (e Engine) AddNodeLabels(_ string) (err error) {
-	var nodesList *v1.NodeList
+func (e *Engine) AddNodeLabels(_ string) error {
+	var (
+		nodesList *v1.NodeList
+		err       error
+	)
 
 	llog.Infoln("Starting of add labels to cluster nodes")
 
@@ -159,9 +161,6 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 		return merry.Prepend(err, "failed to get client set for deploy stroppy")
 	}
 
-	// используем получения списка нод ради точного кол-ва нод кластера.
-	// deploySettings.nodes не используем из-за разного кол-ва nodes
-	// для одинакового кол-ва воркеров в yc и oc
 	if err = tools.Retry(
 		"get nodes list",
 		func() (err error) {
@@ -171,46 +170,76 @@ func (e Engine) AddNodeLabels(_ string) (err error) {
 		tools.RetryStandardRetryCount,
 		tools.RetryStandardWaitingTime,
 	); err != nil {
-		return merry.Prepend(err, "failed to get nodes list")
+		return merry.Prepend(err, "Failed to get nodes list")
 	}
 
-	workerNodeList := nodesList.Items[1:]
+	// set label for master
+	nodesNamesList := []string{nodesList.Items[0].Name}
+	currentLabels := nodesList.Items[0].GetLabels()
+	nodesList.Items[0].SetLabels(currentLabels)
 
-	for i := 0; i < len(workerNodeList); i++ {
+	if _, ok := currentLabels[nodeTypeKey]; !ok {
+		currentLabels[nodeTypeKey] = nodeNameForStroppy
+	}
 
-		currentLabels := workerNodeList[i].GetLabels()
+	for index := 0; index < len(nodesList.Items[1:]); index++ {
+		nodesNamesList = append(nodesNamesList, nodesList.Items[index].Name)
 
-		if _, ok := currentLabels[workerTypeKey]; ok {
-			llog.Infoln("this node already been marked")
+		currentLabels = nodesList.Items[index].GetLabels()
+
+		if _, ok := currentLabels[nodeTypeKey]; ok {
+			llog.Infof(
+				"Node %s already been marked as '%s'",
+				nodesList.Items[index].Name,
+				nodeNameForDBMS,
+			)
 			continue
 		}
 
-		currentLabels[workerTypeKey] = workerTypeDBMS
-		workerNodeList[i].SetLabels(currentLabels)
+		currentLabels[nodeTypeKey] = nodeNameForDBMS
+		nodesList.Items[index].SetLabels(currentLabels)
+	}
 
-		// последний воркер оставляем для stroppy
-		if i == len(workerNodeList)-1 {
+	if err = applyNodeLabels(clientSet, nodesList); err != nil {
+		return merry.Prepend(err, "Failed to apply node labels")
+	}
 
-			currentLabels[workerTypeKey] = workerTypeStroppy
-			workerNodeList[i].SetLabels(currentLabels)
-		}
+	llog.Debugf("K8S cluster nodes list: %v", nodesNamesList)
+	llog.Infoln("Add labels to cluster nodes: success")
 
-		// применяем изменения на ноду
-		err = tools.Retry("adding labels to nodes",
+	return nil
+}
+
+func applyNodeLabels(clientSet *kubernetes.Clientset, nodesList *v1.NodeList) error {
+	var err error
+
+	for index := 0; index < len(nodesList.Items); index++ {
+		if err = tools.Retry(
+			"Adding labels to nodes",
 			func() (err error) {
 				_, err = clientSet.CoreV1().
 					Nodes().
-					//nolint // error with imports
-					Update(context.TODO(), &workerNodeList[i], metav1.UpdateOptions{})
-				return
+					Update(
+						context.TODO(),
+						&nodesList.Items[index],
+						metav1.UpdateOptions{
+							TypeMeta: metav1.TypeMeta{
+								Kind:       "",
+								APIVersion: "",
+							},
+							DryRun:          []string{},
+							FieldManager:    "",
+							FieldValidation: "",
+						})
+
+				return merry.Prepend(err, "Failed to update label on node")
 			},
 			tools.RetryStandardRetryCount,
-			tools.RetryStandardWaitingTime)
-		if err != nil {
-			return merry.Prepend(err, "failed to update node")
+			tools.RetryStandardWaitingTime,
+		); err != nil {
+			return merry.Prepend(err, "All retries was unsucessefull")
 		}
 	}
 
-	llog.Infoln("Add labels to cluster nodes: success")
-	return
+	return nil
 }
