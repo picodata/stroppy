@@ -55,6 +55,7 @@ linters:
     - gochecknoglobals
     - gochecknoinits
     - unparam
+    - ireturn
 
 run:
   deadline: 5m
