@@ -10,3 +10,6 @@ spec:
     image: docker.binary.picodata.io/stroppy:latest
     command: ["/bin/sleep"]
     args: [ "infinity" ]
+  nodeSelector:
+    node-type: "stroppy-worker" 
+

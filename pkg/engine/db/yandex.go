@@ -86,7 +86,6 @@ func (yc *yandexCluster) Deploy() error {
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
-
 	if err = yc.deployDatabase(); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}

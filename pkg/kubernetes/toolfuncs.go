@@ -280,9 +280,7 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 			Hosts: make(map[string]interface{}),
 			Children: map[string]interface{}{
 				"kube_control_plane": map[string]interface{}{
-					"hosts": map[string]interface{}{
-						"master": empty,
-					},
+					"hosts": empty,
 				},
 				"k8s_cluster": map[string]interface{}{
 					"children": map[string]interface{}{

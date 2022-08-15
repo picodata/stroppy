@@ -1,18 +1,20 @@
 apiVersion: ydb.tech/v1alpha1
 kind: Database
 metadata:
-    name: stroppy-ydb-database
+  name: stroppy-ydb-database
 spec:
-    image:
-        name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.22
-    nodes: 1
-    domain: Root
-    resources:
-        containerResources:
-            limits:
-                cpu: 500m
-        storageUnits:
-            - count: 1
-              unitKind: ssd
-    storageClusterRef:
-        name: stroppy-ydb-storage
+  image:
+    name: cr.yandex/crptqonuodf50kdj7a7d/ydb:22.2.22
+  nodes: 1
+  domain: Root
+  resources:
+    containerResources:
+      limits:
+        cpu: 500m
+    storageUnits:
+      - count: 1
+        unitKind: ssd
+  storageClusterRef:
+    name: stroppy-ydb-storage
+  nodeSelector:
+    node-type: "dbms-worker"

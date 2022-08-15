@@ -27,6 +27,21 @@ type Payload interface {
 	Connect() error
 }
 
+type BasePayload struct {
+	// \todo: Имеем две сущности описывающие кластер базы данных - произвести рефакторинг
+	cluster db.Cluster
+	Cluster CustomTxTransfer
+
+	config     *config.DatabaseSettings
+	configLock sync.Mutex
+
+	chaos          chaos.Controller
+	chaosParameter string
+
+	oracle  *database.Oracle
+	payFunc func(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error)
+}
+
 func CreatePayload(
 	cluster db.Cluster,
 	settings *config.Settings,
@@ -86,21 +101,6 @@ func CreatePayload(
 	)
 
 	return basePayload, nil
-}
-
-type BasePayload struct {
-	// \todo: Имеем две сущности описывающие кластер базы данных - произвести рефакторинг
-	cluster db.Cluster
-	Cluster CustomTxTransfer
-
-	config     *config.DatabaseSettings
-	configLock sync.Mutex
-
-	chaos          chaos.Controller
-	chaosParameter string
-
-	oracle  *database.Oracle
-	payFunc func(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error)
 }
 
 func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
