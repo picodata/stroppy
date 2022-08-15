@@ -86,7 +86,6 @@ func (yc *yandexCluster) Deploy() error {
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
-
 	if err = yc.deployDatabase(); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
@@ -360,7 +359,7 @@ func applyManifest(manifestName string) error {
 		)
 	}
 
-	llog.Debugf("Manifest %s successfully applied", manifestName)
+	llog.Debugf("Manifest %s succesefully applyed", manifestName)
 
 	return nil
 }

@@ -150,14 +150,14 @@ func (e *Engine) WaitPod(podName, namespace string,
 // AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
 func (e *Engine) AddNodeLabels(_ string) error {
 	var (
+		clientSet *kubernetes.Clientset
 		nodesList *v1.NodeList
 		err       error
 	)
 
 	llog.Infoln("Starting of add labels to cluster nodes")
 
-	clientSet, err := e.GetClientSet()
-	if err != nil {
+	if clientSet, err = e.GetClientSet(); err != nil {
 		return merry.Prepend(err, "failed to get client set for deploy stroppy")
 	}
 
@@ -176,13 +176,14 @@ func (e *Engine) AddNodeLabels(_ string) error {
 	// set label for master
 	nodesNamesList := []string{nodesList.Items[0].Name}
 	currentLabels := nodesList.Items[0].GetLabels()
-	nodesList.Items[0].SetLabels(currentLabels)
 
 	if _, ok := currentLabels[nodeTypeKey]; !ok {
 		currentLabels[nodeTypeKey] = nodeNameForStroppy
 	}
 
-	for index := 0; index < len(nodesList.Items[1:]); index++ {
+	nodesList.Items[0].SetLabels(currentLabels)
+
+	for index := 1; index < len(nodesList.Items); index++ {
 		nodesNamesList = append(nodesNamesList, nodesList.Items[index].Name)
 
 		currentLabels = nodesList.Items[index].GetLabels()

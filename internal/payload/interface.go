@@ -103,6 +103,67 @@ type BasePayload struct {
 	payFunc func(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error)
 }
 
+func CreatePayload(
+	cluster db.Cluster,
+	settings *config.Settings,
+	chaosController chaos.Controller,
+) (Payload, error) {
+	basePayload := &BasePayload{
+		cluster:        cluster,
+		Cluster:        nil,
+		config:         settings.DatabaseSettings,
+		configLock:     sync.Mutex{},
+		chaos:          chaosController,
+		chaosParameter: settings.ChaosParameter,
+		oracle:         &database.Oracle{},
+		payFunc:        nil,
+	}
+
+	llog.Debugf("DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
+		"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
+		"ConnectPoolSize: %d, Sharded: %v",
+		settings.DatabaseSettings.DBType,
+		settings.DatabaseSettings.Workers,
+		settings.DatabaseSettings.Zipfian,
+		settings.DatabaseSettings.Oracle,
+		settings.DatabaseSettings.Check,
+		settings.DatabaseSettings.DBURL,
+		settings.DatabaseSettings.UseCustomTx,
+		settings.DatabaseSettings.BanRangeMultiplier,
+		settings.DatabaseSettings.StatInterval,
+		settings.DatabaseSettings.ConnectPoolSize,
+		settings.DatabaseSettings.Sharded,
+	)
+
+	if basePayload.config.Oracle {
+		predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster)
+		if !ok {
+			return nil, merry.Errorf(
+				"Oracle is not supported for %s cluster",
+				basePayload.config.DBType,
+			)
+		}
+
+		basePayload.oracle = new(database.Oracle)
+
+		basePayload.oracle.Init(predictableCluster)
+	}
+
+	if basePayload.config.UseCustomTx {
+		basePayload.payFunc = payCustomTx
+	} else {
+		basePayload.payFunc = payBuiltinTx
+	}
+
+	llog.Infof(
+		"Payload object constructed for database '%s', url '%s'",
+		basePayload.config.DBType,
+		basePayload.config.DBURL,
+	)
+
+	return basePayload, nil
+}
+
 func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
 	p.configLock.Lock()
 	defer p.configLock.Unlock()
