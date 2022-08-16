@@ -27,67 +27,6 @@ type Payload interface {
 	Connect() error
 }
 
-func CreatePayload(
-	cluster db.Cluster,
-	settings *config.Settings,
-	chaosController chaos.Controller,
-) (Payload, error) {
-	basePayload := &BasePayload{
-		cluster:        cluster,
-		Cluster:        nil,
-		config:         settings.DatabaseSettings,
-		configLock:     sync.Mutex{},
-		chaos:          chaosController,
-		chaosParameter: settings.ChaosParameter,
-		oracle:         &database.Oracle{},
-		payFunc:        nil,
-	}
-
-	llog.Debugf("DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
-		"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
-		"ConnectPoolSize: %d, Sharded: %v",
-		settings.DatabaseSettings.DBType,
-		settings.DatabaseSettings.Workers,
-		settings.DatabaseSettings.Zipfian,
-		settings.DatabaseSettings.Oracle,
-		settings.DatabaseSettings.Check,
-		settings.DatabaseSettings.DBURL,
-		settings.DatabaseSettings.UseCustomTx,
-		settings.DatabaseSettings.BanRangeMultiplier,
-		settings.DatabaseSettings.StatInterval,
-		settings.DatabaseSettings.ConnectPoolSize,
-		settings.DatabaseSettings.Sharded,
-	)
-
-	if basePayload.config.Oracle {
-		predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster)
-		if !ok {
-			return nil, merry.Errorf(
-				"Oracle is not supported for %s cluster",
-				basePayload.config.DBType,
-			)
-		}
-
-		basePayload.oracle = new(database.Oracle)
-
-		basePayload.oracle.Init(predictableCluster)
-	}
-
-	if basePayload.config.UseCustomTx {
-		basePayload.payFunc = payCustomTx
-	} else {
-		basePayload.payFunc = payBuiltinTx
-	}
-
-	llog.Infof(
-		"Payload object constructed for database '%s', url '%s'",
-		basePayload.config.DBType,
-		basePayload.config.DBURL,
-	)
-
-	return basePayload, nil
-}
-
 type BasePayload struct {
 	// \todo: Имеем две сущности описывающие кластер базы данных - произвести рефакторинг
 	cluster db.Cluster
@@ -100,7 +39,11 @@ type BasePayload struct {
 	chaosParameter string
 
 	oracle  *database.Oracle
-	payFunc func(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error)
+	payFunc func(
+		settings *config.DatabaseSettings,
+		cluster CustomTxTransfer,
+		oracle *database.Oracle,
+	) (*PayStats, error)
 }
 
 func CreatePayload(
@@ -180,13 +123,30 @@ func (p *BasePayload) StartStatisticsCollect(statInterval time.Duration) (err er
 	return
 }
 
-func (p *BasePayload) Connect() (err error) {
+func (p *BasePayload) Connect() error {
 	// \todo: необходим большой рефакторинг
-	var c interface{}
-	if c, err = p.cluster.Connect(); err != nil {
-		return
+	var (
+		dbCluster interface{}
+		isOk      bool
+		err       error
+	)
+
+	llog.Tracef("Trying to init Payload with cluster type '%s'", p.config.DBType)
+
+	if dbCluster, err = p.cluster.Connect(); err != nil {
+		return merry.Prepend(err, "BasePayload: failed to create cluster connection")
 	}
 
-	p.Cluster = c.(CustomTxTransfer)
-	return
+	if p.Cluster, isOk = dbCluster.(CustomTxTransfer); !isOk {
+		llog.Errorf("Error then casting payload to CustomTxTransfer: %s", err)
+
+		return merry.Prepend(
+			err,
+			"Type casting error then trying to cast Cluster to CustomTxTransfer",
+		)
+	}
+
+	llog.Traceln("Payload type successefully casted to CustomTxTransfer")
+
+	return nil
 }

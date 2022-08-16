@@ -44,8 +44,11 @@ func (chaos *workableController) Deploy() (err error) {
 	if err = chaos.k.ExecuteF(rbacApplyCommand, rbacFileKubemasterPath); err != nil {
 		return merry.Prepend(err, "rbac.yaml applying")
 	}
-	llog.Warnf("to access chaos dashboard please login to cloud master machine and run command\n%s\n",
-		"kubectl -n chaos-testing describe secret account-cluster-manager-picodata")
+
+	llog.Warnf(
+		"to access chaos dashboard please login to cloud master machine and run command\n%s\n",
+		"kubectl -n chaos-testing describe secret account-cluster-manager-picodata",
+	)
 
 	if err = chaos.establishDashboardAvailability(); err != nil {
 		return
@@ -107,6 +110,10 @@ func (chaos *workableController) establishDashboardAvailability() (err error) {
 		err = nil
 	}
 
-	_ = chaos.k.OpenSecureShellTunnel(chaosDashboardResourceName, 2333)
+	_ = chaos.k.OpenSecureShellTunnel(
+		chaosDashboardResourceName,
+		chaos.k.AddressMap["external"]["master"],
+		chaosPort,
+	)
 	return
 }

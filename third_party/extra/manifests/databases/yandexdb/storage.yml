@@ -8,7 +8,7 @@ spec:
   image:
     name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.22
   nodes: 1
-  domain: Root
+  domain: root
   erasure: none
   resources:
     limits:
@@ -24,7 +24,7 @@ spec:
         port: 2135
       domains_config:
         domain:
-          - name: Root
+          - name: root
             storage_pool_types:
               - kind: ssd
                 pool_config:

@@ -168,8 +168,6 @@ func (sh *shell) deploy() error {
 		return merry.Prepend(err, "Error then preparing terraform")
 	}
 
-	llog.Traceln(sh.tf)
-
 	// Apply terraform scirpt
 	if err = sh.tf.Run(); err != nil {
 		return merry.Prepend(err, "Terraform run failed")
@@ -213,16 +211,26 @@ func (sh *shell) deploy() error {
 		)
 	}
 
+	// Start port forwarding
+	if err = sh.k.OpenPortForwarding(); err != nil {
+		return merry.Prepend(err, "failed to open port forwarding")
+	}
+
 	if err = sh.payload.Connect(); err != nil {
 		// return merry.Prepend(err, "cluster connect")
 		// \todo: временно необращаем внимание на эту ошибку
-
-		llog.Errorf("cluster connect: %v", err)
+		if sh.settings.DatabaseSettings.DBType == "ydb" {
+			llog.Debugln("Connection from remote stroppy client not implemented yet for YDB")
+		} else {
+			llog.Errorf("cluster connect: %v", err)
+		}
 		err = nil
 	}
 
-	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
-
+	llog.Infof(
+		"Databale cluster of '%s' deployed successfully",
+		sh.settings.DatabaseSettings.DBType,
+	)
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 
 	return nil

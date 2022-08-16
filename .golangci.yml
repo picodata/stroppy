@@ -56,7 +56,13 @@ linters:
     - gochecknoinits
     - unparam
     - ireturn
+    - gci
+    - gomoddirectives
 
 run:
+  go: 1.18
   deadline: 5m
   modules-download-mode: vendor
+  skip-files:
+    - "allocator.go"
+

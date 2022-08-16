@@ -10,7 +10,11 @@ import (
 
 	"github.com/ansel1/merry"
 	"golang.org/x/crypto/ssh"
+
+	llog "github.com/sirupsen/logrus"
 )
+
+const sshDefaultPortNumber = 22
 
 type logger interface {
 	Printf(string, ...interface{})
@@ -51,13 +55,15 @@ func (tunnel *SSHTunnel) Start() (err error) {
 	tunnel.isOpen = true
 	tunnel.Local.Port = listener.Addr().(*net.TCPAddr).Port
 
+	llog.Debugf("Server connection string '%s'", tunnel.Server.String())
+
 	var serverConn *ssh.Client
 	if serverConn, err = ssh.Dial("tcp", tunnel.Server.String(), tunnel.Config); err != nil {
-		tunnel.logf("server dial error: %s", err)
+		tunnel.logf("Server dial error: %s", err)
 		return merry.Prepend(err, "server dial error")
 	}
 
-	tunnel.logf("established ssh connection to remote")
+	tunnel.logf("Established ssh connection to remote")
 	tunnel.serverConn = serverConn
 
 	go tunnel.tunnelProcess(listener)
@@ -127,36 +133,27 @@ func (tunnel *SSHTunnel) Close() {
 }
 
 // NewSSHTunnel creates a new single-use tunnel. Supplying "0" for localport will use a random port.
-func NewSSHTunnel(tunnel string, destination string, localport int, sshTunnelAuth ssh.AuthMethod) (*SSHTunnel, error) {
-	localEndpoint := NewLocalEndpoint(localport, "")
-
-	serverEndpoint, err := NewEndpoint(tunnel)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to create server endpoint")
-	}
-	if serverEndpoint.Port == 0 {
-		serverEndpoint.Port = 22
-	}
-
-	remoteEndpoint, err := NewEndpoint(destination)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to create remote endpoint")
-	}
+func NewSSHTunnel(
+	targetPort int,
+	targetHostname,
+	targetUser string,
+	sshTunnelAuth ssh.AuthMethod,
+) *SSHTunnel {
 	//nolint:exhaustivestruct
 	sshTunnel := &SSHTunnel{
 		Config: &ssh.ClientConfig{
-			User: serverEndpoint.User,
+			User: targetUser,
 			Auth: []ssh.AuthMethod{sshTunnelAuth},
 			HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 				// Always accept key.
 				return nil
 			},
 		},
-		Local:  localEndpoint,
-		Server: serverEndpoint,
-		Remote: remoteEndpoint,
+		Local:  NewLocalEndpoint(targetPort, ""),
+		Server: NewRemoteEndpoint(targetHostname, sshDefaultPortNumber, targetUser),
+		Remote: NewLocalEndpoint(targetPort, ""),
 		close:  make(chan interface{}),
 	}
 
-	return sshTunnel, nil
+	return sshTunnel
 }

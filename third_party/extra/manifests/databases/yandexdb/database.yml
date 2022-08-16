@@ -4,9 +4,9 @@ metadata:
   name: stroppy-ydb-database
 spec:
   image:
-    name: cr.yandex/crptqonuodf50kdj7a7d/ydb:22.2.22
+    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.22
   nodes: 1
-  domain: Root
+  domain: root
   resources:
     containerResources:
       limits:

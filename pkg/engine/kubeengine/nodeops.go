@@ -148,6 +148,7 @@ func (e *Engine) WaitPod(podName, namespace string,
 }
 
 // AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
+//nolint
 func (e *Engine) AddNodeLabels(_ string) error {
 	var (
 		clientSet *kubernetes.Clientset

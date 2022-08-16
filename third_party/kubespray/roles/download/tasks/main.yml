@@ -30,10 +30,6 @@
     - download
     - upload
 
-- name: print debug
-  debug:
-    msg: "{{ groups['kube_control_plane'] }}"
-
 - name: download | Download files / images
   include_tasks: "{{ include_file }}"
   loop: "{{ downloads | combine(kubeadm_images) | dict2items }}"

@@ -2,15 +2,12 @@
  * Use of this source code is governed by the 2-Clause BSD License *
  * that can be found in the LICENSE file.                          */
 
-package stroppy
+package kubeengine
 
-const (
-	namespaceFile    = "namespace.yaml"
-	deploymentFile   = "deployment.yaml"
-	fieldManagerName = "stroppy-deploy"
-)
-
-const (
-	NamespaceName = "stroppy"
-	PodName       = "stroppy-client"
-)
+//nolint // TODO: create function to deploy
+func (k8sEngine *Engine) toEngineOnject(
+	objectName, manifestPath string,
+	objectType *interface{},
+) error {
+	return nil
+}

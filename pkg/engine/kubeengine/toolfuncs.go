@@ -54,7 +54,8 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 		if homeDirPath, err = os.UserHomeDir(); err != nil {
 			return merry.Prepend(err, "get home dir")
 		}
-		if filePath == ConfigPath {
+
+		if filePath == KubeConfigPath {
 			kubeConfigFilePath := filepath.Join(homeDirPath, filePath)
 			e.clusterConfigFile = kubeConfigFilePath
 		}
@@ -179,8 +180,8 @@ func (e Engine) CollectMonitoringData(
 ) error {
 	llog.Infoln("Starting to get monitoring images...")
 
-	llog.Debugln("start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())
-	llog.Debugln("finish time of monitoring data range", time.Unix(finishTime/1000, 0).UTC())
+	llog.Debugln("Start time of monitoring data range", time.Unix(startTime/1000, 0).UTC())
+	llog.Debugln("Finish time of monitoring data range", time.Unix(finishTime/1000, 0).UTC())
 
 	var workersIps string
 
@@ -188,8 +189,9 @@ func (e Engine) CollectMonitoringData(
 		workersIps += fmt.Sprintf("%v;", address)
 	}
 
-	workingDirectory := filepath.Join(e.WorkingDirectory, "monitoring", "grafana-on-premise")
-	getImagesCmd := exec.Command("./get_png.sh",
+	workingDirectory := filepath.Join(e.WorkingDirectory, "third_party", "monitoring")
+	getImagesCmd := exec.Command(
+        GetPngScriptPath,
 		fmt.Sprintf("%v", startTime),
 		fmt.Sprintf("%v", finishTime),
 		fmt.Sprintf("%v", monitoringPort),
@@ -201,6 +203,6 @@ func (e Engine) CollectMonitoringData(
 		return merry.Prepend(err, "failed to get monitoring images")
 	}
 
-	llog.Infoln("getting of monitoring images: success")
+	llog.Infoln("Getting of monitoring images: success")
 	return nil
 }

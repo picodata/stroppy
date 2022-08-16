@@ -41,6 +41,7 @@ type PopStats struct {
 	duplicates uint64
 }
 
+//nolint // mongo
 func (p *BasePayload) Pop(_ string) (err error) {
 	stats := PopStats{}
 
@@ -73,8 +74,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 
 			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
 			for {
-				err := p.Cluster.InsertAccount(acc)
-				if err != nil {
+				if err = p.Cluster.InsertAccount(acc); err != nil {
 					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
 						break
@@ -98,7 +98,8 @@ func (p *BasePayload) Pop(_ string) (err error) {
 
 						// временная мера до стабилизации mongo
 						mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection ") || strings.Contains(err.Error(), "socket ") ||
-						errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) ||
+						errors.Is(err, mongo.WriteConcernError{Code: 64}) ||
+						errors.Is(err, mongo.WriteConcernError{Code: 11602}) ||
 						errors.Is(err, mongo.WriteError{}) {
 						llog.Errorf("Retrying after request error: %v", err)
 						// workaround to finish populate test when account insert gets retryable error
