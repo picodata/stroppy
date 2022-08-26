@@ -276,6 +276,7 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 					k.Engine.AddressMap["external"]["master"],
 				},
 				"addons": map[string]interface{}{"ingress_nginx_enabled": false},
+                "node_taints": []string{},
 			},
 			Hosts: make(map[string]interface{}),
 			Children: map[string]interface{}{
@@ -306,9 +307,6 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 	hosts := make(map[string]interface{})
 
 	for k, v := range k.Engine.AddressMap["internal"] {
-		if k == "master" {
-			continue
-		}
 		inventory.All.Hosts[k] = Host{v, v, v}
 		hosts[k] = empty
 	}

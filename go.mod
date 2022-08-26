@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/ansel1/merry v1.6.1
 	github.com/ansel1/merry/v2 v2.0.0-beta.10
+	github.com/apenella/go-ansible v1.1.5
 	github.com/apple/foundationdb/bindings/go v0.0.0-20201114170605-569ab46bf638
 	github.com/bramvdbogaerde/go-scp v1.0.0
 	github.com/ghodss/yaml v1.0.0
@@ -14,17 +15,20 @@ require (
 	github.com/jackc/pgconn v1.9.0
 	github.com/jackc/pgerrcode v0.0.0-20201024163028-a0d42d470451
 	github.com/jackc/pgx/v4 v4.12.0
+	github.com/mittwald/go-helm-client v0.11.1
 	github.com/sirupsen/logrus v1.8.1
 	github.com/spenczar/tdigest v2.1.0+incompatible
 	github.com/spf13/cobra v1.3.0
 	github.com/stretchr/testify v1.7.1
 	github.com/tarantool/go-tarantool v0.0.0-20220113162241-9c9a68e09870
 	github.com/tidwall/gjson v1.8.1
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.36.1
 	github.com/zalando/postgres-operator v1.6.3
 	github.com/zclconf/go-cty v1.9.0
 	go.mongodb.org/mongo-driver v1.7.1
 	golang.org/x/crypto v0.0.0-20211117183948-ae814b36b871
 	gopkg.in/inf.v0 v0.9.1
+	helm.sh/helm/v3 v3.8.2
 	k8s.io/api v0.23.5
 	k8s.io/apimachinery v0.23.5
 	k8s.io/client-go v0.23.5
@@ -54,7 +58,6 @@ require (
 	github.com/jackc/puddle v1.1.3 // indirect
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.13.6 // indirect
-	github.com/koron/iferr v0.0.0-20180615142939-bb332a3b1d91 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/mitchellh/go-wordwrap v1.0.0 // indirect
 	github.com/moby/spdystream v0.2.0 // indirect
@@ -63,7 +66,6 @@ require (
 	github.com/motomux/pretty v0.0.0-20161209205251-b2aad2c9a95d // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
 	github.com/tidwall/match v1.0.3 // indirect
 	github.com/tidwall/pretty v1.1.0 // indirect
@@ -80,10 +82,10 @@ require (
 	golang.org/x/time v0.0.0-20210723032227-1f47c861a9ac // indirect
 	golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
-	google.golang.org/protobuf v1.27.1 // indirect
+	google.golang.org/protobuf v1.28.0 // indirect
 	gopkg.in/vmihailenco/msgpack.v2 v2.9.2 // indirect
-	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0 // indirect
+	gopkg.in/yaml.v2 v2.4.0
+	gopkg.in/yaml.v3 v3.0.0
 	k8s.io/apiextensions-apiserver v0.23.5 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/utils v0.0.0-20211116205334-6203023598ed // indirect
@@ -101,7 +103,6 @@ require (
 	github.com/Masterminds/squirrel v1.5.2 // indirect
 	github.com/PuerkitoBio/purell v1.1.1 // indirect
 	github.com/PuerkitoBio/urlesc v0.0.0-20170810143723-de5bf2ad4578 // indirect
-	github.com/apenella/go-ansible v1.1.5 // indirect
 	github.com/apenella/go-common-utils/data v0.0.0-20210528133155-34ba915e28c8 // indirect
 	github.com/apenella/go-common-utils/error v0.0.0-20210528133155-34ba915e28c8 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20200428143746-21a406dcc535 // indirect
@@ -125,6 +126,7 @@ require (
 	github.com/go-openapi/jsonreference v0.19.5 // indirect
 	github.com/go-openapi/swag v0.19.14 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
+	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/google/btree v1.0.1 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gorilla/mux v1.8.0 // indirect
@@ -145,7 +147,6 @@ require (
 	github.com/matttproud/golang_protobuf_extensions v1.0.2-0.20181231171920-c182affec369 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/mittwald/go-helm-client v0.11.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/term v0.0.0-20210610120745-9d4ed1856297 // indirect
 	github.com/monochromegane/go-gitignore v0.0.0-20200626010858-205db1a8cc00 // indirect
@@ -165,14 +166,11 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/xlab/treeprint v0.0.0-20181112141820-a009c3971eca // indirect
-	github.com/ydb-platform/ydb-go-genproto v0.0.0-20220531094121-36ca6bddb9f7 // indirect
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.26.10 // indirect
+	github.com/ydb-platform/ydb-go-genproto v0.0.0-20220801095836-cf975531fd1f // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
-	golang.org/x/tools v0.1.11 // indirect
 	google.golang.org/genproto v0.0.0-20220107163113-42d7afdf6368 // indirect
-	google.golang.org/grpc v1.43.0 // indirect
+	google.golang.org/grpc v1.47.0 // indirect
 	gopkg.in/gorp.v1 v1.7.2 // indirect
-	helm.sh/helm/v3 v3.8.2 // indirect
 	k8s.io/apiserver v0.23.5 // indirect
 	k8s.io/cli-runtime v0.23.5 // indirect
 	k8s.io/component-base v0.23.5 // indirect

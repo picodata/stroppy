@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"os"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	sshe "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -23,13 +23,15 @@ import (
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/portforward"
 	"k8s.io/client-go/transport/spdy"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // OpenPortForward открывает port-forward туннель для вызывающей функции(caller)
 func (e *Engine) OpenPortForward(caller string, ports []string, reqURL *url.URL,
-	stopPortForward chan struct{}) (err error) {
-
-	llog.Debugf("opening port-forward for %s, with url `%s`", caller, reqURL.String())
+	stopPortForward chan struct{},
+) (err error) {
+	llog.Debugf("Opening port-forward for %s, with url `%s`", caller, reqURL.String())
 
 	var kubeConfig *rest.Config
 	if kubeConfig, err = e.GetKubeConfig(); err != nil {
@@ -80,92 +82,124 @@ func (e *Engine) OpenPortForward(caller string, ports []string, reqURL *url.URL,
 	}
 }
 
-func (e *Engine) GetSessionObject() (stdout io.Reader, session ssh.Session, err error) {
+func (e *Engine) GetSessionObject() (io.Reader, sshe.Session, error) {
+	var (
+		stdout  io.Reader
+		session sshe.Session
+		err     error
+	)
+
 	if session, err = e.sc.GetNewSession(); err != nil {
-		err = merry.Prepend(err, "failed to open ssh connection")
-		return
+		return stdout, session, merry.Prepend(err, "failed to open ssh connection")
 	}
 
 	if stdout, err = session.StdoutPipe(); err != nil {
 		err = merry.Prepend(err, "failed creating command stdoutpipe for logging deploy k8s")
 
-		if err := session.Close(); err != nil {
+		if err = session.Close(); err != nil {
 			llog.Warnf("GetSessionObject: k8s ssh session can not closed: %v", err)
 		}
 	}
 
-	return
+	//nolint:wrapcheck // error already wrapped with merry
+	return stdout, session, err
 }
 
 // OpenSecureShellTunnel открывает ssh-соединение
-func (e *Engine) OpenSecureShellTunnel(caller string, mainPort int) (result *ssh.Result) {
-	mastersConnectionString := fmt.Sprintf("ubuntu@%v", e.AddressMap["external"]["master"])
-
-	tunnelPort := mainPort
+//nolint:funlen // logic of this function is inseparable
+func (e *Engine) OpenSecureShellTunnel(
+	caller, targetHostname string,
+	targetPort int,
+) *sshe.Result {
+	tunnelPort := targetPort
 	retryStandardRetryCount := tools.RetryStandardRetryCount
 	/*	проверяем доступность портов для postgres на локальной машине */
-	llog.Infof("Checking the status of %s port on the localhost for %v...\n", caller, tunnelPort)
-	for !engine.IsLocalPortOpen(tunnelPort) {
+	llog.Debugf(
+		"Checking the status of '%s' port on the '%s:%d'\n",
+		caller,
+		targetHostname,
+		tunnelPort,
+	)
+
+	var tunellOpeningResult *sshe.Result
+
+	for !engine.IsRemotePortOpen(targetHostname, tunnelPort) {
 		// проверяем резервный порт в случае недоступности основного
 		tunnelPort++
-		llog.Infof("Checking the status of port %v of the localhost for %v...\n", caller, tunnelPort)
+
+		llog.Warnf("Main port for '%s' is %d and he is closed\n", caller, targetPort)
+		llog.Debugf(
+			"Checking the status of '%s' port on the '%s:%d'\n",
+			caller,
+			targetHostname,
+			tunnelPort,
+		)
 		// условие добавляем здесь, чтобы не портить им последующий код
 		if tunnelPort >= tunnelPort+retryStandardRetryCount {
-			result = &ssh.Result{
+			tunellOpeningResult = &sshe.Result{
 				Port:   0,
 				Tunnel: nil,
 				Err: fmt.Errorf("check ports %v-%v are not available",
-					mainPort, mainPort+retryStandardRetryCount),
+					targetPort, targetPort+retryStandardRetryCount),
 			}
-			return
+
+			return tunellOpeningResult
 		}
 	}
+
+	llog.Infof("Remote port %d on %s is openeded", tunnelPort, targetHostname)
 
 	// если туннель для k8s и недоступен основной порт, то меняем его на резервный
-	if tunnelPort != mainPort && caller == SshEntity {
+	if tunnelPort != targetPort && caller == SSHEntity {
+		llog.Debugf(
+			"Ssh tunnel port '%d' for '%s' was changed to '%d', cluster url will also be changed",
+			targetPort,
+			caller,
+			tunnelPort,
+		)
 		if err := e.EditClusterURL(tunnelPort); err != nil {
 			llog.Infof("failed to replace port: %v", err)
-			result = &ssh.Result{Port: 0, Tunnel: nil, Err: err}
-			return
+
+			tunellOpeningResult = &sshe.Result{Port: 0, Tunnel: nil, Err: err}
+
+			return tunellOpeningResult
 		}
 	}
 
-	authMethod, err := sshtunnel.PrivateKeyFile(e.sshKeyFilePath)
-	if err != nil {
+	var (
+		authMethod ssh.AuthMethod
+		err        error
+	)
+
+	if authMethod, err = sshtunnel.PrivateKeyFile(e.sshKeyFilePath); err != nil {
 		llog.Infof("failed to use private key file: %v", err)
-		result = &ssh.Result{Port: 0, Tunnel: nil, Err: err}
-		return
+
+		tunellOpeningResult = &sshe.Result{Port: 0, Tunnel: nil, Err: err}
+
+		return tunellOpeningResult
 	}
 
 	// Setup the tunnel, but do not yet start it yet.
-	var tunnel *sshtunnel.SSHTunnel
-	tunnel, err = sshtunnel.NewSSHTunnel(
-		mastersConnectionString,
-		fmt.Sprintf("localhost:%v", mainPort),
+	tunnel := sshtunnel.NewSSHTunnel(
 		tunnelPort,
+		targetHostname,
+		SSHUserName,
 		authMethod,
 	)
-	if err != nil {
-		result = &ssh.Result{
-			Port:   0,
-			Tunnel: nil,
-			Err:    merry.Prepend(err, "failed to create tunnel"),
-		}
-		return
-	}
 
 	// You can provide a logger for debugging, or remove this line to
 	// make it silent.
 	tunnel.Log = log.New(os.Stdout, "SSH tunnel ", log.Flags())
 
 	if err = tunnel.Start(); err != nil {
-		result = &ssh.Result{
+		tunellOpeningResult = &sshe.Result{
 			Port:   0,
 			Tunnel: nil,
 			Err:    merry.Prepend(err, "failed to start tunnel"),
 		}
-		return
+
+		return tunellOpeningResult
 	}
 
-	return &ssh.Result{Port: tunnelPort, Tunnel: tunnel, Err: nil}
+	return &sshe.Result{Port: tunnelPort, Tunnel: tunnel, Err: nil}
 }

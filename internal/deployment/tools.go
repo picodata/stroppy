@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"strings"
 	"time"
 
 	llog "github.com/sirupsen/logrus"
@@ -27,8 +28,10 @@ func (sh *shell) executeRemotePay(
 	settings *config.DatabaseSettings,
 ) (beginTime, endTime int64, err error) {
 	payTestCommand := []string{
-		"/root/stroppy", "pay",
-		"--dir", "/root",
+		stroppyBinaryPath,
+		"pay",
+		"--dir",
+		stroppyHomePath,
 		"--run-as-pod",
 		"--url", fmt.Sprintf("%v", settings.DBURL),
 		"--check",
@@ -36,6 +39,7 @@ func (sh *shell) executeRemotePay(
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
+		"--log-level", sh.settings.LogLevel,
 	}
 
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
@@ -85,20 +89,71 @@ func (sh *shell) executePay(_ string) (err error) {
 	return
 }
 
+// executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
+func (sh *shell) executePop(_ string) (err error) {
+	var settings *config.DatabaseSettings
+	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
+		return merry.Prepend(err, "failed to read config")
+	}
+	// sh.payload.UpdateSettings(settings)
+
+	llog.Debugf("Stroppy executed on remote host: %v", sh.settings.TestSettings.UseCloudStroppy)
+
+	var beginTime, endTime int64
+	if sh.settings.TestSettings.UseCloudStroppy {
+		if beginTime, endTime, err = sh.executeRemotePop(settings); err != nil {
+			return
+		}
+	} else {
+		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+		if err = sh.payload.Pop(""); err != nil {
+			return
+		}
+		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
+	}
+
+	llog.Infof("Pop test start time: '%d', end time: '%d'", beginTime, endTime)
+
+	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
+		settings.DBType, settings.Count, settings.BanRangeMultiplier,
+		settings.Zipfian, time.Now().Format(dateFormat))
+
+	// таймаут, чтобы не получать пустое место на графиках
+	time.Sleep(20 * time.Second)
+
+	if err = sh.k.Engine.CollectMonitoringData(
+		beginTime,
+		endTime,
+		sh.k.MonitoringPort.Port,
+		monImagesArchName,
+	); err != nil {
+		return merry.Prepend(err, "failed to get monitoring images for pop test")
+	}
+
+	return
+}
+
 //nolint:nonamedreturns // should be fixed in future
 func (sh *shell) executeRemotePop(
 	settings *config.DatabaseSettings,
 ) (beginTime, endTime int64, err error) {
+	llog.Debugf("DBURL: %s", settings.DBURL)
+
 	popTestCommand := []string{
-		"/root/stroppy", "pop",
-		"--dir", "/root",
+		stroppyBinaryPath,
+		"pop",
+		"--dir",
+		stroppyHomePath,
 		"--run-as-pod",
-		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--url", settings.DBURL,
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
+		"--log-level", sh.settings.LogLevel,
 	}
+
+	llog.Tracef("Stroppy remote command '%s'", strings.Join(popTestCommand, " "))
 
 	if settings.Sharded {
 		popTestCommand = append(popTestCommand, "sharded")
@@ -120,46 +175,15 @@ func (sh *shell) executeRemotePop(
 	return beginTime, endTime, nil
 }
 
-// executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
-func (sh *shell) executePop(_ string) (err error) {
-	var settings *config.DatabaseSettings
-	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
-		return merry.Prepend(err, "failed to read config")
-	}
-	// sh.payload.UpdateSettings(settings)
-
-	var beginTime, endTime int64
-	if sh.settings.TestSettings.UseCloudStroppy {
-		beginTime, endTime, err = sh.executeRemotePop(settings)
-		if err != nil {
-			return
-		}
-	} else {
-		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = sh.payload.Pop(""); err != nil {
-			return
-		}
-		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-	}
-	llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
-
-	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.Zipfian, time.Now().Format(dateFormat))
-
-	// таймаут, чтобы не получать пустое место на графиках
-	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
-		return merry.Prepend(err, "failed to get monitoring images for pop test")
-	}
-
-	return
-}
-
 // readDatabaseConfig
 // прочитать конфигурационный файл test_config.json
 func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
 	var data []byte
+
+	llog.Debugf(
+		"Expected test config file path %s", filepath.Join(sh.workingDirectory, configFileName),
+	)
+
 	configFilePath := filepath.Join(sh.workingDirectory, configFileName)
 	if data, err = ioutil.ReadFile(configFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read config file")
@@ -185,6 +209,9 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	case cluster.Cartridge:
 		settings.DBURL = "http://routers:8081"
+
+	case cluster.YandexDB:
+		settings.DBURL = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
 
 	default:
 		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)

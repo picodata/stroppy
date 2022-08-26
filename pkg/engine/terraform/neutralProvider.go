@@ -22,7 +22,7 @@ func (np *neutralProvider) Prepare() (err error) {
 }
 
 //nolint
-func (np *neutralProvider) PerformAdditionalOps(_ int) (err error) {
+func (np *neutralProvider) AddNetworkDisks(_ int) (err error) {
 	err = errors.New(
 		"neutral provider does not support deployment additional step operation, use yandex or oracle",
 	)
