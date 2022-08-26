@@ -10,7 +10,7 @@ import "time"
 const (
 	ResourcePodName           = "pods"
 	ResourceService           = "svc"
-	ResourceDefaultNamespace  = "default"
+	ResourceDefaultNamespace  = "stroppy"
 	SubresourcePortForwarding = "portforward"
 	SubresourceExec           = "exec"
 	PodWaitingWaitCreation    = true
@@ -18,12 +18,17 @@ const (
 
 	PodWaitingTimeTenMinutes = 10 * time.Minute
 
-	SshEntity  = "kubernetes"
-	ConfigPath = ".kube/config"
+	SSHEntity      = "kubernetes"
+	KubeConfigPath = ".kube/config"
 
 	// задержка для случаев ожидания переповтора или соблюдения порядка запуска
 	ExecTimeout = 5
 
 	// кол-во попыток подключения при ошибке
 	ConnectionRetryCount = 3
+
+	// path to monitoring script.
+	GetPngScriptPath = "./get_png.sh"
+
+	SSHUserName = "ubuntu"
 )

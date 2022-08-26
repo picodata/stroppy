@@ -6,6 +6,7 @@ package deployment
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
@@ -128,16 +129,21 @@ func (sh *shell) prepareEngine() (err error) {
 	return
 }
 
-func (sh *shell) preparePayload() error {
+func (sh *shell) prepareDBForTests() error {
 	var err error
-	sh.cluster, err = db.CreateCluster(
+
+	llog.Infoln("Prepating database payload")
+
+	if sh.cluster, err = db.CreateCluster(
 		sh.settings.DatabaseSettings,
 		sh.sc,
 		sh.k,
 		sh.workingDirectory,
-	)
-	if err != nil {
-		return merry.Prepend(err, "Error then creating YDB cluster")
+	); err != nil {
+		return merry.Prepend(
+			err,
+			fmt.Sprintf("Error then creating '%s' cluster", sh.settings.DatabaseSettings.DBType),
+		)
 	}
 
 	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
@@ -162,8 +168,6 @@ func (sh *shell) deploy() error {
 		return merry.Prepend(err, "Error then preparing terraform")
 	}
 
-	llog.Traceln(sh.tf)
-
 	// Apply terraform scirpt
 	if err = sh.tf.Run(); err != nil {
 		return merry.Prepend(err, "Terraform run failed")
@@ -178,25 +182,27 @@ func (sh *shell) deploy() error {
 	// 1. Deploy monitoring via grafana stack
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
-	if err = sh.k.DeployAll(sh.workingDirectory); err != nil {
-		return merry.Prepend(err, "failed to start kubernetes")
+	// TODO: rename to deploy infrastructure
+	if err = sh.k.DeployK8S(sh.workingDirectory); err != nil {
+		return merry.Prepend(err, "Failed to deploy kubernetes and infrastructure")
 	}
 
-	if err = sh.tf.Provider.PerformAdditionalOps(
+	if err = sh.tf.Provider.AddNetworkDisks(
 		sh.settings.DeploymentSettings.Nodes,
 	); err != nil {
-		return merry.Prepend(err, "failed to add network storages to provider")
+		return merry.Prepend(err, "Failed to add network storages to provider")
 	}
 
 	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
 	if err = sh.chaosMesh.Deploy(); err != nil {
-		return merry.Prepend(err, "failed to deploy and start chaos")
+		return merry.Prepend(err, "Failed to deploy and start chaos")
 	}
 
-	if err = sh.preparePayload(); err != nil {
-		return merry.Prepend(err, "Error then preparing stroppy payload")
+	if err = sh.prepareDBForTests(); err != nil {
+		return merry.Prepend(err, "Error then preparing database")
 	}
 
+	// Deploy database cluster
 	if err = sh.cluster.Deploy(); err != nil {
 		return merry.Prependf(
 			err,
@@ -205,16 +211,26 @@ func (sh *shell) deploy() error {
 		)
 	}
 
+	// Start port forwarding
+	if err = sh.k.OpenPortForwarding(); err != nil {
+		return merry.Prepend(err, "failed to open port forwarding")
+	}
+
 	if err = sh.payload.Connect(); err != nil {
 		// return merry.Prepend(err, "cluster connect")
 		// \todo: временно необращаем внимание на эту ошибку
-
-		llog.Errorf("cluster connect: %v", err)
+		if sh.settings.DatabaseSettings.DBType == "ydb" {
+			llog.Debugln("Connection from remote stroppy client not implemented yet for YDB")
+		} else {
+			llog.Errorf("cluster connect: %v", err)
+		}
 		err = nil
 	}
 
-	llog.Infof("'%s' database cluster deployed successfully", sh.settings.DatabaseSettings.DBType)
-
+	llog.Infof(
+		"Databale cluster of '%s' deployed successfully",
+		sh.settings.DatabaseSettings.DBType,
+	)
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 
 	return nil

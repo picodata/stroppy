@@ -58,3 +58,8 @@ requrements.yml
 **/inventory.yml
 **/hosts.yaml
 /third_party/extra/manifests/databases/**/stroppy-*
+**/monitoring/ydb_pop_*
+**/monitoring/ydb_pay_*
+**/monitoring/png/
+**/ydb_certs/
+**/ydb_data/

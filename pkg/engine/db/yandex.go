@@ -23,18 +23,18 @@ import (
 )
 
 const (
-	databasesDir    string = "third_party/extra/manifests/databases"
-	yandexDirectory string = "yandexdb"
-	ydbHelmRepo     string = "https://charts.ydb.tech"
-	timeout         int    = 300
-	step            int    = 20
-	helmTimeout     int    = 300000000000
-	castingError    string = "Error then casting type into interface"
-	roAll           int    = 0o644
+	databasesDir         string = "third_party/extra/manifests/databases"
+	yandexDirectory      string = "yandexdb"
+	ydbHelmRepo          string = "https://charts.ydb.tech"
+	timeout              int    = 300
+	step                 int    = 20
+	helmTimeout          int    = 300000000000
+	castingError         string = "Error then casting type into interface"
+	roAll                int    = 0o644
+	stroppyNamespaceName string = "stroppy"
 )
 
 type yandexCluster struct {
-	wd            string
 	commonCluster *commonCluster
 }
 
@@ -48,7 +48,6 @@ func createYandexDBCluster(
 	connectionPoolSize int,
 ) Cluster {
 	return &yandexCluster{
-		wd: wd,
 		commonCluster: createCommonCluster(
 			sc,
 			k,
@@ -78,18 +77,27 @@ func (yc *yandexCluster) Deploy() error {
 	}
 
 	if err = waitObjectReady(
-		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-storage.yml"),
+		path.Join(
+			yc.commonCluster.k.Engine.WorkingDirectory,
+			databasesDir,
+			yandexDirectory,
+			"stroppy-storage.yml",
+		),
 		"storage",
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
-
 	if err = yc.deployDatabase(); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
 	if err = waitObjectReady(
-		path.Join(yc.wd, databasesDir, yandexDirectory, "stroppy-database.yml"),
+		path.Join(
+			yc.commonCluster.k.Engine.WorkingDirectory,
+			databasesDir,
+			yandexDirectory,
+			"stroppy-database.yml",
+		),
 		"database",
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB database")
@@ -118,9 +126,8 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 
 	options := &helmclient.KubeConfClientOptions{
 		Options: &helmclient.Options{
-			// TODO Change this to the namespace you wish the client to operate in.
-
-			Namespace: "default", RepositoryCache: "/tmp/.helmcache",
+			Namespace:        "stroppy",
+			RepositoryCache:  "/tmp/.helmcache",
 			RepositoryConfig: "/tmp/.helmrepo",
 			RegistryConfig:   "/tmp/.config/helm",
 			Debug:            true,
@@ -158,7 +165,7 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 	chartSpec := helmclient.ChartSpec{
 		ReleaseName:      "ydb-operator",
 		ChartName:        "ydb/operator",
-		Namespace:        "default",
+		Namespace:        "stroppy",
 		ValuesYaml:       "",
 		Version:          "",
 		CreateNamespace:  false,
@@ -202,7 +209,7 @@ func (yc *yandexCluster) deployStorage() error {
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
 
 	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
 		return merry.Prepend(err, "Error then reading file")
@@ -213,6 +220,13 @@ func (yc *yandexCluster) deployStorage() error {
 	if err = yaml.Unmarshal(bytes, &storage); err != nil {
 		return merry.Prepend(err, "Error then deserizalizing storage manifest")
 	}
+
+	metadata, ok := storage["metadata"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	metadata["namespace"] = stroppyNamespaceName
 
 	spec, ok := storage["spec"].(map[interface{}]interface{})
 	if !ok {
@@ -236,7 +250,13 @@ func (yc *yandexCluster) deployStorage() error {
 		"memory": "2048Mi",
 	}
 
-	if bytes, err = paramStorageConfig(storage); err != nil {
+	var configuration string
+
+	if configuration, ok = spec["configuration"].(string); !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	if bytes, err = paramStorageConfig(configuration); err != nil {
 		return merry.Prepend(err, "Error then parameterizing storage configuration")
 	}
 
@@ -267,7 +287,7 @@ func (yc *yandexCluster) deployDatabase() error {
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.wd, databasesDir, yandexDirectory)
+	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
 
 	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
 	if err != nil {
@@ -280,14 +300,21 @@ func (yc *yandexCluster) deployDatabase() error {
 		return merry.Prepend(err, "Error then deserializing database manifest")
 	}
 
+	metadata, ok := storage["metadata"].(map[interface{}]interface{})
+	if !ok {
+		return merry.Prepend(err, castingError)
+	}
+
+	metadata["namespace"] = stroppyNamespaceName
+
 	// TODO: get it from terraform.tfstate
 	spec, ok := storage["spec"].(map[interface{}]interface{})
 	if !ok {
 		return merry.Prepend(err, castingError)
 	}
 
-    // TODO: replace based on tfstate resources
-    // https://github.com/picodata/stroppy/issues/94
+	// TODO: replace based on tfstate resources
+	// https://github.com/picodata/stroppy/issues/94
 	spec["nodes"] = 1
 
 	resources, ok := spec["resources"].(map[interface{}]interface{})
@@ -352,7 +379,7 @@ func applyManifest(manifestName string) error {
 		)
 	}
 
-	llog.Debugf("Manifest %s succesefully applyed", manifestName)
+	llog.Debugf("Manifest %s succesefully applied", manifestName)
 
 	return nil
 }
@@ -395,59 +422,24 @@ func waitObjectReady(fpath, name string) error {
 	return nil
 }
 
-// Connect to freshly deployed cluster.
-func (yc *yandexCluster) Connect() (interface{}, error) {
-	var (
-		connection *cluster.YandexDBCluster
-		err        error
-	)
-
-	// to be able to connect to the cluster from localhost
-	// TODO: Replace to right YandexDB url and add connection to database
-	// https://github.com/picodata/stroppy/issues/95
-	if yc.commonCluster.DBUrl == "" {
-		yc.commonCluster.DBUrl = "grpc://stroppy:stroppy@localhost:2135/stroppy?sslmode=disable"
-		llog.Infoln("changed DBURL on", yc.commonCluster.DBUrl)
-	}
-
-	if connection, err = cluster.NewYandexDBCluster(
-		yc.commonCluster.DBUrl,
-		yc.commonCluster.connectionPoolSize,
-	); err != nil {
-		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
-	}
-
-	return connection, nil
-}
-
 //nolint // ok is typecasting boolean and logic of this function is inseparable
 // Generate parameters for `storage` CRD.
-func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
+func paramStorageConfig(storage string) ([]byte, error) {
 	var (
 		confMap map[interface{}]interface{}
 		bytes   []byte
 		err     error
 	)
 
-	spec, ok := storage["spec"].(map[interface{}]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	configuration, ok := spec["configuration"].(string)
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
 	if err = yaml.Unmarshal(
-		[]byte(configuration),
+		[]byte(storage),
 		&confMap,
 	); err != nil {
 		return nil, merry.Prepend(err, "Error then deserializing storage manifest")
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	hostConfigs, ok := confMap["host_configs"].([]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -469,7 +461,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -491,7 +483,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -526,7 +518,7 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
-    // https://github.com/picodata/stroppy/issues/94
+	// https://github.com/picodata/stroppy/issues/94
 	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
@@ -557,9 +549,38 @@ func paramStorageConfig(storage map[interface{}]interface{}) ([]byte, error) {
 		},
 	}
 
-	if bytes, err = yaml.Marshal(configuration); err != nil {
+	if bytes, err = yaml.Marshal(confMap); err != nil {
 		return []byte{}, merry.Prepend(err, "Error then serializing storage configuration")
 	}
 
 	return bytes, nil
+}
+
+// Connect to freshly deployed cluster.
+func (yc *yandexCluster) Connect() (interface{}, error) {
+	var (
+		connection *cluster.YandexDBCluster
+		err        error
+	)
+
+	if yc.commonCluster.DBUrl == "" {
+		yc.commonCluster.DBUrl = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
+
+		llog.Infoln("Changed DBURL on", yc.commonCluster.DBUrl)
+	}
+
+	ydbContext, cancel := context.WithCancel(context.Background())
+
+	defer cancel()
+
+	if connection, err = cluster.NewYandexDBCluster(
+		ydbContext,
+		yc.commonCluster.DBUrl,
+	); err != nil {
+		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
+	}
+
+	llog.Debugln("Connection to YDB successfully created")
+
+	return connection, nil
 }

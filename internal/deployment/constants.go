@@ -17,4 +17,7 @@ Enter "pay" to start transfers test in deployed DB.
 To use kubectl for access kubernetes cluster in another console 
 execute command for set environment variables KUBECONFIG before using:
 "export KUBECONFIG=$(pwd)/config"`
+
+	stroppyBinaryPath = "/usr/local/bin/stroppy"
+	stroppyHomePath   = "/home/stroppy"
 )

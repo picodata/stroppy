@@ -48,7 +48,7 @@ func (sh *shell) LoadState() (err error) {
 
 	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
 
-	err = sh.preparePayload()
+	err = sh.prepareDBForTests()
 	return
 }
 

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -58,22 +59,29 @@ type SshK8SOpts struct {
 	BastionPubIP  string
 }
 
-/// Deploy kubernetes and other infrastructure
-/// #steps:
-/// 1. Create directory for ssh config if it is not exists
-/// 2. Write ssh config to created in previous step directory
-/// 3. Copy id_rsa to .ssh directory
-/// 4. Generate ansible requirements
-/// 5. Generate ansible cfg
-/// 6. install ansible galaxy roles
-/// 7. Generate inventory for grafana and deploy
-/// 8. Generate inventory for kubespray and deploy
-/// 9. Apply grafana manifests
-/// 10. Deploy DB operator
-/// 11. Deploy container with stroppy
-func (k *Kubernetes) DeployAll(wd string) (err error) {
-	// 2. Create and template ssh config
-	var file *os.File
+//nolint
+// Deploy kubernetes and other infrastructure
+// #steps:
+// 1. Create directory for ssh config if it is not exists
+// 2. Write ssh config to created in previous step directory
+// 3. Copy id_rsa to .ssh directory
+// 4. Generate ansible requirements
+// 5. Generate ansible cfg
+// 6. install ansible galaxy roles
+// 7. Generate inventory for grafana and deploy
+// 8. Generate inventory for kubespray and deploy
+// 9. Apply grafana manifests
+// 10. Deploy DB operator
+// 11. Open ssh port forwarding
+// 12. Add node labels
+// 13. Deploy container with stroppy
+// 14. Deploy stroppy pod.
+func (k *Kubernetes) DeployK8S(wd string) error {
+	var (
+		file *os.File
+		err  error
+	)
+
 	file, err = os.Create(path.Join(wd, ".ssh/config"))
 	if err != nil {
 		llog.Infoln("Error then creating ssh config file")
@@ -124,36 +132,56 @@ func (k *Kubernetes) DeployAll(wd string) (err error) {
 
 	// 9. generate inventory and run kubespray ansible playbook
 	if err = k.finalizeDeployment(wd); err != nil {
-		return merry.Prepend(err, "failed to finalie k8s deploy")
+		return merry.Prepend(err, "failed to finalize k8s deploy")
 	}
 
 	// 10. set path variable to kubeconfig file
 	// by default kubeconfig everytime in ~/.kube/config
 	k.Engine.SetClusterConfigFile(fmt.Sprintf("%s/.kube/config", os.Getenv("HOME")))
 
-	// 11. Add nodes labels
+	// 11. Open port forwarding
+	k.KubernetesPort = k.Engine.OpenSecureShellTunnel(
+		kubeengine.SSHEntity,
+		k.Engine.AddressMap["external"]["master"],
+		clusterK8sPort,
+	)
+	if k.KubernetesPort.Err != nil {
+		return merry.Prepend(k.KubernetesPort.Err, "failed to create ssh tunnel")
+	}
+	llog.Infoln("Status of creating ssh tunnel for the access to k8s: success")
+
+	// 12. Add nodes labels
 	if err = k.Engine.AddNodeLabels(kubeengine.ResourceDefaultNamespace); err != nil {
 		return merry.Prepend(err, "failed to add labels to cluster nodes")
 	}
 
-	// 12. Create stroppy deployment with one pod on master node
+	// 13. Create stroppy deployment with one pod on master node
 	k.StroppyPod = stroppy.CreateStroppyPod(k.Engine)
-	if err = k.StroppyPod.Deploy(); err != nil {
-		err = merry.Prepend(err, "failed to deploy stroppy pod")
-		return
+	if err = k.StroppyPod.DeployNamespace(); err != nil {
+		return merry.Prepend(err, "failed to create stroppy namespace")
 	}
 
-	llog.Infoln("status of stroppy pod deploy: success")
-	return
+	// 14. Deploy stroppy pod
+	if err = k.StroppyPod.DeployPod(); err != nil {
+		return merry.Prepend(err, "failed to deploy stroppy pod")
+	}
+
+	llog.Infoln("Status of stroppy pod deploy: success")
+
+	return nil
 }
 
 func (k *Kubernetes) OpenPortForwarding() (err error) {
-	k.MonitoringPort = k.Engine.OpenSecureShellTunnel(monitoringSshEntity, clusterMonitoringPort)
+	k.MonitoringPort = k.Engine.OpenSecureShellTunnel(
+		monitoringSshEntity,
+		k.Engine.AddressMap["external"]["master"],
+		clusterMonitoringPort,
+	)
 	if k.MonitoringPort.Err != nil {
 		return merry.Prepend(k.MonitoringPort.Err, "cluster monitoring")
 	}
 
-	llog.Infoln("status of creating ssh tunnel for the access to monitoring: success")
+	llog.Infoln("Status of creating ssh tunnel for the access to monitoring: success")
 	return
 }
 
@@ -206,12 +234,27 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		AskBecomePass: false,
 	}
 
+	grafanaURL := url.URL{
+		Scheme: "http",
+		Opaque: "",
+		User:   &url.Userinfo{},
+		Host: net.JoinHostPort(
+			k.Engine.AddressMap["external"]["master"],
+			fmt.Sprintf("%d", GRAFANA_PORT), //nolint
+		),
+		Path:        "",
+		RawPath:     "",
+		ForceQuery:  false,
+		RawQuery:    "",
+		Fragment:    "",
+		RawFragment: "",
+	}
+
 	//nolint:nosnakecase // constant
 	// check that grafana is deployed
 	llog.Tracef(
-		"grafana uri http://%s:%v",
-		k.Engine.AddressMap["external"]["master"],
-		GRAFANA_PORT,
+		"grafana uri %s",
+		grafanaURL.String(),
 	)
 
 	contextWithTimeout, closeFn := context.WithTimeout(
@@ -222,12 +265,11 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 	if resp, err = sendGetWithContext(
 		contextWithTimeout,
 		nil,
-		net.JoinHostPort(
-			k.Engine.AddressMap["external"]["master"],
-			fmt.Sprint(GRAFANA_PORT), //nolint:nosnakecase // constant
-		),
-	); err != nil || resp.StatusCode != 200 {
+		grafanaURL.String(),
+	); err != nil || (resp.StatusCode > 500 && resp.StatusCode < 599) {
 		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
+
+		llog.Tracef("Response: %v", resp)
 
 		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{
 			Binary:                     "",

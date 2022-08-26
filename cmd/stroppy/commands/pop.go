@@ -33,6 +33,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
 				}()
 			}
+
 			if settings.TestSettings.UseCloudStroppy && settings.TestSettings.RunAsPod {
 				llog.Fatalf("--use-cloud-stroppy and --run-as-pod flags specified at the same time")
 			}
@@ -66,7 +67,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("%v", err)
 				}
 				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-				llog.Infof("pop test start time: '%d', end time: '%d'", beginTime, endTime)
+				llog.Infof("Pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				var balance *inf.Dec
 				if balance, err = p.Check(nil); err != nil {

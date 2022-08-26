@@ -26,19 +26,24 @@ const (
 	foundationClusterClientName = "sample-cluster-client"
 )
 
-func createFoundationCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string) (fc Cluster) {
-	fc = &foundationCluster{
+func createFoundationCluster(
+	sshClient engineSsh.Client,
+	k8s *kubernetes.Kubernetes,
+	workingDir, dbURL string,
+) Cluster {
+	fndCluster := &foundationCluster{
 		commonCluster: createCommonCluster(
-			sc,
-			k,
-			filepath.Join(wd, dbWorkingDirectory, foundationDbDirectory),
+			sshClient,
+			k8s,
+			filepath.Join(workingDir, dbWorkingDirectory, foundationDbDirectory),
 			foundationDbDirectory,
 			dbURL,
 			0,
 			false,
 		),
 	}
-	return
+
+	return fndCluster
 }
 
 type foundationCluster struct {
@@ -79,10 +84,11 @@ func (fc *foundationCluster) Deploy() (err error) {
 	if textb, err = session.CombinedOutput(fdbFixCommand); err != nil {
 		return merry.Prependf(err, "fix_client_version.sh failed with output `%s`", string(textb))
 	}
-	llog.Debugf("fix_client_version.sh applyed successfully")
+
+	llog.Debug("fix_client_version.sh applied successfully")
 
 	// \todo: Прокидываем порт foundationdb на локальную машину
-	if err := fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
+	if err = fc.openPortForwarding(foundationClusterName, []string{":"}); err != nil {
 		llog.Warnf("foundationdb failed to open port forwarding: %v", err)
 	}
 
