@@ -6,10 +6,8 @@ package sshtunnel
 
 import (
 	"fmt"
-	"strconv"
-	"strings"
 
-	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 )
 
 type Endpoint struct {
@@ -19,6 +17,12 @@ type Endpoint struct {
 }
 
 func NewLocalEndpoint(port int, user string) *Endpoint {
+	llog.Tracef(
+		"New local endpoint with host: localhost, port: %d, user: %s",
+		port,
+		user,
+	)
+
 	return &Endpoint{
 		Host: "localhost",
 		Port: port,
@@ -26,30 +30,21 @@ func NewLocalEndpoint(port int, user string) *Endpoint {
 	}
 }
 
-func NewEndpoint(s string) (*Endpoint, error) {
+func NewRemoteEndpoint(hostname string, port int, user string) *Endpoint {
 	endpoint := &Endpoint{
-		Host: s,
-		Port: 0,
-		User: "",
+		Host: hostname,
+		Port: port,
+		User: user,
 	}
 
-	if parts := strings.Split(endpoint.Host, "@"); len(parts) > 1 {
-		endpoint.User = parts[0]
-		endpoint.Host = parts[1]
-	}
+	llog.Tracef(
+		"New remote endpoint with host: %s, port: %d, user: %s",
+		endpoint.Host,
+		endpoint.Port,
+		endpoint.User,
+	)
 
-	if parts := strings.Split(endpoint.Host, ":"); len(parts) > 1 {
-		endpoint.Host = parts[0]
-
-		port, err := strconv.Atoi(parts[1])
-		if err != nil {
-			return nil, merry.Prepend(err, "failed to parse port value")
-		}
-
-		endpoint.Port = port
-	}
-
-	return endpoint, nil
+	return endpoint
 }
 
 func (endpoint *Endpoint) String() string {

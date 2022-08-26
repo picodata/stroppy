@@ -1,0 +1,19 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: stroppy-ingress
+  namespace: stroppy
+spec:
+  rules:
+    - host: "stroppy-client"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: stroppy-service
+                port:
+                  number: 23
+

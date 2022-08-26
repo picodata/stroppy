@@ -3,10 +3,13 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: stroppy-client
-  namespace: default
+  namespace: stroppy
 spec:
   containers:
   - name: stroppy-client
     image: docker.binary.picodata.io/stroppy:latest
     command: ["/bin/sleep"]
     args: [ "infinity" ]
+  nodeSelector:
+    node-type: "stroppy-worker"
+

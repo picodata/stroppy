@@ -10,12 +10,15 @@ import (
 	"os"
 
 	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 	"golang.org/x/crypto/ssh"
 )
 
 var errExpectedFile = errors.New("expected file, got dir")
 
 func PrivateKeyFile(file string) (ssh.AuthMethod, error) {
+	llog.Tracef("Private key file path %s", file)
+
 	info, err := os.Stat(file)
 	if os.IsNotExist(err) {
 		return nil, os.ErrNotExist

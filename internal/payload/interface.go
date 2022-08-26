@@ -27,37 +27,6 @@ type Payload interface {
 	Connect() error
 }
 
-func CreatePayload(cluster db.Cluster, settings *config.Settings, chaos chaos.Controller) (p Payload, err error) {
-	bp := &BasePayload{
-		cluster:        cluster,
-		config:         settings.DatabaseSettings,
-		chaos:          chaos,
-		chaosParameter: settings.ChaosParameter,
-	}
-
-	if bp.config.Oracle {
-		predictableCluster, ok := bp.Cluster.(database.PredictableCluster)
-		if !ok {
-			err = merry.Errorf("oracle is not supported for %s cluster", bp.config.DBType)
-			return
-		}
-
-		bp.oracle = new(database.Oracle)
-		bp.oracle.Init(predictableCluster)
-	}
-
-	if bp.config.UseCustomTx {
-		bp.payFunc = payCustomTx
-	} else {
-		bp.payFunc = payBuiltinTx
-	}
-	llog.Infof("payload object constructed for database '%s', url '%s'",
-		bp.config.DBType, bp.config.DBURL)
-
-	p = bp
-	return
-}
-
 type BasePayload struct {
 	// \todo: Имеем две сущности описывающие кластер базы данных - произвести рефакторинг
 	cluster db.Cluster
@@ -70,7 +39,72 @@ type BasePayload struct {
 	chaosParameter string
 
 	oracle  *database.Oracle
-	payFunc func(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error)
+	payFunc func(
+		settings *config.DatabaseSettings,
+		cluster CustomTxTransfer,
+		oracle *database.Oracle,
+	) (*PayStats, error)
+}
+
+func CreatePayload(
+	cluster db.Cluster,
+	settings *config.Settings,
+	chaosController chaos.Controller,
+) (Payload, error) {
+	basePayload := &BasePayload{
+		cluster:        cluster,
+		Cluster:        nil,
+		config:         settings.DatabaseSettings,
+		configLock:     sync.Mutex{},
+		chaos:          chaosController,
+		chaosParameter: settings.ChaosParameter,
+		oracle:         &database.Oracle{},
+		payFunc:        nil,
+	}
+
+	llog.Debugf("DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
+		"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
+		"ConnectPoolSize: %d, Sharded: %v",
+		settings.DatabaseSettings.DBType,
+		settings.DatabaseSettings.Workers,
+		settings.DatabaseSettings.Zipfian,
+		settings.DatabaseSettings.Oracle,
+		settings.DatabaseSettings.Check,
+		settings.DatabaseSettings.DBURL,
+		settings.DatabaseSettings.UseCustomTx,
+		settings.DatabaseSettings.BanRangeMultiplier,
+		settings.DatabaseSettings.StatInterval,
+		settings.DatabaseSettings.ConnectPoolSize,
+		settings.DatabaseSettings.Sharded,
+	)
+
+	if basePayload.config.Oracle {
+		predictableCluster, ok := basePayload.Cluster.(database.PredictableCluster)
+		if !ok {
+			return nil, merry.Errorf(
+				"Oracle is not supported for %s cluster",
+				basePayload.config.DBType,
+			)
+		}
+
+		basePayload.oracle = new(database.Oracle)
+
+		basePayload.oracle.Init(predictableCluster)
+	}
+
+	if basePayload.config.UseCustomTx {
+		basePayload.payFunc = payCustomTx
+	} else {
+		basePayload.payFunc = payBuiltinTx
+	}
+
+	llog.Infof(
+		"Payload object constructed for database '%s', url '%s'",
+		basePayload.config.DBType,
+		basePayload.config.DBURL,
+	)
+
+	return basePayload, nil
 }
 
 func (p *BasePayload) UpdateSettings(newConfig *config.DatabaseSettings) {
@@ -89,13 +123,30 @@ func (p *BasePayload) StartStatisticsCollect(statInterval time.Duration) (err er
 	return
 }
 
-func (p *BasePayload) Connect() (err error) {
+func (p *BasePayload) Connect() error {
 	// \todo: необходим большой рефакторинг
-	var c interface{}
-	if c, err = p.cluster.Connect(); err != nil {
-		return
+	var (
+		dbCluster interface{}
+		isOk      bool
+		err       error
+	)
+
+	llog.Tracef("Trying to init Payload with cluster type '%s'", p.config.DBType)
+
+	if dbCluster, err = p.cluster.Connect(); err != nil {
+		return merry.Prepend(err, "BasePayload: failed to create cluster connection")
 	}
 
-	p.Cluster = c.(CustomTxTransfer)
-	return
+	if p.Cluster, isOk = dbCluster.(CustomTxTransfer); !isOk {
+		llog.Errorf("Error then casting payload to CustomTxTransfer: %s", err)
+
+		return merry.Prepend(
+			err,
+			"Type casting error then trying to cast Cluster to CustomTxTransfer",
+		)
+	}
+
+	llog.Traceln("Payload type successefully casted to CustomTxTransfer")
+
+	return nil
 }

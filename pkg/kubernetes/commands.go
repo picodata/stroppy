@@ -21,17 +21,30 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 )
 
-func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string, testCmd []string, logFileName string) (beginTime int64, endTime int64, err error) {
-	var config *rest.Config
+//nolint:gocritic // because here two conflicting lint rules nonamedreturns and unnamedResult
+func (k *Kubernetes) ExecuteRemoteCommand(
+	_, containerName string,
+	testCmd []string,
+	logFileName string,
+) (int64, int64, error) {
+	var (
+		beginTime int64
+		endTime   int64
+		config    *rest.Config
+		clientSet *kubernetes.Clientset
+		err       error
+	)
+
 	if config, err = k.Engine.GetKubeConfig(); err != nil {
-		err = merry.Prepend(err, "failed to get config for execute remote test")
-		return
+		return beginTime, endTime, merry.Prepend(
+			err, "failed to get config for execute remote test",
+		)
 	}
 
-	var clientSet *kubernetes.Clientset
 	if clientSet, err = k.Engine.GetClientSet(); err != nil {
-		err = merry.Prepend(err, "failed to get clientset for execute remote test")
-		return
+		return beginTime, endTime, merry.Prepend(
+			err, "failed to get clientset for execute remote test",
+		)
 	}
 
 	// формируем запрос для API k8s
@@ -59,16 +72,14 @@ func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string, testCmd []str
 	// подключаемся к API-серверу
 	var _exec remotecommand.Executor
 	if _exec, err = remotecommand.NewSPDYExecutor(config, "POST", executeRequest.URL()); err != nil {
-		err = merry.Prepend(err, "failed to execute remote test")
-		return
+		return beginTime, endTime, merry.Prepend(err, "failed to execute remote test")
 	}
 
 	logFilePath := filepath.Join(k.Engine.WorkingDirectory, logFileName)
 
 	var logFile *os.File
 	if logFile, err = os.Create(logFilePath); err != nil {
-		err = merry.Prepend(err, "failed to create test log file")
-		return
+		return beginTime, endTime, merry.Prepend(err, "failed to create test log file")
 	}
 	defer logFile.Close()
 
@@ -86,10 +97,10 @@ func (k *Kubernetes) ExecuteRemoteCommand(_, containerName string, testCmd []str
 
 	// выполняем запрос и выводим стандартный вывод в указанное в опциях место
 	if err = _exec.Stream(streamOptions); err != nil {
-		err = merry.Prepend(err, "failed to get stream of exec command")
-		return
+		return beginTime, endTime, merry.Prepend(err, "failed to get stream of exec command")
 	}
 
 	endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) + 20000
-	return
+
+	return beginTime, endTime, nil
 }

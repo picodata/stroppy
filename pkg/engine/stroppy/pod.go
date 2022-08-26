@@ -8,7 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -58,32 +58,106 @@ func (pod *Pod) ContainerName(containerNum int) (contName string, err error) {
 	return
 }
 
-func (pod *Pod) Deploy() (err error) {
-	var clientSet *kubernetes.Clientset
+func (pod *Pod) DeployNamespace() error {
+	var (
+		err       error
+		clientSet *kubernetes.Clientset
+	)
+
 	if clientSet, err = pod.e.GetClientSet(); err != nil {
 		return merry.Prepend(err, "failed to get clientset for stroppy secret")
 	}
 
-	deployConfigStroppyPath := filepath.Join(
+	deployContext, cancel := context.WithCancel(context.Background())
+
+	namespaceFilePath := filepath.Join(
 		pod.e.WorkingDirectory,
-		"third_party", "extra", "manifests",
-		deployConfigFile,
+		"third_party", "extra", "manifests", "stroppy",
+		namespaceFile,
+	)
+
+	var namepaceFileBytes []byte
+
+	if namepaceFileBytes, err = os.ReadFile(namespaceFilePath); err != nil {
+		cancel()
+
+		return merry.Prepend(err, "failed to read namespace manifest for stroppy")
+	}
+
+	stroppyNamespaceConfig := applyconfig.Namespace(NamespaceName)
+
+	if err = yaml.Unmarshal(namepaceFileBytes, &stroppyNamespaceConfig); err != nil {
+		cancel()
+
+		return merry.Prepend(err, "failed to unmarshall stroppy namespace manifest")
+	}
+
+	var stroppyNamespace *v1.Namespace
+
+	if stroppyNamespace, err = clientSet.CoreV1().Namespaces().Apply(
+		deployContext,
+		stroppyNamespaceConfig,
+		metav1.ApplyOptions{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       "",
+				APIVersion: "",
+			},
+			DryRun:       []string{},
+			Force:        false,
+			FieldManager: fieldManagerName,
+		},
+	); err != nil {
+		cancel()
+
+		return merry.Prepend(err, fmt.Sprintf("Error then creating namespace %s", NamespaceName))
+	}
+
+	llog.Debugf("Namespace %s status %v", NamespaceName, stroppyNamespace.Status.Phase)
+	llog.Infof("Applying stroppy namespace '%s': success", NamespaceName)
+
+	cancel()
+
+	return nil
+}
+
+//nolint // TODO: will be fixed in future funlen
+func (pod *Pod) DeployPod() error {
+	var (
+		err       error
+		clientSet *kubernetes.Clientset
+	)
+
+	if clientSet, err = pod.e.GetClientSet(); err != nil {
+		return merry.Prepend(err, "failed to get clientset for stroppy secret")
+	}
+
+	deployContext, cancel := context.WithCancel(context.Background())
+
+	deploymentFilePath := filepath.Join(
+		pod.e.WorkingDirectory,
+		"third_party", "extra", "manifests", "stroppy",
+		deploymentFile,
 	)
 
 	var deployConfigBytes []byte
-	if deployConfigBytes, err = ioutil.ReadFile(deployConfigStroppyPath); err != nil {
+
+	if deployConfigBytes, err = os.ReadFile(deploymentFilePath); err != nil {
+		cancel()
+
 		return merry.Prepend(err, "failed to read config file for deploy stroppy")
 	}
 
 	stroppyPodConfig := applyconfig.Pod(PodName, engine.ResourceDefaultNamespace)
 	if err = yaml.Unmarshal(deployConfigBytes, &stroppyPodConfig); err != nil {
+		cancel()
+
 		return merry.Prepend(err, "failed to unmarshall deploy stroppy configuration")
 	}
 
 	createPod := func() (err error) {
-		pod.internalPod, err = clientSet.CoreV1().
+		if pod.internalPod, err = clientSet.CoreV1().
 			Pods(engine.ResourceDefaultNamespace).
-			Apply(context.TODO(),
+			Apply(deployContext,
 				stroppyPodConfig,
 				metav1.ApplyOptions{
 					TypeMeta: metav1.TypeMeta{
@@ -93,22 +167,24 @@ func (pod *Pod) Deploy() (err error) {
 					DryRun:       []string{},
 					Force:        false,
 					FieldManager: fieldManagerName,
-				})
-		if err != nil {
-			err = fmt.Errorf("failed to create stroppy pod: %v", err)
+				}); err != nil {
+			cancel()
+
+			return merry.Prepend(err, "failed to create stroppy pod: %v")
 		}
-		return
+
+		return nil
 	}
 
 	deletePod := func() (err error) {
-		err = clientSet.CoreV1().
+		if err = clientSet.CoreV1().
 			Pods(engine.ResourceDefaultNamespace).
-			Delete(context.TODO(), PodName, metav1.DeleteOptions{})
-		if err != nil {
+			Delete(deployContext, PodName, metav1.DeleteOptions{}); err != nil { //nolint
 			err = fmt.Errorf("failed to delete stroppy pod: %v", err)
 			llog.Warn(err)
 		}
-		return
+
+		return nil
 	}
 
 	llog.Infoln("Applying stroppy pod...")
@@ -134,7 +210,8 @@ func (pod *Pod) Deploy() (err error) {
 		return err
 	}
 
-	// на случай чуть большего времени на переход в running, ожидаем 5 минут, если не запустился - возвращаем ошибку
+	// на случай чуть большего времени на переход в running, ожидаем 5 минут, 
+    // если не запустился - возвращаем ошибку
 	if pod.internalPod.Status.Phase != v1.PodRunning {
 		pod.internalPod, err = pod.e.WaitPod(PodName, engine.ResourceDefaultNamespace,
 			engine.PodWaitingNotWaitCreation, engine.PodWaitingTimeTenMinutes)
@@ -160,5 +237,8 @@ func (pod *Pod) Deploy() (err error) {
 	}
 
 	llog.Infoln("Applying the stroppy pod: success")
-	return
+
+	cancel()
+
+	return nil
 }
