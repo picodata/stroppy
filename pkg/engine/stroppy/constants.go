@@ -5,12 +5,11 @@
 package stroppy
 
 const (
-	namespaceFile    = "namespace.yaml"
-	deploymentFile   = "deployment.yaml"
-	fieldManagerName = "stroppy-deploy"
+	stroppyClientNSManifestFile = "namespace.yaml"
+	stoppyClientManifestFile    = "deployment.yaml"
 )
 
 const (
-	NamespaceName = "stroppy"
-	PodName       = "stroppy-client"
+	StroppyClientNSName  = "stroppy"
+	StroppyClientPodName = "stroppy-client"
 )

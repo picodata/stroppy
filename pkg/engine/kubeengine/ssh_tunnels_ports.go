@@ -147,7 +147,7 @@ func (e *Engine) OpenSecureShellTunnel(
 		}
 	}
 
-	llog.Infof("Remote port %d on %s is openeded", tunnelPort, targetHostname)
+	llog.Infof("Remote port %d on %s is opened", tunnelPort, targetHostname)
 
 	// если туннель для k8s и недоступен основной порт, то меняем его на резервный
 	if tunnelPort != targetPort && caller == SSHEntity {

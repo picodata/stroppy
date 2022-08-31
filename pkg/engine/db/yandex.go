@@ -16,10 +16,12 @@ import (
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
-	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	kubernetesEngine "gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"gopkg.in/yaml.v2"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 const (
@@ -42,7 +44,7 @@ type yandexCluster struct {
 // Create createYandexDBCluster.
 func createYandexDBCluster(
 	sc engineSsh.Client,
-	k *kubernetes.Kubernetes,
+	k *kubernetesEngine.Kubernetes,
 	wd string,
 	dbURL string,
 	connectionPoolSize int,
@@ -273,6 +275,12 @@ func (yc *yandexCluster) deployStorage() error {
 	); err != nil {
 		return merry.Prepend(err, "Error then writing storage.yml")
 	}
+    
+    stroppyYdbStorageConfig := applyconfig.
+
+    yc.commonCluster.k.Engine.BytesToEngineObject("stroppy-ydb-storage", bytes, )
+
+    kubernetes.Clientset.Corev1()
 
 	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
 }
