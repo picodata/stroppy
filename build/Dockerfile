@@ -17,7 +17,7 @@ RUN useradd -m stroppy
 COPY third_party /home/stroppy/third_party
 COPY build/.terraformrc /home/stroppy/.terraformrc
 RUN apt update \
-    && apt install -y ca-certificates wget curl python3 pip unzip ssh \
+    && apt install -y ca-certificates wget curl python3 pip unzip ssh vim \
     && apt clean
 RUN pip install -r /home/stroppy/third_party/kubespray/requirements.txt \
     && curl -fsLO https://github.com/apple/foundationdb/releases/download/${FDB_VERSION}/foundationdb-clients_${FDB_VERSION}-1_amd64.deb \

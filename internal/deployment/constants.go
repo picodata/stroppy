@@ -5,6 +5,7 @@
 package deployment
 
 const (
+	testConfDir    = "third_party/tests"
 	configFileName = "test_config.json"
 
 	interactiveUsageHelpTemplate = `
