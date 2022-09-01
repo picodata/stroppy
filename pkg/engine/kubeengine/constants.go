@@ -4,7 +4,9 @@
 
 package kubeengine
 
-import "time"
+import (
+	"time"
+)
 
 // Externally avail constants
 const (
