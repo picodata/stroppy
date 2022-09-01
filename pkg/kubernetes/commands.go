@@ -50,8 +50,8 @@ func (k *Kubernetes) ExecuteRemoteCommand(
 	// формируем запрос для API k8s
 	executeRequest := clientSet.CoreV1().RESTClient().Post().
 		Resource(engine.ResourcePodName).
-		Name(stroppy.PodName).
-		Namespace(engine.ResourceDefaultNamespace).
+		Name(stroppy.StroppyClientPodName).
+		Namespace(stroppy.StroppyClientNSName).
 		SubResource(engine.SubresourceExec).Timeout(60)
 
 	option := &v1.PodExecOptions{

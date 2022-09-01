@@ -46,7 +46,7 @@ func (sh *shell) executeRemotePay(
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.PodName, "",
+	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.StroppyClientPodName, "",
 		payTestCommand, logFileName)
 	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote transfer test")
@@ -164,7 +164,7 @@ func (sh *shell) executeRemotePop(
 		settings.Zipfian, time.Now().Format(dateFormat))
 
 	if beginTime, endTime, err = sh.k.ExecuteRemoteCommand(
-		stroppy.PodName,
+		stroppy.StroppyClientPodName,
 		"",
 		popTestCommand,
 		logFileName,

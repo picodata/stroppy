@@ -24,7 +24,7 @@ const (
 )
 
 type YandexDBCluster struct {
-	conn ydb.Connection
+	ydbConnection ydb.Connection
 }
 
 //nolint
@@ -41,7 +41,7 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBClus
 		return nil, merry.Prepend(err, "Error then creating YDB connection holder")
 	}
 
-	return &YandexDBCluster{conn: database}, nil
+	return &YandexDBCluster{ydbConnection: database}, nil
 }
 
 func (*YandexDBCluster) GetClusterType() DBClusterType {
@@ -92,11 +92,11 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	defer cancel()
 
-	prefix := path.Join(ydbCluster.conn.Name(), stroppyDir)
+	prefix := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir)
 
 	if err = createStroppyDirectory(
 		ydbContext,
-		ydbCluster.conn,
+		ydbCluster.ydbConnection,
 		prefix,
 	); err != nil {
 		panic(fmt.Sprintf("Error then creating stroppy directory: %s", err))
@@ -104,7 +104,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	if err = createSettingsTable(
 		ydbContext,
-		ydbCluster.conn.Table(),
+		ydbCluster.ydbConnection.Table(),
 		prefix,
 	); err != nil {
 		panic(fmt.Sprintf("Error then creating settings table: %s", err))
@@ -112,14 +112,14 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	if err = createAccountTable(
 		ydbContext,
-		ydbCluster.conn.Table(),
+		ydbCluster.ydbConnection.Table(),
 		prefix); err != nil {
 		panic(fmt.Sprintf("Error then account settings table: %s", err))
 	}
 
 	if err = createTransferTable(
 		ydbContext,
-		ydbCluster.conn.Table(),
+		ydbCluster.ydbConnection.Table(),
 		prefix,
 	); err != nil {
 		panic(fmt.Sprintf("Error then transfer settings table: %s", err))
@@ -127,7 +127,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	if err = createChecksumTable(
 		ydbContext,
-		ydbCluster.conn.Table(),
+		ydbCluster.ydbConnection.Table(),
 		prefix,
 	); err != nil {
 		panic(fmt.Sprintf("Error then checksum settings table: %s", err))
@@ -299,17 +299,17 @@ func recreateTable(
 
 func createStroppyDirectory(
 	ydbContext context.Context,
-	conn ydb.Connection,
+	ydbConnection ydb.Connection,
 	ydbDirPath string,
 ) error {
-	if err := conn.Scheme().RemoveDirectory(
+	if err := ydbConnection.Scheme().RemoveDirectory(
 		ydbContext,
 		ydbDirPath,
 	); err != nil {
 		llog.Debugf("Database directory '%s' does not exists in YDB cluster", ydbDirPath)
 	}
 
-	if err := conn.Scheme().MakeDirectory(
+	if err := ydbConnection.Scheme().MakeDirectory(
 		ydbContext,
 		ydbDirPath,
 	); err != nil {
