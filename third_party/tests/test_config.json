@@ -2,6 +2,7 @@
   "log_level": "info",
   "banRangeMultiplier": 1.1,
   "database_type": [
+    "ydb",
     "postgres",
     "fdb",
     "cartridge"

@@ -161,8 +161,6 @@ func (sh *shell) prepareDBForTests() error {
 func (sh *shell) deploy() error {
 	var err error
 
-	llog.Traceln(sh.settings)
-
 	// Build terraform script
 	if err = sh.prepareTerraform(); err != nil {
 		return merry.Prepend(err, "Error then preparing terraform")

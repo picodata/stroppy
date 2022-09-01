@@ -23,7 +23,7 @@ This program models an automatic banking system.  It implements 3 model
 workloads, for populating the database with accounts, making transfers, and
 checking correctness. It collects client-side metrics for latency and
 bandwidth along the way.`,
-		Version: "0.9",
+		Version: "0.10",
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) (err error) {
 			if err = initLogFacility(settings); err != nil {
 				return

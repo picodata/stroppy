@@ -181,10 +181,11 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 	var data []byte
 
 	llog.Debugf(
-		"Expected test config file path %s", filepath.Join(sh.workingDirectory, configFileName),
+		"Expected test config file path %s",
+		filepath.Join(sh.workingDirectory, testConfDir, configFileName),
 	)
 
-	configFilePath := filepath.Join(sh.workingDirectory, configFileName)
+	configFilePath := filepath.Join(sh.workingDirectory, testConfDir, configFileName)
 	if data, err = ioutil.ReadFile(configFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read config file")
 		return
