@@ -92,8 +92,12 @@ func (sh *shell) prepareTerraform() error {
 		return merry.Prepend(err, "failed to init provider")
 	}
 
-	if err = sh.tf.Provider.CheckSSHKeyFiles(sh.tf.WorkDirectory); err != nil {
-		return merry.Prepend(err, "Error then checking ssh keys files")
+	if err = sh.tf.Provider.CheckSSHPrivateKey(sh.tf.WorkDirectory); err != nil {
+		return merry.Prepend(err, "Error then checking ssh private key")
+	}
+
+	if err = sh.tf.Provider.CheckSSHPublicKey(sh.tf.WorkDirectory); err != nil {
+		return merry.Prepend(err, "Error then checking ssh public key")
 	}
 
 	return nil
