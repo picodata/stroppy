@@ -5,6 +5,7 @@
 package payload
 
 import (
+	"context"
 	"errors"
 	"math/rand"
 	"strings"
@@ -92,10 +93,16 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID
 				Code: 1007,
 			}) || errors.Is(err, cluster.ErrCockroachTxClosed) || errors.Is(err, cluster.ErrCockroachUnexpectedEOF) || errors.Is(err, mongo.CommandError{
 				Code: 133,
-			}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
+			}) || errors.Is(err, cluster.ErrTxRollback) ||
+				mongo.IsNetworkError(err) ||
 				// временная мера до стабилизации mongo
-				mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection") || strings.Contains(err.Error(), "socket") ||
-				errors.Is(err, mongo.WriteConcernError{Code: 64}) || errors.Is(err, mongo.WriteConcernError{Code: 11602}) {
+				mongo.IsTimeout(err) ||
+				strings.Contains(err.Error(), "connection") ||
+				strings.Contains(err.Error(), "socket") ||
+				errors.Is(err, mongo.WriteConcernError{Code: 64}) || //nolint
+				errors.Is(err, mongo.WriteConcernError{Code: 11602}) || //nolint
+				strings.Contains(err.Error(), "#2001 Transaction locks invalidated.") ||
+				errors.Is(err, context.DeadlineExceeded) {
 				atomic.AddUint64(&c.payStats.retries, 1)
 
 				llog.Tracef("[%v] Retrying transfer after sleeping %v",
@@ -167,7 +174,11 @@ func payWorkerBuiltinTx(
 }
 
 // TODO: расширить логику, либо убрать err в выходных параметрах
-func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, oracle *database.Oracle) (*PayStats, error) {
+func payBuiltinTx(
+	settings *config.DatabaseSettings,
+	dbCluster CustomTxTransfer,
+	oracle *database.Oracle,
+) (*PayStats, error) {
 	var (
 		wg       sync.WaitGroup
 		payStats PayStats
@@ -182,16 +193,26 @@ func payBuiltinTx(settings *config.DatabaseSettings, cluster CustomTxTransfer, o
 	for i := 0; i < settings.Workers; i++ {
 		wg.Add(1)
 		nTransfers := transfersPerWorker
+
 		if i < remainder {
 			nTransfers++
 		}
-		go payWorkerBuiltinTx(settings, nTransfers, settings.Zipfian, cluster, oracle, &payStats, &wg)
+
+		go payWorkerBuiltinTx(
+			settings,
+			nTransfers,
+			settings.Zipfian,
+			dbCluster,
+			oracle,
+			&payStats,
+			&wg,
+		)
 	}
 
 	wg.Wait()
 	statistics.StatsReportSummary()
 	if oracle != nil {
-		oracle.FindBrokenAccounts(cluster)
+		oracle.FindBrokenAccounts(dbCluster)
 	}
 
 	return &payStats, nil

@@ -33,6 +33,9 @@ var (
 
 	ErrCockroachTxClosed      = errors.New("tx is closed")
 	ErrCockroachUnexpectedEOF = errors.New("unexpected EOF")
+
+	// ErrTransactionInvalidated is returned then another transaction lock this this row first.
+	ErrTransactionInvalidated = errors.New("cluster: transaction invalidated")
 )
 
 // DBClusterType is type for choose ClusterType.

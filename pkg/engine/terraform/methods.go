@@ -7,7 +7,6 @@ package terraform
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"path"
@@ -92,17 +91,18 @@ func (t *Terraform) InitProvider() (err error) {
 }
 
 func (t *Terraform) LoadState() (err error) {
-	if t.data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
+	if t.data, err = os.ReadFile(t.stateFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read file terraform.tfstate")
 	}
 
 	t.Provider.SetTerraformStatusData(t.data)
+
 	return
 }
 
-// GetAddressMap - получить структуру с адресами кластера
+// GetAddressMap - получить структуру с адресами кластера.
 func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
-	return t.Provider.GetAddressMap(t.settings.Nodes)
+	return t.Provider.GetAddressMap(t.settings.Nodes) //nolint //TODO refactor in future
 }
 
 func (t *Terraform) Run() (err error) {
