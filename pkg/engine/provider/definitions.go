@@ -14,13 +14,16 @@ const (
 	ClusterTemplateFileName = "templates.yaml"
 )
 
-var ErrChooseConfig = errors.New("failed to choose configuration. Unexpected configuration cluster template")
+var ErrChooseConfig = errors.New(
+	"failed to choose configuration. Unexpected configuration cluster template",
+)
 
 type Provider interface {
 	Prepare() error
 	AddNetworkDisks(int) error
 	GetAddressMap(int) (map[string]map[string]string, error)
-	CheckSSHKeyFiles(string) error
+	CheckSSHPrivateKey(string) error
+	CheckSSHPublicKey(string) error
 	RemoveProviderSpecificFiles()
 	SetTerraformStatusData([]byte)
 	GetDeploymentCommands() (string, string)

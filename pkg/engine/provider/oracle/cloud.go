@@ -420,6 +420,11 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 }
 
 //nolint
-func (op *Provider) CheckSSHKeyFiles(workDir string) error {
+func (op *Provider) CheckSSHPrivateKey(workDir string) error {
+	return nil
+}
+
+//nolint
+func (op *Provider) CheckSSHPublicKey(workDir string) error {
 	return nil
 }
