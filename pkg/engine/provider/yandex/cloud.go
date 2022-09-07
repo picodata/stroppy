@@ -211,7 +211,7 @@ func (yp *Provider) GetAddressMap(
 //      - Copy key files from user home ~/.ssh
 //      - Crete new key files
 //      - Abort execution
-func (yp *Provider) CheckSSHKeyFiles(workDir string) error {
+func (yp *Provider) CheckSSHPrivateKey(workDir string) error {
 	var err error
 
 	llog.Infof("Checking if `.ssh` directory exists in the project directory `%s`", workDir)
@@ -257,18 +257,30 @@ func (yp *Provider) CheckSSHKeyFiles(workDir string) error {
 				workDir,
 				err,
 			)
-			llog.Infof("Project working directory does not contains private key")
+			llog.Infoln("Project working directory does not contains private key")
+		} else {
+			llog.Infof("Private key successefully copied from workdir to .ssh dir")
+
+            return nil
 		}
 
 		if err = engine.AskNextAction(workDir); err != nil {
 			return merry.Prepend(err, "Error then creating private key file")
 		}
 	} else {
-		llog.Infof("Private key founded in `%s`", path.Join(workDir, ".ssh"))
+		llog.Infoln("Checking of private key for yandex provider: success")
 	}
 
+	return nil
+}
+
+// Check ssh public key and create if his not exists
+// Should called only after 'CheckSSHPrivateKey'
+func(*Provider) CheckSSHPublicKey(workDir string) error {
+	var err error
+
 	if !engine.IsFileExists(workDir, PUB_KEY_NAME) {
-		llog.Infoln("checking of public key for yandex provider: unsuccess")
+		llog.Infoln("Checking of public key for yandex provider: unsuccess")
 
 		if err = engine.CreatePublicKey(
 			path.Join(workDir, SSH_DIR, PRIV_KEY_NAME),
@@ -276,10 +288,8 @@ func (yp *Provider) CheckSSHKeyFiles(workDir string) error {
 		); err != nil {
 			return merry.Prepend(err, "Error then creating ssh public key")
 		}
-
-		llog.Infoln("public private key successefully created")
 	} else {
-		llog.Infoln("checking of public key for yandex provider: success")
+		llog.Infoln("Checking of public key for yandex provider: success")
 	}
 
 	return nil

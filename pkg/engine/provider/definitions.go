@@ -20,7 +20,8 @@ type Provider interface {
 	Prepare() error
 	AddNetworkDisks(int) error
 	GetAddressMap(int) (map[string]map[string]string, error)
-	CheckSSHKeyFiles(string) error
+	CheckSSHPrivateKey(string) error
+    CheckSSHPublicKey(string) error
 	RemoveProviderSpecificFiles()
 	SetTerraformStatusData([]byte)
 	GetDeploymentCommands() (string, string)

@@ -56,6 +56,10 @@ func (np *neutralProvider) GetDeploymentCommands() (firstStep, thirdStep string)
 	return
 }
 
-func (np *neutralProvider) CheckSSHKeyFiles(workDir string) error {
+func (np *neutralProvider) CheckSSHPrivateKey(workDir string) error {
+	return nil
+}
+
+func (np *neutralProvider) CheckSSHPublicKey(workDir string) error {
 	return nil
 }
