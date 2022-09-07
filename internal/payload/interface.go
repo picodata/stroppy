@@ -92,6 +92,8 @@ func CreatePayload(
 		basePayload.oracle.Init(predictableCluster)
 	}
 
+	llog.Debugf("CustomTx will be used: %v", basePayload.config.UseCustomTx)
+
 	if basePayload.config.UseCustomTx {
 		basePayload.payFunc = payCustomTx
 	} else {

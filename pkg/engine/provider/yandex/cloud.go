@@ -42,6 +42,7 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provide
 	}
 
 	yp = &_provider
+
 	return
 }
 
@@ -86,6 +87,7 @@ func (yp *Provider) AddNetworkDisks(nodes int) error {
 	llog.Debugln(iqnMap)
 
 	llog.Infoln("Storages adding for yandex is not used now")
+
 	return nil
 }
 
@@ -102,10 +104,11 @@ func (yp *Provider) SetTerraformStatusData(data []byte) {
 
 //nolint:varnamelen // ok name is ok!
 // Parse `terraform.tfstate` and get all important ip address.
-func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
+func (yp *Provider) parseAddressMap(nodesCnt int) error {
+	var err error
+
 	if yp.tfStateData == nil {
-		err = errors.New("tf state data empty")
-		return
+		return errors.New("tf state data empty") //nolint // will be fixed in future
 	}
 
 	llog.Debugln("Start parsing address map into ip addresses")
@@ -130,14 +133,14 @@ func (yp *Provider) parseAddressMap(nodes_cnt int) (err error) {
 		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
 	}
 
-	internalAddress["master"] = master["ip_address"].(string)
-	externalAddress["master"] = master["nat_ip_address"].(string)
+	internalAddress["master"] = master["ip_address"].(string)     //nolint
+	externalAddress["master"] = master["nat_ip_address"].(string) //nolint
 
 	for i := 1; i < len(nodes); i++ {
-		node := nodes[i].(map[string]interface{})
+		node := nodes[i].(map[string]interface{}) //nolint
 		llog.Tracef("index: %v node: %v", i, node)
-		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)
-		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string)
+		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)     //nolint
+		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string) //nolint
 	}
 
 	llog.Tracef("external address %#v", externalAddress)
@@ -199,6 +202,7 @@ func (yp *Provider) GetAddressMap(
 		return nil, err
 	}
 	llog.Debugln("Address map prepared: success")
+
 	return yp.addressMap, err
 }
 
@@ -234,7 +238,7 @@ func (yp *Provider) CheckSSHPrivateKey(workDir string) error {
 
 	llog.Infoln("Checking of private key for yandex provider")
 
-	if !engine.IsFileExists(path.Join(workDir, ".ssh"), PRIV_KEY_NAME) {
+	if engine.IsFileExists(path.Join(workDir, ".ssh"), PRIV_KEY_NAME) {
 		llog.Infoln("Checking of private key for yandex provider: success")
 
 		return nil
@@ -303,6 +307,7 @@ func (yp *Provider) Name() string {
 func (yp *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	firstStep = "./cluster/provider/yandex/deploy_base_components.sh"
 	thirdStep = "./cluster/provider/yandex/deploy_monitoring.sh"
+
 	return
 }
 

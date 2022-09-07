@@ -27,6 +27,8 @@ const dateFormat = "02-01-2006_15_04_05"
 func (sh *shell) executeRemotePay(
 	settings *config.DatabaseSettings,
 ) (beginTime, endTime int64, err error) {
+	llog.Debugf("DBURL: %s", settings.DBURL)
+
 	payTestCommand := []string{
 		stroppyBinaryPath,
 		"pay",
@@ -41,6 +43,8 @@ func (sh *shell) executeRemotePay(
 		"--dbtype", sh.settings.DatabaseSettings.DBType,
 		"--log-level", sh.settings.LogLevel,
 	}
+
+	llog.Tracef("Stroppy remote command '%s'", strings.Join(payTestCommand, " "))
 
 	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,

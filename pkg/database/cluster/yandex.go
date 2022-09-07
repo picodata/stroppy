@@ -125,10 +125,166 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 }
 
 func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
-	transfer *model.Transfer,
+	transfer *model.Transfer, //nolint
 	clientID uuid.UUID,
 ) error {
-	panic("unimplemented!")
+	var (
+		err         error
+		transaction table.Transaction
+		ydbSession  table.Session
+		queryResult result.Result
+	)
+
+	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	rwTX := table.TxControl(table.BeginTx(table.WithSerializableReadWrite()))
+	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "transfer")
+
+	defer ctxCloseFn()
+
+	if ydbSession, err = ydbCluster.ydbConnection.Table().CreateSession(ydbContext); err != nil {
+		return merry.Prepend(err, "failed to create session")
+	}
+
+	// Prepare transfer insert
+	var (
+		transferPrep table.Statement
+		selectPrep   table.Statement
+		unifiedPrep  table.Statement
+	)
+
+	if transferPrep, err = ydbSession.Prepare(
+		ydbContext,
+		insertEscapedPath(insertYdbTransfer, tablePath),
+	); err != nil {
+		return merry.Prepend(err, "failed to prepare insert to transfer table")
+	}
+
+	tablePath = path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
+
+	if selectPrep, err = ydbSession.Prepare(
+		ydbContext,
+		insertEscapedPath(srcAndDstYdbSelect, tablePath, tablePath),
+	); err != nil {
+		return merry.Prepend(err, "failed to prepare select accounts")
+	}
+
+	if unifiedPrep, err = ydbSession.Prepare(
+		ydbContext,
+		insertEscapedPath(unifiedTransfer, tablePath, tablePath, tablePath),
+	); err != nil {
+		return merry.Prepend(err, "failed to prepare unified query")
+	}
+
+	if transaction, queryResult, err = selectPrep.Execute(
+		ydbContext,
+		rwTX,
+		table.NewQueryParameters(table.ValueParam(
+			"params", types.StructValue(
+				types.StructFieldValue(
+					"src_bic",
+					types.StringValue([]byte(transfer.Acs[0].Bic)),
+				),
+				types.StructFieldValue(
+					"src_ban",
+					types.StringValue([]byte(transfer.Acs[0].Ban)),
+				),
+				types.StructFieldValue(
+					"dst_bic",
+					types.StringValue([]byte(transfer.Acs[1].Bic)),
+				),
+				types.StructFieldValue(
+					"dst_ban",
+					types.StringValue([]byte(transfer.Acs[1].Ban)),
+				),
+			),
+		)),
+	); err != nil {
+		return merry.Prepend(err, "failed to execute prepared select")
+	}
+
+	defer func() {
+		_ = queryResult.Close()
+	}()
+
+	for queryResult.NextResultSet(ydbContext) {
+		if queryResult.CurrentResultSet().RowCount() != 2 { //nolint // 2 is dst ans src rows count
+			llog.Tracef(
+				"missing transfer: src_bic: %s, src_ban: %s dst_bic: %s, dst_ban: %s",
+				transfer.Acs[0].Bic, transfer.Acs[0].Ban,
+				transfer.Acs[1].Bic, transfer.Acs[1].Ban,
+			)
+
+			return ErrNoRows
+		}
+	}
+
+	if queryResult.Err() != nil {
+		return merry.Prepend(queryResult.Err(), "failed to work with select result")
+	}
+
+	if _, err = transaction.ExecuteStatement(
+		ydbContext,
+		transferPrep,
+		table.NewQueryParameters(table.ValueParam(
+			"params", types.StructValue(
+				types.StructFieldValue(
+					"transfer_id",
+					types.StringValue([]byte(transfer.Id.String())),
+				),
+				types.StructFieldValue(
+					"src_bic",
+					types.StringValue([]byte(transfer.Acs[0].Bic)),
+				),
+				types.StructFieldValue(
+					"src_ban",
+					types.StringValue([]byte(transfer.Acs[0].Ban)),
+				),
+				types.StructFieldValue(
+					"dst_bic",
+					types.StringValue([]byte(transfer.Acs[1].Bic)),
+				),
+				types.StructFieldValue(
+					"dst_ban",
+					types.StringValue([]byte(transfer.Acs[1].Ban)),
+				),
+				types.StructFieldValue(
+					"amount",
+					types.Int64Value(transfer.Amount.UnscaledBig().Int64()),
+				),
+				types.StructFieldValue(
+					"state",
+					types.StringValue([]byte("complete")),
+				),
+			),
+		)),
+	); err != nil {
+		return merry.Prepend(err, "failed to execute prepared insert into transfer table")
+	}
+
+	if _, err = transaction.ExecuteStatement(
+		ydbContext,
+		unifiedPrep,
+		table.NewQueryParameters(
+			table.ValueParam("params", types.StructValue(
+				types.StructFieldValue("src_bic", types.StringValue([]byte(transfer.Acs[0].Bic))),
+				types.StructFieldValue("src_ban", types.StringValue([]byte(transfer.Acs[0].Ban))),
+				types.StructFieldValue("dst_bic", types.StringValue([]byte(transfer.Acs[1].Bic))),
+				types.StructFieldValue("dst_ban", types.StringValue([]byte(transfer.Acs[1].Ban))),
+				types.StructFieldValue(
+					"amount",
+					types.Int64Value(transfer.Amount.UnscaledBig().Int64())),
+			),
+			),
+		),
+	); err != nil {
+		return merry.Prepend(err, "failed to execute unified transfer")
+	}
+
+	if _, err = transaction.CommitTx(context.Background()); err != nil {
+		return merry.Prepend(err, "failed to commit changes")
+	}
+
+	return nil
 }
 
 func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
@@ -225,7 +381,7 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
 	ydbContext, ctxCloseFn := context.WithTimeout(
 		context.Background(),
-		time.Second,
+		time.Second*10, //nolint
 	)
 
 	defer ctxCloseFn()
@@ -336,7 +492,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	ydbContext, cancel := context.WithTimeout(
 		context.Background(),
-		time.Second,
+		time.Second*30, //nolint
 	)
 
 	defer cancel()
@@ -752,4 +908,13 @@ func (ydbCluster *YandexDBCluster) StartStatisticsCollect(_ time.Duration) error
 	llog.Debugln("statistic for YDB not implemeted yet, watch grafana metrics, please")
 
 	return nil
+}
+
+func insertEscapedPath(query string, tablePaths ...string) string {
+	newTablePaths := make([]interface{}, len(tablePaths))
+	for index, tablePath := range tablePaths {
+		newTablePaths[index] = "`" + tablePath + "`"
+	}
+
+	return fmt.Sprintf(query, newTablePaths...)
 }

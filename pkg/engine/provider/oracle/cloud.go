@@ -5,7 +5,6 @@
 package oracle
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"strconv"
@@ -296,8 +295,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 func (op *Provider) reparseAddressMap(nodes int) (err error) {
 	// Осторожно, внутренний метод без блокировки
 	if op.tfStateData == nil {
-		err = errors.New("terraform state data is empty")
-		return
+		return fmt.Errorf("terraform state data is empty") //nolint //will be fixed in future
 	}
 
 	workerKey := "worker-%v"
@@ -340,18 +338,20 @@ func (op *Provider) reparseAddressMap(nodes int) (err error) {
 	op.addressMap = make(map[string]map[string]string)
 	op.addressMap["external"] = externalAddress
 	op.addressMap["internal"] = internalAddress
-	return
+
+	return // nolint
 }
 
 func (op *Provider) GetAddressMap(
 	nodes int,
 ) (map[string]map[string]string, error) {
 	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-	 * своя пара - внешний (NAT) и внутренний ip.
-	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-	 * т.к. использование encoding/json
-	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
+		 * своя пара - внешний (NAT) и внутренний ip.
+		 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
+		 * т.к. использование encoding/json
+		 * влечет создание группы структур большого размера, что ухудшает читаемость.
+	     * Метод Get возвращает gjson.Result
+		 * по переданному тегу json, который можно преобразовать в том числе в строку. */
 	var (
 		mapIPAddresses map[string]map[string]string
 		err            error
@@ -416,6 +416,7 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 
 	firstStep = fmt.Sprintf("./cluster/provider/oracle/prepare_oracle.sh %v", scriptParameters)
 	thirdStep = "./cluster/provider/oracle/deploy_3rdparties.sh"
+
 	return
 }
 
