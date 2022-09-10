@@ -5,15 +5,11 @@
 package yandex
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path"
-	"sync"
 
-	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
-
 	"gitlab.com/picodata/stroppy/pkg/tools"
 
 	"github.com/ansel1/merry"
@@ -38,7 +34,6 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (yp *Provide
 		templatesConfig:  templatesConfig,
 		settings:         settings,
 		workingDirectory: wd,
-		addressMapLock:   sync.Mutex{},
 	}
 
 	yp = &_provider
@@ -56,9 +51,11 @@ type Provider struct {
 	vpcSubnetBlockName     string
 	vpcInternalNetworkName string
 
-	tfStateData    []byte
-	addressMap     map[string]map[string]string
-	addressMapLock sync.Mutex
+	tfState TfState
+}
+
+func (yandexProvider *Provider) GetTfStateScheme() interface{} {
+	return yandexProvider.tfState
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
@@ -98,112 +95,39 @@ func (yp *Provider) RemoveProviderSpecificFiles() {
 	tools.RemovePathList(yandexFilesToClear, yp.workingDirectory)
 }
 
-func (yp *Provider) SetTerraformStatusData(data []byte) {
-	yp.tfStateData = data
-}
+func (yandexProvider *Provider) GetInstanceAddress(
+	group, name string,
+) (*provider.Addresses, error) {
+	var (
+		resource  *Resource
+		workgroup *Instance
+		instance  *GroupInstance
+		ok        bool
+	)
 
-//nolint:varnamelen // ok name is ok!
-// Parse `terraform.tfstate` and get all important ip address.
-func (yp *Provider) parseAddressMap(nodesCnt int) error {
-	var err error
-
-	if yp.tfStateData == nil {
-		return errors.New("tf state data empty") //nolint // will be fixed in future
+	if resource, ok = yandexProvider.tfState.GetResource(group); !ok {
+		return nil, fmt.Errorf("failed to get resource %s", group)
 	}
 
-	llog.Debugln("Start parsing address map into ip addresses")
-
-	externalAddress := make(map[string]string)
-	internalAddress := make(map[string]string)
-	yp.addressMap = make(map[string]map[string]string)
-
-	decodeStr := `[resources.#(type="yandex_compute_instance")#.instances.#.attributes` +
-		`.network_interface.0.{nat_ip_address,ip_address},resources.` +
-		`#(type="yandex_compute_instance_group")#.instances.#.attributes.` +
-		`instances.#.network_interface.0.{nat_ip_address,ip_address}].` +
-		`@flatten.@flatten.@flatten`
-
-	nodes, ok := gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
-	if !ok {
-		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	if workgroup, ok = resource.GetInstance(group); !ok {
+		return nil, fmt.Errorf("failed to get instance or group %s", group)
 	}
 
-	master, ok := nodes[0].(map[string]interface{})
-	if !ok {
-		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
+	if len(workgroup.Attributes.GroupInstances) == 0 {
+		return &provider.Addresses{
+			Internal: workgroup.Attributes.NetworkInterface[0].IpAddress,
+			External: workgroup.Attributes.NetworkInterface[0].NatIpAddress,
+		}, nil
 	}
 
-	internalAddress["master"] = master["ip_address"].(string)     //nolint
-	externalAddress["master"] = master["nat_ip_address"].(string) //nolint
-
-	for i := 1; i < len(nodes); i++ {
-		node := nodes[i].(map[string]interface{}) //nolint
-		llog.Tracef("index: %v node: %v", i, node)
-		internalAddress[fmt.Sprintf("worker-%v", i)] = node["ip_address"].(string)     //nolint
-		externalAddress[fmt.Sprintf("worker-%v", i)] = node["nat_ip_address"].(string) //nolint
+	if instance, ok = workgroup.Attributes.GetGroupInstance(name); !ok {
+		return nil, fmt.Errorf("failed to get instance or group %s", name)
 	}
 
-	llog.Tracef("external address %#v", externalAddress)
-	llog.Tracef("internal address %#v", internalAddress)
-
-	decodeStr = `[resources.#(type="yandex_vpc_subnet")#.instances.#.` +
-		`attributes.v4_cidr_blocks].@flatten.@flatten.@flatten`
-
-	nodes, ok = gjson.Parse(string(yp.tfStateData)).Get(decodeStr).Value().([]interface{})
-	if !ok {
-		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
-	}
-
-	llog.Tracef("parsed ip_v4: %v", nodes) //nolint:asasalint // here is debug print
-
-	ipV4, ok := nodes[0].(string)
-	if !ok {
-		return merry.Prepend(err, CAST_ERR) //nolint:nosnakecase // constant
-	}
-
-	yp.addressMap["subnet"] = map[string]string{"ip_v4": ipV4}
-
-	llog.Tracef("subnet: %v", yp.addressMap["subnet"])
-
-	yp.addressMap["external"] = externalAddress
-	yp.addressMap["internal"] = internalAddress
-
-	llog.Infof("Addresses map: %v\n", yp.addressMap)
-
-	return nil
-}
-
-//nolint // old function that should be refactored in future
-func (yp *Provider) GetAddressMap(
-	nodes int,
-) (mapIPAddresses map[string]map[string]string, err error) {
-	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-	 * своя пара - внешний (NAT) и внутренний ip.
-	 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-	 * т.к. использование encoding/json
-	 * влечет создание группы структур большого размера, что ухудшает читаемость. Метод Get возвращает gjson.Result
-	 * по переданному тегу json, который можно преобразовать в том числе в строку. */
-
-	/*defer func() {
-		llog.Infoln("зашли в defer")
-		mapIPAddresses = provider.DeepCopyAddressMap(yp.addressMap)
-		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
-	}()
-
-	yp.addressMapLock.Lock()
-	defer yp.addressMapLock.Lock()
-
-	if yp.addressMap != nil {
-		return
-	}*/
-
-	err = yp.parseAddressMap(nodes)
-	if err != nil {
-		return nil, err
-	}
-	llog.Debugln("Address map prepared: success")
-
-	return yp.addressMap, err
+	return &provider.Addresses{
+		Internal: instance.NetworkInterface[0].IpAddress,
+		External: instance.NetworkInterface[0].NatIpAddress,
+	}, nil
 }
 
 //nolint:nosnakecase // constant

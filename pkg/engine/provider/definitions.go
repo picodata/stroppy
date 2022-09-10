@@ -21,12 +21,12 @@ var ErrChooseConfig = errors.New(
 type Provider interface {
 	Prepare() error
 	AddNetworkDisks(int) error
-	GetAddressMap(int) (map[string]map[string]string, error)
+    GetInstanceAddress(string, string) (*Addresses, error)
 	CheckSSHPrivateKey(string) error
 	CheckSSHPublicKey(string) error
 	RemoveProviderSpecificFiles()
-	SetTerraformStatusData([]byte)
 	GetDeploymentCommands() (string, string)
+    GetTfStateScheme() interface{}
 	Name() string
 }
 
@@ -45,4 +45,9 @@ type ClusterConfigurations struct {
 	XLarge   ClusterParameters
 	XXLarge  ClusterParameters
 	Maximum  ClusterParameters
+}
+
+type Addresses struct {
+	Internal string
+	External string
 }
