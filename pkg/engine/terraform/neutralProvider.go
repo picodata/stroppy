@@ -37,13 +37,17 @@ func (np *neutralProvider) GetAddressMap(
 	return
 }
 
+func (np *neutralProvider) GetInstanceAddress(
+	group, name string,
+) (*provider.Addresses, error) {
+    return &provider.Addresses{}, nil
+}
+
 func (np *neutralProvider) IsPrivateKeyExist(_ string) bool {
 	return true
 }
 
 func (np *neutralProvider) RemoveProviderSpecificFiles() {}
-
-func (np *neutralProvider) SetTerraformStatusData(_ []byte) {}
 
 func (np *neutralProvider) Name() string {
 	return provider.Neutral
@@ -62,4 +66,8 @@ func (np *neutralProvider) CheckSSHPrivateKey(workDir string) error {
 
 func (np *neutralProvider) CheckSSHPublicKey(workDir string) error {
 	return nil
+}
+
+func (np *neutralProvider) GetTfStateScheme() interface{} {
+    return nil
 }

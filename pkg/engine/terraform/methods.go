@@ -5,6 +5,7 @@
 package terraform
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -90,19 +91,21 @@ func (t *Terraform) InitProvider() (err error) {
 	return
 }
 
-func (t *Terraform) LoadState() (err error) {
-	if t.data, err = os.ReadFile(t.stateFilePath); err != nil {
+func (t *Terraform) LoadState() (error) {
+    var (
+        err error
+        data []byte
+    )
+
+	if data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read file terraform.tfstate")
 	}
 
-	t.Provider.SetTerraformStatusData(t.data)
+    if err = json.Unmarshal(data, t.Provider.GetTfStateScheme()); err != nil {
+        return merry.Prepend(err, "failed to deserialize terrafrom.tfstate")
+    }
 
-	return
-}
-
-// GetAddressMap - получить структуру с адресами кластера.
-func (t *Terraform) GetAddressMap() (addressMap map[string]map[string]string, err error) {
-	return t.Provider.GetAddressMap(t.settings.Nodes) //nolint //TODO refactor in future
+	return nil
 }
 
 func (t *Terraform) Run() (err error) {

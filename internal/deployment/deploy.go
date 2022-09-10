@@ -103,10 +103,10 @@ func (sh *shell) prepareTerraform() error {
 	return nil
 }
 
-func (sh *shell) prepareEngine() (err error) {
-	var addressMap map[string]map[string]string
+func (sh *shell) prepareEngine() (error) {
 	// Parse terraform.tfstate, get ip_address and nat_address
-	if addressMap, err = sh.tf.GetAddressMap(); err != nil {
+    addressMap, err := sh.tf.Provider.GetInstanceAddress("master", "master")
+    if err != nil {
 		return merry.Prepend(err, "failed to get address map")
 	}
 
@@ -117,20 +117,24 @@ func (sh *shell) prepareEngine() (err error) {
 	}
 
 	// create ssh client
-	sh.sc, err = engineSsh.CreateClient(sh.workingDirectory,
-		addressMap["external"]["master"],
+	sh.sc, err = engineSsh.CreateClient(
+        sh.workingDirectory,
+		addressMap.External,
 		sh.settings.DeploymentSettings.Provider,
 		commandClientType)
 	if err != nil {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
 
-	sh.k, err = kubernetes.CreateKubernetes(sh.settings, sh.tf.Provider, addressMap, sh.sc)
-	if err != nil {
+	if sh.k, err = kubernetes.CreateKubernetes(
+        sh.settings,
+        sh.tf.Provider,
+        sh.sc,
+    ); err != nil {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
 
-	return
+	return nil
 }
 
 func (sh *shell) prepareDBForTests() error {

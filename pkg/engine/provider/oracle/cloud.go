@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"path/filepath"
 	"strconv"
-	"sync"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
@@ -25,6 +24,10 @@ import (
 
 const oraclePrivateKeyFile = "private_key.pem"
 
+func (oracleProvider *Provider) GetTfStateScheme() interface{} {
+	return oracleProvider.tfState
+}
+
 func CreateProvider(settings *config.DeploymentSettings, wd string) (op *Provider, err error) {
 	clusterDeploymentDirectory := filepath.Join(wd, "cluster", "provider", "oracle")
 
@@ -38,7 +41,6 @@ func CreateProvider(settings *config.DeploymentSettings, wd string) (op *Provide
 		templatesConfig:  templatesConfig,
 		settings:         settings,
 		workingDirectory: wd,
-		addressMapLock:   sync.Mutex{},
 	}
 
 	op = &_provider
@@ -51,9 +53,7 @@ type Provider struct {
 
 	workingDirectory string
 
-	tfStateData    []byte
-	addressMap     map[string]map[string]string
-	addressMapLock sync.Mutex
+	tfState TfState // TODO
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
@@ -75,7 +75,7 @@ func (op *Provider) getIQNStorage(workersCount int) (iqnMap map[string]string, e
 	iqnMap = make(map[string]string)
 	masterInstance := "instances.0"
 
-	data := string(op.tfStateData)
+	data := string(op.tfState.Data)
 	iqnMap["master"] = gjson.Parse(data).
 		Get("resources.9").
 		Get(masterInstance).
@@ -110,18 +110,23 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 	   Если команда проверки вернула false, то выполняем команду создания/добавления сущности.
 	   Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя. */
 
-	op.addressMapLock.Lock()
-	defer op.addressMapLock.Unlock()
-	for k, address := range op.addressMap["external"] {
+	for index, address := range op.tfState.Outputs.InstancePublicIps.Value[0] {
 		var newLoginCmd string
 		var updateTargetCmd string
 		var loginTargetCmd string
+		var key string
+
+		if index == 0 {
+			key = "master"
+		} else {
+			key = fmt.Sprintf("worker-%d", index)
+		}
 
 		newLoginCmd = newTargetCmdTemplate
-		updateTargetCmd = fmt.Sprintf(updateTargetCmdTemplate, iqnMap[k])
-		loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap[k])
+		updateTargetCmd = fmt.Sprintf(updateTargetCmdTemplate, iqnMap[key])
+		loginTargetCmd = fmt.Sprintf(loginTargetCmdTemplate, iqnMap[key])
 
-		llog.Infof("Adding network storage to %v %v", k, address)
+		llog.Infof("Adding network storage to %v %v", key, address)
 
 		llog.Infoln("checking additional storage mount...")
 		providerName := provider.Oracle
@@ -146,7 +151,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "send target is failed to worker %v", k)
+				return merry.Prependf(err, "send target is failed to worker %v", key)
 			}
 
 			err = tools.Retry("add automatic startup for node",
@@ -165,7 +170,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 				return merry.Prependf(
 					err,
 					"adding automatic startup for node is failed to worker %v",
-					k,
+					key,
 				)
 			}
 
@@ -182,7 +187,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 				tools.RetryStandardRetryCount,
 				tools.RetryStandardWaitingTime)
 			if err != nil {
-				return merry.Prependf(err, "storage is not logged in target %v", k)
+				return merry.Prependf(err, "storage is not logged in target %v", key)
 			}
 
 			time.Sleep(5 * time.Second)
@@ -211,7 +216,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 			); err != nil {
 				errorMessage := fmt.Sprintf(
 					"failed to execute commands for additional storage partitioning %v",
-					k,
+					key,
 				)
 				return merry.Prepend(err, errorMessage)
 			}
@@ -239,7 +244,7 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 			); err != nil {
 				errorMessage := fmt.Sprintf(
 					"failed to execute commands for create additional storage file system %v",
-					k,
+					key,
 				)
 				return merry.Prepend(err, errorMessage)
 			}
@@ -266,7 +271,10 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 				addDirectoryCmdTemplate,
 				providerName,
 			); err != nil {
-				errorMessage := fmt.Sprintf("failed to execute commands for add directory to %v", k)
+				errorMessage := fmt.Sprintf(
+					"failed to execute commands for add directory to %v",
+					key,
+				)
 				return merry.Prepend(err, errorMessage)
 			}
 			llog.Infoln("Added directory /opt/local-path-provisioner/: success")
@@ -279,101 +287,43 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 			); err != nil {
 				errorMessage := fmt.Sprintf(
 					"failed to mount disk to /opt/local-path-provisioner/ %v",
-					k,
+					key,
 				)
 				return merry.Prepend(err, errorMessage)
 			}
-			llog.Infof("Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success", k)
+			llog.Infof(
+				"Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success",
+				key,
+			)
 		}
-		llog.Infof("added network storage to %v", k)
+		llog.Infof("added network storage to %v", key)
 
 	}
 
 	return nil
 }
 
-func (op *Provider) reparseAddressMap(nodes int) (err error) {
-	// Осторожно, внутренний метод без блокировки
-	if op.tfStateData == nil {
-		return fmt.Errorf("terraform state data is empty") //nolint //will be fixed in future
+func (op *Provider) GetInstanceAddress(group, name string) (*provider.Addresses, error) {
+	if group != "master" && name != "master" {
+		var (
+			num int
+			err error
+		)
+
+		if num, err = strconv.Atoi(string(name[len(name)-1])); err != nil {
+			return nil, fmt.Errorf("failed to parse worker number")
+		}
+
+		return &provider.Addresses{
+			Internal: op.tfState.Outputs.InstancePrivateIps.Value[0][num],
+			External: op.tfState.Outputs.InstancePublicIps.Value[0][num],
+		}, nil
 	}
 
-	workerKey := "worker-%v"
-	oracleInstanceValue := "value.0.%v"
-	externalAddress := make(map[string]string)
-	internalAddress := make(map[string]string)
-
-	data := op.tfStateData
-	externalAddress["master"] = gjson.Parse(string(data)).
-		Get("outputs").
-		Get("instance_public_ips").
-		Get("value.0.0").Str
-
-	internalAddress["master"] = gjson.Parse(string(data)).
-		Get("outputs").
-		Get("instance_private_ips").
-		Get("value.0.0").Str
-
-	for i := 1; i <= nodes-1; i++ {
-		key := fmt.Sprintf(workerKey, i)
-		currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
-		externalAddress[key] = gjson.Parse(string(data)).
-			Get("outputs").
-			Get("instance_public_ips").
-			Get(currentInstanceValue).Str
-	}
-
-	for i := 1; i <= nodes-1; i++ {
-		key := fmt.Sprintf(workerKey, i)
-		currentInstanceValue := fmt.Sprintf(oracleInstanceValue, strconv.Itoa(i))
-		internalAddress[key] = gjson.Parse(string(data)).
-			Get("outputs").
-			Get("instance_private_ips").
-			Get(currentInstanceValue).Str
-	}
-
-	op.addressMapLock.Lock()
-	defer op.addressMapLock.Unlock()
-
-	op.addressMap = make(map[string]map[string]string)
-	op.addressMap["external"] = externalAddress
-	op.addressMap["internal"] = internalAddress
-
-	return // nolint
-}
-
-func (op *Provider) GetAddressMap(
-	nodes int,
-) (map[string]map[string]string, error) {
-	/* Функция парсит файл terraform.tfstate и возвращает массив ip. У каждого экземпляра
-		 * своя пара - внешний (NAT) и внутренний ip.
-		 * Для парсинга используется сторонняя библиотека gjson - https://github.com/tidwall/gjson,
-		 * т.к. использование encoding/json
-		 * влечет создание группы структур большого размера, что ухудшает читаемость.
-	     * Метод Get возвращает gjson.Result
-		 * по переданному тегу json, который можно преобразовать в том числе в строку. */
-	var (
-		mapIPAddresses map[string]map[string]string
-		err            error
-	)
-
-	defer func() {
-		mapIPAddresses = provider.DeepCopyAddressMap(op.addressMap)
-		llog.Debugln("result of getting ip addresses: ", mapIPAddresses)
-	}()
-
-	op.addressMapLock.Lock()
-	defer op.addressMapLock.Unlock()
-
-	if op.addressMap != nil {
-		return nil, merry.Prepend(err, "Address map not nil")
-	}
-
-	if err = op.reparseAddressMap(nodes); err != nil {
-		return nil, merry.Prepend(err, "Error then reserved parsing address map")
-	}
-
-	return mapIPAddresses, nil
+	return &provider.Addresses{
+		Internal: op.tfState.Outputs.InstancePrivateIps.Value[0][0],
+		External: op.tfState.Outputs.InstancePublicIps.Value[0][0],
+	}, nil
 }
 
 func (op *Provider) IsPrivateKeyExist(workingDirectory string) bool {
@@ -397,7 +347,7 @@ func (op *Provider) RemoveProviderSpecificFiles() {
 }
 
 func (op *Provider) SetTerraformStatusData(data []byte) {
-	op.tfStateData = data
+	op.tfState.Data = data
 }
 
 func (op *Provider) Name() string {
@@ -405,11 +355,8 @@ func (op *Provider) Name() string {
 }
 
 func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
-	op.addressMapLock.Lock()
-	defer op.addressMapLock.Unlock()
-
 	scriptParameters := "--pod-addresses "
-	internalAddressMap := op.addressMap["internal"]
+	internalAddressMap := op.tfState.Outputs.InstancePrivateIps.Value
 	for _, podAddress := range internalAddressMap {
 		scriptParameters += fmt.Sprintf("%s,", podAddress)
 	}
