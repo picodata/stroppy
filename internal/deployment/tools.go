@@ -14,6 +14,7 @@ import (
 	llog "github.com/sirupsen/logrus"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"
@@ -40,8 +41,8 @@ func (sh *shell) executeRemotePay(
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
-		"--dbtype", sh.settings.DatabaseSettings.DBType,
-		"--log-level", sh.settings.LogLevel,
+		"--dbtype", sh.state.Settings.DatabaseSettings.DBType,
+		"--log-level", sh.state.Settings.LogLevel,
 	}
 
 	llog.Tracef("Stroppy remote command '%s'", strings.Join(payTestCommand, " "))
@@ -50,31 +51,41 @@ func (sh *shell) executeRemotePay(
 		settings.DBType, settings.Count, settings.BanRangeMultiplier,
 		settings.Zipfian, time.Now().Format(dateFormat))
 
-	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(stroppy.StroppyClientPodName, "",
-		payTestCommand, logFileName)
+	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(
+		stroppy.StroppyClientPodName,
+		"",
+		payTestCommand,
+		logFileName,
+		&sh.state,
+	)
 	if err != nil {
 		err = merry.Prepend(err, "failed to execute remote transfer test")
 	}
+
 	return
 }
 
 // executePay - выполнить тест переводов внутри удаленного пода stroppy
-func (sh *shell) executePay(_ string) (err error) {
-	var settings *config.DatabaseSettings
+func (sh *shell) executePay(shellState *state.State) error {
+	var (
+		settings *config.DatabaseSettings
+		err      error
+	)
+
 	if settings, err = sh.readDatabaseConfig("pay"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
 	var beginTime, endTime int64
-	if sh.settings.TestSettings.UseCloudStroppy {
-		beginTime, endTime, err = sh.executeRemotePay(settings)
-		if err != nil {
-			return
+
+	if sh.state.Settings.TestSettings.UseCloudStroppy {
+		if beginTime, endTime, err = sh.executeRemotePay(settings); err != nil {
+			return merry.Prepend(err, "failed to executeRemotePay")
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = sh.payload.Pay(""); err != nil {
-			return
+		if err = sh.payload.Pay(shellState); err != nil {
+			return merry.Prepend(err, "failed to execut local pay")
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
@@ -86,32 +97,46 @@ func (sh *shell) executePay(_ string) (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
+
+	if err = sh.k.Engine.CollectMonitoringData(
+		beginTime,
+		endTime,
+		sh.k.MonitoringPort.Port,
+		monImagesArchName,
+		&sh.state,
+	); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pay test")
 	}
 
-	return
+	return nil
 }
 
 // executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
-func (sh *shell) executePop(_ string) (err error) {
-	var settings *config.DatabaseSettings
+func (sh *shell) executePop(shellState *state.State) error {
+	var (
+		settings *config.DatabaseSettings
+		err      error
+	)
+
 	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
-	// sh.payload.UpdateSettings(settings)
 
-	llog.Debugf("Stroppy executed on remote host: %v", sh.settings.TestSettings.UseCloudStroppy)
+	llog.Debugf(
+		"Stroppy executed on remote host: %v",
+		sh.state.Settings.TestSettings.UseCloudStroppy,
+	)
 
 	var beginTime, endTime int64
-	if sh.settings.TestSettings.UseCloudStroppy {
+
+	if sh.state.Settings.TestSettings.UseCloudStroppy {
 		if beginTime, endTime, err = sh.executeRemotePop(settings); err != nil {
-			return
+			return merry.Prepend(err, "failed to executeRemotePop")
 		}
 	} else {
 		beginTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-		if err = sh.payload.Pop(""); err != nil {
-			return
+		if err = sh.payload.Pop(shellState); err != nil {
+			return merry.Prepend(err, "failed to execut local Pop")
 		}
 		endTime = (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 	}
@@ -130,11 +155,12 @@ func (sh *shell) executePop(_ string) (err error) {
 		endTime,
 		sh.k.MonitoringPort.Port,
 		monImagesArchName,
+		&sh.state,
 	); err != nil {
 		return merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
-	return
+	return nil
 }
 
 //nolint:nonamedreturns // should be fixed in future
@@ -153,8 +179,8 @@ func (sh *shell) executeRemotePop(
 		"--count", fmt.Sprintf("%v", settings.Count),
 		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
 		"-w", fmt.Sprintf("%v", settings.Workers),
-		"--dbtype", sh.settings.DatabaseSettings.DBType,
-		"--log-level", sh.settings.LogLevel,
+		"--dbtype", sh.state.Settings.DatabaseSettings.DBType,
+		"--log-level", sh.state.Settings.LogLevel,
 	}
 
 	llog.Tracef("Stroppy remote command '%s'", strings.Join(popTestCommand, " "))
@@ -172,6 +198,7 @@ func (sh *shell) executeRemotePop(
 		"",
 		popTestCommand,
 		logFileName,
+		&sh.state,
 	); err != nil {
 		return 0, 0, merry.Prepend(err, "failed to execute remote populate test")
 	}
@@ -197,9 +224,9 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 
 	settings = config.DatabaseDefaults()
 	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
-	settings.DBType = sh.settings.DatabaseSettings.DBType
+	settings.DBType = sh.state.Settings.DatabaseSettings.DBType
 
-	switch sh.settings.DatabaseSettings.DBType {
+	switch sh.state.Settings.DatabaseSettings.DBType {
 	case cluster.Postgres:
 		settings.DBURL = "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable"
 
@@ -219,7 +246,7 @@ func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSe
 		settings.DBURL = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
 
 	default:
-		err = merry.Errorf("unknown db type '%s'", sh.settings.DatabaseSettings.DBType)
+		err = merry.Errorf("unknown db type '%s'", sh.state.Settings.DatabaseSettings.DBType)
 		return
 	}
 

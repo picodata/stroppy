@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/state"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"k8s.io/client-go/rest"
@@ -44,11 +46,14 @@ func (e *Engine) GetKubeConfig() (*rest.Config, error) {
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to get config for check deploy of postgres")
 	}
+
 	return _config, nil
 }
 
 // CopyFileFromMaster - скопировать файл c мастер-инстанса кластера
-func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
+func (e *Engine) CopyFileFromMaster(filePath string, shellState *state.State) error {
+	var err error
+
 	if e.UseLocalSession {
 		var homeDirPath string
 		if homeDirPath, err = os.UserHomeDir(); err != nil {
@@ -59,12 +64,13 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 			kubeConfigFilePath := filepath.Join(homeDirPath, filePath)
 			e.clusterConfigFile = kubeConfigFilePath
 		}
-		return
+
+		return nil
 	}
 
 	connectCmd := fmt.Sprintf(
 		"stroppy@%v:/home/stroppy/%v",
-		e.AddressMap["external"]["master"],
+		shellState.InstanceAddresses.GetFirstMaster().Internal,
 		filePath,
 	)
 	//#nosec
@@ -77,7 +83,7 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 		connectCmd,
 		".",
 	)
-	copyFromMasterCmd.Dir = e.WorkingDirectory
+	copyFromMasterCmd.Dir = shellState.Settings.WorkingDirectory
 
 	llog.Infoln(copyFromMasterCmd.String())
 	llog.Debugf("Working directory is `%s`\n", copyFromMasterCmd.Dir)
@@ -91,21 +97,21 @@ func (e *Engine) CopyFileFromMaster(filePath string) (err error) {
 		)
 	}
 
-	return
+	return nil
 }
 
-func (e *Engine) installSshKeyFileOnMaster() (err error) {
+func (e *Engine) installSSHKeyFileOnMaster(shellState *state.State) error {
 	if e.isSshKeyFileOnMaster {
-		return
+		return nil
 	}
 
-	masterExternalIP := e.AddressMap["external"]["master"]
+	masterExternalIP := shellState.InstanceAddresses.GetFirstMaster().External
 	mastersConnectionString := fmt.Sprintf("stroppy@%v:/home/stroppy/.ssh", masterExternalIP)
 	copyPrivateKeyCmd := exec.Command("scp",
 		"-i", e.sshKeyFileName,
 		"-o", "StrictHostKeyChecking=no",
 		e.sshKeyFileName, mastersConnectionString)
-	copyPrivateKeyCmd.Dir = e.WorkingDirectory
+	copyPrivateKeyCmd.Dir = shellState.Settings.WorkingDirectory
 
 	llog.Infof(copyPrivateKeyCmd.String())
 
@@ -137,7 +143,8 @@ func (e *Engine) installSshKeyFileOnMaster() (err error) {
 	}
 
 	e.isSshKeyFileOnMaster = true
-	return
+
+	return nil
 }
 
 // nolint
@@ -169,7 +176,6 @@ func (e *Engine) parseKubernetesFilePath(
 	return
 }
 
-//nolint // will be fixed in future
 // ExecuteGetingMonImages собирает данные мониторинга.
 // Осуществляется запуском скрипта get_png.sh, результат работы которого - архив с набором png-файлов
 func (e Engine) CollectMonitoringData(
@@ -177,6 +183,7 @@ func (e Engine) CollectMonitoringData(
 	finishTime int64,
 	monitoringPort int,
 	monImagesArchName string,
+	shellState *state.State,
 ) error {
 	llog.Infoln("Starting to get monitoring images...")
 
@@ -185,13 +192,17 @@ func (e Engine) CollectMonitoringData(
 
 	var workersIps string
 
-	for _, address := range e.AddressMap["internal"] {
-		workersIps += fmt.Sprintf("%v;", address)
+	for _, address := range shellState.InstanceAddresses.Workers {
+		workersIps += fmt.Sprintf("%v;", address.Internal)
 	}
 
-	workingDirectory := filepath.Join(e.WorkingDirectory, "third_party", "monitoring")
+	workingDirectory := filepath.Join(
+		shellState.Settings.WorkingDirectory,
+		"third_party",
+		"monitoring",
+	)
 	getImagesCmd := exec.Command(
-        GetPngScriptPath,
+		GetPngScriptPath,
 		fmt.Sprintf("%v", startTime),
 		fmt.Sprintf("%v", finishTime),
 		fmt.Sprintf("%v", monitoringPort),

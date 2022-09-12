@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"path"
 
+	engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	"gitlab.com/picodata/stroppy/pkg/state"
+
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	v1 "k8s.io/api/core/v1"
 	applyconfig "k8s.io/client-go/applyconfigurations/core/v1"
 	"k8s.io/client-go/kubernetes"
@@ -52,7 +54,7 @@ func (pod *Pod) ContainerName(containerNum int) (contName string, err error) {
 	return
 }
 
-func (pod *Pod) DeployNamespace() error {
+func (pod *Pod) DeployNamespace(shellState *state.State) error {
 	var err error
 
 	stroppyNSConfig := applyconfig.Namespace(StroppyClientNSName)
@@ -60,7 +62,7 @@ func (pod *Pod) DeployNamespace() error {
 	if err = pod.e.ToEngineObject(
 		StroppyClientNSName,
 		path.Join(
-			pod.e.WorkingDirectory,
+			shellState.Settings.WorkingDirectory,
 			"third_party", "extra", "manifests", "stroppy",
 			stroppyClientNSManifestFile,
 		),
@@ -100,7 +102,7 @@ func (pod *Pod) DeployNamespace() error {
 	return nil
 }
 
-func (pod *Pod) DeployPod() error {
+func (pod *Pod) DeployPod(shellState *state.State) error {
 	var err error
 
 	stroppyClientPodConfig := applyconfig.Pod(
@@ -111,7 +113,7 @@ func (pod *Pod) DeployPod() error {
 	if err = pod.e.ToEngineObject(
 		StroppyClientPodName,
 		path.Join(
-			pod.e.WorkingDirectory,
+			shellState.Settings.WorkingDirectory,
 			"third_party", "extra", "manifests", "stroppy",
 			stoppyClientManifestFile,
 		),

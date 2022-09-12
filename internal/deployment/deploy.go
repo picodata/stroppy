@@ -18,6 +18,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/db"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -25,7 +26,7 @@ import (
 
 func createShell(config *config.Settings) (d *shell) {
 	d = &shell{
-		settings:         config,
+		state:            state.State{Settings: config}, //nolint
 		stdinScanner:     bufio.NewScanner(os.Stdin),
 		workingDirectory: config.WorkingDirectory,
 	}
@@ -34,12 +35,13 @@ func createShell(config *config.Settings) (d *shell) {
 }
 
 type shell struct {
+	state state.State
+
 	tf *terraform.Terraform
 	sc engineSsh.Client
 	k  *kubernetes.Kubernetes
 
 	cluster   db.Cluster
-	settings  *config.Settings
 	chaosMesh chaos.Controller
 	payload   payload.Payload
 
@@ -53,7 +55,7 @@ func (sh *shell) gracefulShutdown() (err error) {
 
 	sh.k.Shutdown()
 
-	if sh.settings.DestroyOnExit {
+	if sh.state.Settings.DestroyOnExit {
 		if err = sh.tf.Destroy(); err != nil {
 			return merry.Prepend(err, "failed to destroy terraform")
 		}
@@ -79,11 +81,10 @@ func Deploy(settings *config.Settings) (shell Shell, err error) {
 	return
 }
 
-//nolint // id_rsa check outside preparing terraform has no sence
 func (sh *shell) prepareTerraform() error {
 	var err error
 
-	deploymentSettings := sh.settings.DeploymentSettings
+	deploymentSettings := sh.state.Settings.DeploymentSettings
 
 	sh.tf = terraform.CreateTerraform(deploymentSettings, sh.workingDirectory, sh.workingDirectory)
 	/* отдельный метод, чтобы не смешивать инициализацию terraform, где просто заполняем структуру,
@@ -103,34 +104,37 @@ func (sh *shell) prepareTerraform() error {
 	return nil
 }
 
-func (sh *shell) prepareEngine() (error) {
-	// Parse terraform.tfstate, get ip_address and nat_address
-    addressMap, err := sh.tf.Provider.GetInstanceAddress("master", "master")
-    if err != nil {
-		return merry.Prepend(err, "failed to get address map")
+func (sh *shell) prepareEngine() error {
+	var err error
+
+	instanceAddresses := sh.tf.Provider.GetInstancesAddresses()
+
+	sh.state.NodesInfo = state.NodesInfo{
+		MastersCnt: instanceAddresses.MastersCnt(),
+		WorkersCnt: instanceAddresses.WorkersCnt(),
+		Params:     sh.tf.Provider.GetNodes(),
 	}
+
+	sh.state.InstanceAddresses = instanceAddresses
+	sh.state.Subnet = sh.tf.Provider.GetSubnet()
 
 	// string var (like `remote` or `local`) which will be used to create ssh the client
 	commandClientType := engineSsh.RemoteClient
-	if sh.settings.Local {
+	if sh.state.Settings.Local {
 		commandClientType = engineSsh.LocalClient
 	}
 
 	// create ssh client
 	sh.sc, err = engineSsh.CreateClient(
-        sh.workingDirectory,
-		addressMap.External,
-		sh.settings.DeploymentSettings.Provider,
+		sh.workingDirectory,
+		sh.state.InstanceAddresses.GetFirstMaster().External,
+		sh.state.Settings.DeploymentSettings.Provider,
 		commandClientType)
 	if err != nil {
 		return merry.Prepend(err, "failed to init ssh client")
 	}
 
-	if sh.k, err = kubernetes.CreateKubernetes(
-        sh.settings,
-        sh.tf.Provider,
-        sh.sc,
-    ); err != nil {
+	if sh.k, err = kubernetes.CreateKubernetes(sh.sc, &sh.state); err != nil {
 		return merry.Prepend(err, "failed to init kubernetes")
 	}
 
@@ -143,19 +147,25 @@ func (sh *shell) prepareDBForTests() error {
 	llog.Infoln("Prepating database payload")
 
 	if sh.cluster, err = db.CreateCluster(
-		sh.settings.DatabaseSettings,
 		sh.sc,
 		sh.k,
-		sh.workingDirectory,
+		&sh.state,
 	); err != nil {
 		return merry.Prepend(
 			err,
-			fmt.Sprintf("Error then creating '%s' cluster", sh.settings.DatabaseSettings.DBType),
+			fmt.Sprintf(
+				"Error then creating '%s' cluster",
+				sh.state.Settings.DatabaseSettings.DBType,
+			),
 		)
 	}
 
-	if sh.payload, err = payload.CreatePayload(sh.cluster, sh.settings, sh.chaosMesh); err != nil {
-		if sh.settings.DatabaseSettings.DBType != cluster.Foundation {
+	if sh.payload, err = payload.CreatePayload(
+		sh.cluster,
+		sh.state.Settings,
+		sh.chaosMesh,
+	); err != nil {
+		if sh.state.Settings.DatabaseSettings.DBType != cluster.Foundation {
 			return merry.Prepend(err, "failed to init payload")
 		}
 
@@ -189,18 +199,19 @@ func (sh *shell) deploy() error {
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
 	// TODO: rename to deploy infrastructure
-	if err = sh.k.DeployK8S(sh.workingDirectory); err != nil {
+	if err = sh.k.DeployK8S(&sh.state); err != nil {
 		return merry.Prepend(err, "Failed to deploy kubernetes and infrastructure")
 	}
 
-	if err = sh.tf.Provider.AddNetworkDisks(
-		sh.settings.DeploymentSettings.Nodes,
-	); err != nil {
+	if err = sh.tf.Provider.AddNetworkDisks(len(sh.state.NodesInfo.Params)); err != nil {
 		return merry.Prepend(err, "Failed to add network storages to provider")
 	}
 
-	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
-	if err = sh.chaosMesh.Deploy(); err != nil {
+	sh.chaosMesh = chaos.CreateController(
+		sh.k.Engine,
+		&sh.state,
+	)
+	if err = sh.chaosMesh.Deploy(&sh.state); err != nil {
 		return merry.Prepend(err, "Failed to deploy and start chaos")
 	}
 
@@ -209,23 +220,23 @@ func (sh *shell) deploy() error {
 	}
 
 	// Deploy database cluster
-	if err = sh.cluster.Deploy(); err != nil {
+	if err = sh.cluster.Deploy(&sh.state); err != nil {
 		return merry.Prependf(
 			err,
 			"'%s' database deploy failed",
-			sh.settings.DatabaseSettings.DBType,
+			sh.state.Settings.DatabaseSettings.DBType,
 		)
 	}
 
 	// Start port forwarding
-	if err = sh.k.OpenPortForwarding(); err != nil {
+	if err = sh.k.OpenPortForwarding(&sh.state); err != nil {
 		return merry.Prepend(err, "failed to open port forwarding")
 	}
 
 	if err = sh.payload.Connect(); err != nil {
 		// return merry.Prepend(err, "cluster connect")
 		// \todo: временно необращаем внимание на эту ошибку
-		if sh.settings.DatabaseSettings.DBType == "ydb" {
+		if sh.state.Settings.DatabaseSettings.DBType == "ydb" {
 			llog.Debugln("Connection from remote stroppy client not implemented yet for YDB")
 		} else {
 			llog.Errorf("cluster connect: %v", err)
@@ -235,7 +246,7 @@ func (sh *shell) deploy() error {
 
 	llog.Infof(
 		"Databale cluster of '%s' deployed successfully",
-		sh.settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.DBType,
 	)
 	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
 

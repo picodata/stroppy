@@ -6,10 +6,10 @@ package db
 
 import (
 	"fmt"
-	"path/filepath"
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	cluster2 "gitlab.com/picodata/stroppy/pkg/database/cluster"
 
@@ -20,8 +20,6 @@ import (
 )
 
 const (
-	foundationDbDirectory = "foundationdb"
-
 	foundationClusterName       = "sample-cluster"
 	foundationClusterClientName = "sample-cluster-client"
 )
@@ -29,21 +27,15 @@ const (
 func createFoundationCluster(
 	sshClient engineSsh.Client,
 	k8s *kubernetes.Kubernetes,
-	workingDir, dbURL string,
+	shellState *state.State,
 ) Cluster {
-	fndCluster := &foundationCluster{
+	return &foundationCluster{
 		commonCluster: createCommonCluster(
 			sshClient,
 			k8s,
-			filepath.Join(workingDir, dbWorkingDirectory, foundationDbDirectory),
-			foundationDbDirectory,
-			dbURL,
-			0,
-			false,
+			shellState,
 		),
 	}
-
-	return fndCluster
 }
 
 type foundationCluster struct {
@@ -59,18 +51,21 @@ func (fc *foundationCluster) Connect() (cluster interface{}, err error) {
 	return
 }
 
-func (fc *foundationCluster) Deploy() (err error) {
-	if err = fc.deploy(); err != nil {
+func (fc *foundationCluster) Deploy(shellState *state.State) error {
+	var err error
+
+	if err = fc.deploy(shellState); err != nil {
 		return merry.Prepend(err, "deploy failed")
 	}
 
-	err = fc.examineCluster("FoundationDB",
+	if err = fc.examineCluster("FoundationDB",
 		kubeengine.ResourceDefaultNamespace,
 		foundationClusterClientName,
-		foundationClusterName)
-	if err != nil {
-		return
+		foundationClusterName,
+	); err != nil {
+		return merry.Prepend(err, "failed to examine FoundationDB cluster")
 	}
+
 	llog.Infof("Now perform additional foundation deployment steps")
 
 	var session engineSsh.Session
@@ -95,7 +90,7 @@ func (fc *foundationCluster) Deploy() (err error) {
 	if fc.k.StroppyPod != nil {
 		var contName string
 		if contName, err = fc.k.StroppyPod.ContainerName(0); err != nil {
-			return
+			return merry.Prepend(err, "failed to get stroppy container name")
 		}
 
 		sourceConfigPath := fmt.Sprintf("%s/%s://var/dynamic-conf/fdb.cluster",
@@ -106,10 +101,9 @@ func (fc *foundationCluster) Deploy() (err error) {
 		}
 	}
 
-	return
+	return nil
 }
 
-func (fc *foundationCluster) GetSpecification() (spec ClusterSpec) {
-	spec = fc.clusterSpec
-	return
+func (fc *foundationCluster) GetSpecification() ClusterSpec {
+	return fc.clusterSpec
 }

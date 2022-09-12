@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/state"
 	"gopkg.in/inf.v0"
 )
 
@@ -51,26 +52,30 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("test failed with error %v", err)
 				}
 			} else {
-				p := createPayload(settings)
-				err := p.Connect()
+				shellState := state.State{Settings: settings} //nolint
+				dbPayload, err := createPayload(&shellState)
 				if err != nil {
-					llog.Fatalf("failed to connecto to cluster: %v", err)
+					llog.Fatalf("failed to create payload %v", err)
 				}
 
-				err = p.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
+				if err = dbPayload.Connect(); err != nil {
+					llog.Fatalf("failed to connec to to cluster: %v", err)
+				}
+
+				err = dbPayload.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
 				if err != nil {
 					llog.Fatalf("get stat err %v", err)
 				}
 
 				beginTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-				if err = p.Pop(""); err != nil {
+				if err = dbPayload.Pop(&shellState); err != nil {
 					llog.Fatalf("%v", err)
 				}
 				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 				llog.Infof("Pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				var balance *inf.Dec
-				if balance, err = p.Check(nil); err != nil {
+				if balance, err = dbPayload.Check(nil); err != nil {
 					llog.Fatalf("%v", err)
 				}
 				llog.Infof("Total balance: %v", balance)

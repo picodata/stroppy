@@ -26,6 +26,7 @@ const (
 
 type Settings struct {
 	WorkingDirectory string
+	CmdCallDirectory string
 	LogLevel         string
 
 	Local bool

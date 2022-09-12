@@ -42,11 +42,14 @@ func (sh *shell) LoadState() (err error) {
 		return
 	}
 
-	if err = sh.k.OpenPortForwarding(); err != nil {
+	if err = sh.k.OpenPortForwarding(&sh.state); err != nil {
 		return
 	}
 
-	sh.chaosMesh = chaos.CreateController(sh.k.Engine, sh.workingDirectory, sh.settings.UseChaos)
+	sh.chaosMesh = chaos.CreateController(
+		sh.k.Engine,
+		&sh.state,
+	)
 
 	err = sh.prepareDBForTests()
 	return
@@ -72,7 +75,7 @@ out:
 			case "pop":
 				llog.Println("Starting accounts populating")
 
-				if err = sh.executePop(params); err != nil {
+				if err = sh.executePop(&sh.state); err != nil {
 					llog.Errorf(
 						"'%s' command failed with error '%v' for arguments '%s'",
 						command, err, params,
@@ -89,7 +92,7 @@ out:
 			case "pay":
 				llog.Println("Starting transfer tests for postgres...")
 
-				if err = sh.executePay(params); err != nil {
+				if err = sh.executePay(&sh.state); err != nil {
 					llog.Errorf(
 						"'%s' command failed with error '%v' for arguments '%s'",
 						command, err, params,
@@ -107,7 +110,10 @@ out:
 				chaosCommand, chaosCommandParams := sh.getCommandAndParams(params)
 				switch chaosCommand {
 				case "start":
-					if err = sh.chaosMesh.ExecuteCommand(chaosCommandParams); err != nil {
+					if err = sh.chaosMesh.ExecuteCommand(
+						chaosCommandParams,
+						&sh.state,
+					); err != nil {
 						llog.Errorf("chaos command failed: %v", err)
 					}
 
@@ -129,7 +135,7 @@ out:
 }
 
 func (sh *shell) RunRemotePayTest() (err error) {
-	settings := sh.settings.DatabaseSettings
+	settings := sh.state.Settings.DatabaseSettings
 
 	var beginTime, endTime int64
 	if beginTime, endTime, err = sh.executeRemotePay(settings); err != nil {
@@ -145,7 +151,14 @@ func (sh *shell) RunRemotePayTest() (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
+
+	if err = sh.k.Engine.CollectMonitoringData(
+		beginTime,
+		endTime,
+		sh.k.MonitoringPort.Port,
+		monImagesArchName,
+		&sh.state,
+	); err != nil {
 		err = merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 
@@ -153,7 +166,7 @@ func (sh *shell) RunRemotePayTest() (err error) {
 }
 
 func (sh *shell) RunRemotePopTest() (err error) {
-	settings := sh.settings.DatabaseSettings
+	settings := sh.state.Settings.DatabaseSettings
 
 	var beginTime, endTime int64
 	if beginTime, endTime, err = sh.executeRemotePop(settings); err != nil {
@@ -169,7 +182,14 @@ func (sh *shell) RunRemotePopTest() (err error) {
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
-	if err = sh.k.Engine.CollectMonitoringData(beginTime, endTime, sh.k.MonitoringPort.Port, monImagesArchName); err != nil {
+
+	if err = sh.k.Engine.CollectMonitoringData(
+		beginTime,
+		endTime,
+		sh.k.MonitoringPort.Port,
+		monImagesArchName,
+		&sh.state,
+	); err != nil {
 		err = merry.Prepend(err, "failed to get monitoring images for pop test")
 	}
 

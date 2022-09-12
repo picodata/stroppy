@@ -10,6 +10,7 @@ import (
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/state"
 )
 
 // IsTransientError is a wrapper to determine if request was
@@ -34,11 +35,13 @@ type PayStats struct {
 	recoveries        uint64
 }
 
-func (p *BasePayload) Pay(_ string) (err error) {
+func (p *BasePayload) Pay(shellState *state.State) error {
+	var err error
+
 	llog.Infof("Making %d transfers using %d workers on %d cores \n",
 		p.config.Count, p.config.Workers, runtime.NumCPU())
 
-	if err = p.chaos.ExecuteCommand(p.chaosParameter); err != nil {
+	if err = p.chaos.ExecuteCommand(p.chaosParameter, shellState); err != nil {
 		llog.Errorf("failed to execute chaos command: %v", err)
 	}
 
@@ -55,5 +58,5 @@ func (p *BasePayload) Pay(_ string) (err error) {
 		payStats.NoSuchAccount,
 		payStats.InsufficientFunds)
 
-	return
+	return nil
 }

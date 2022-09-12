@@ -4,19 +4,24 @@
 
 package chaos
 
-import "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+import (
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	"gitlab.com/picodata/stroppy/pkg/state"
+)
 
 type Controller interface {
-	Deploy() error
-	ExecuteCommand(string) error
+	Deploy(*state.State) error
+	ExecuteCommand(string, *state.State) error
 	Stop()
 }
 
-func CreateController(k *kubeengine.Engine, wd string, isChaosEnabled bool) (c Controller) {
-	if isChaosEnabled {
-		c = createWorkableController(k, wd)
-	} else {
-		c = createDummyChaos()
+func CreateController(
+	k *kubeengine.Engine,
+	shellState *state.State,
+) Controller {
+	if shellState.Settings.UseChaos {
+		return createWorkableController(k, *shellState)
 	}
-	return
+
+	return createDummyChaos()
 }

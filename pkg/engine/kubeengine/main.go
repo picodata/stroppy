@@ -9,14 +9,14 @@ import (
 	"net/url"
 	"path/filepath"
 
+	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/ssh"
-
-	"k8s.io/client-go/rest"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
@@ -42,46 +42,38 @@ func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 	return
 }
 
-/// Create kubernetes object based on kubeengine.Engine
-/// engine prepared to run on local machine
+// Create kubernetes object based on kubeengine.Engine
+// engine prepared to run on local machine.
 func createKubernetesObject(
-    settings *config.Settings,
-	terraformAddressMap map[string]map[string]string,
+	shellState *state.State,
 	sshClient ssh.Client,
 ) (pObj *Engine) {
-
 	pObj = &Engine{
-		WorkingDirectory:  settings.WorkingDirectory,
-		clusterConfigFile: filepath.Join(settings.WorkingDirectory, "config"),
-
-		AddressMap: terraformAddressMap,
-		sc:         sshClient,
-
-		UseLocalSession:      settings.Local,
+		clusterConfigFile:    filepath.Join(shellState.Settings.WorkingDirectory, "config"),
+		sc:                   sshClient,
+		UseLocalSession:      shellState.Settings.Local,
 		isSshKeyFileOnMaster: false,
 	}
 	return
 }
 
 func CreateEngine(
-    settings *config.Settings,
-	terraformAddressMap map[string]map[string]string,
 	sshClient ssh.Client,
+	shellState *state.State,
 ) (e *Engine, err error) {
-
-	e = createKubernetesObject(settings, terraformAddressMap, sshClient)
+	e = createKubernetesObject(shellState, sshClient)
 	e.sshKeyFileName, e.sshKeyFilePath = e.sc.GetPrivateKeyInfo()
 
-	llog.Infof("kubernetes engine init successfully on directory '%s' and ssh key file '%s'",
-		e.WorkingDirectory, e.sshKeyFilePath)
+	llog.Infof(
+		"kubernetes engine init successfully on directory '%s' and ssh key file '%s'",
+		shellState.Settings.WorkingDirectory,
+		e.sshKeyFilePath,
+	)
 	return
 }
 
 type Engine struct {
-	WorkingDirectory  string
 	clusterConfigFile string
-
-	AddressMap map[string]map[string]string
 
 	sshKeyFileName string
 	sshKeyFilePath string
@@ -106,21 +98,29 @@ func (e *Engine) GetClientSet() (clientSet *kubernetes.Clientset, err error) {
 	return
 }
 
-func (e *Engine) GetResourceURL(resource, namespace, name, subresource string) (url *url.URL, err error) {
-	var clientSet *kubernetes.Clientset
+func (e *Engine) GetResourceURL(
+	resource, namespace, name, subresource string,
+) (*url.URL, error) {
+	var (
+		resourceURL *url.URL
+		clientSet   *kubernetes.Clientset
+		err         error
+	)
+
 	if clientSet, err = e.GetClientSet(); err != nil {
-		return
+		return nil, merry.Prepend(err, "failed to get client set")
 	}
 
 	// reqURL - текущий url запроса к сущности k8s в runtime
-	url = clientSet.CoreV1().RESTClient().Post().
+	resourceURL = clientSet.CoreV1().RESTClient().Post().
 		Resource(resource).
 		Namespace(namespace).
 		Name(name).
 		SubResource(subresource).URL()
-	return
+
+	return resourceURL, nil
 }
 
-func (e *Engine) SetClusterConfigFile(path  string) {
-    e.clusterConfigFile = path
+func (e *Engine) SetClusterConfigFile(path string) {
+	e.clusterConfigFile = path
 }

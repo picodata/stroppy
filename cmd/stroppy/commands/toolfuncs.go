@@ -12,8 +12,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/engine/terraform"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
@@ -24,38 +26,50 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
-func createPayload(settings *config.Settings) (_payload payload.Payload) {
-	sc, err := kubeengine.CreateSystemShell(settings)
-	if err != nil {
-		llog.Fatalf("create payload: %v", err)
+func createPayload(shellState *state.State) (payload.Payload, error) {
+	var (
+		sshClient ssh.Client
+		err       error
+	)
+
+	if sshClient, err = kubeengine.CreateSystemShell(shellState.Settings); err != nil {
+		return nil, merry.Prepend(err, "failed to create system shell")
 	}
 
-	tf := terraform.CreateTerraform(settings.DeploymentSettings, settings.WorkingDirectory, settings.WorkingDirectory)
-	if err = tf.InitProvider(); err != nil {
-		llog.Fatalf("provider init failed: %v", err)
+	terraformProvider := terraform.CreateTerraform(
+		shellState.Settings.DeploymentSettings,
+		shellState.Settings.WorkingDirectory,
+		shellState.Settings.WorkingDirectory,
+	)
+	if err = terraformProvider.InitProvider(); err != nil {
+		return nil, merry.Prepend(err, "failed to init provider")
 	}
 
-	var addressMap map[string]map[string]string
-	if addressMap, err = tf.GetAddressMap(); err != nil {
-		llog.Fatalf("failed to get address map: %v", err)
+	var kube *kubernetes.Kubernetes
+
+	if kube, err = kubernetes.CreateKubernetes(sshClient, shellState); err != nil {
+		return nil, merry.Prepend(err, "failed to create kubernetes")
 	}
 
-	var k *kubernetes.Kubernetes
-	k, err = kubernetes.CreateKubernetes(settings, tf.Provider, addressMap, sc)
-	if err != nil {
-		llog.Fatalf("init kubernetes failed")
+	var dbCluster db.Cluster
+
+	if dbCluster, err = db.CreateCluster(sshClient, kube, shellState); err != nil {
+		return nil, merry.Prepend(err, "failed to create database cluster")
 	}
 
-	var _cluster db.Cluster
-	if _cluster, err = db.CreateCluster(settings.DatabaseSettings, sc, k, settings.WorkingDirectory); err != nil {
-		llog.Fatalf("failed to create cluster: %v", err)
+	chaosController := chaos.CreateController(kube.Engine, shellState)
+
+	var dbPayload payload.Payload
+
+	if dbPayload, err = payload.CreatePayload(
+		dbCluster,
+		shellState.Settings,
+		chaosController,
+	); err != nil {
+		return nil, merry.Prepend(err, "failed to create payload")
 	}
 
-	_chaos := chaos.CreateController(k.Engine, settings.WorkingDirectory, settings.UseChaos)
-	if _payload, err = payload.CreatePayload(_cluster, settings, _chaos); err != nil {
-		return
-	}
-	return
+	return dbPayload, nil
 }
 
 func initLogFacility(settings *config.Settings) (err error) {
@@ -89,7 +103,12 @@ func initLogFacility(settings *config.Settings) (err error) {
 		os.O_CREATE|os.O_APPEND|os.O_RDWR,
 		modePerm)
 	if err != nil {
-		err = merry.Prependf(err, "open log file '%s' in '%s' directory", logFileName, settings.WorkingDirectory)
+		err = merry.Prependf(
+			err,
+			"open log file '%s' in '%s' directory",
+			logFileName,
+			settings.WorkingDirectory,
+		)
 		return
 	}
 

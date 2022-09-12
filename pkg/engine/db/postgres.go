@@ -13,6 +13,7 @@ import (
 
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/scheme"
@@ -26,22 +27,16 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 )
 
-//nolint // don't known how to fix ireturn
 func createPostgresCluster(
 	sshClient engineSsh.Client,
 	kube *kubernetes.Kubernetes,
-	workDir, dbURL string,
-	connectionPoolSize int,
+	shellState *state.State,
 ) Cluster {
 	return &postgresCluster{
 		commonCluster: createCommonCluster(
 			sshClient,
 			kube,
-			filepath.Join(workDir, dbWorkingDirectory, cluster.Postgres),
-			cluster.Postgres,
-			dbURL,
-			connectionPoolSize,
-			false,
+			shellState,
 		),
 	}
 }
@@ -71,8 +66,10 @@ func (pc *postgresCluster) Connect() (interface{}, error) {
 
 // Deploy
 // разворачивает postgres в кластере
-func (pc *postgresCluster) Deploy() (err error) {
-	if err = pc.deploy(); err != nil {
+func (pc *postgresCluster) Deploy(shellState *state.State) error {
+	var err error
+
+	if err = pc.deploy(shellState); err != nil {
 		return merry.Prepend(err, "deploy")
 	}
 
@@ -89,34 +86,48 @@ func (pc *postgresCluster) Deploy() (err error) {
 		podName := fmt.Sprintf(postgresPodNameTemplate, i)
 
 		var targetPod *kuberv1.Pod
-		targetPod, err = pc.k.Engine.WaitPod(podName, kubeengine.ResourceDefaultNamespace,
-			kubeengine.PodWaitingWaitCreation, kubeengine.PodWaitingTimeTenMinutes)
 
-		if err != nil {
-			err = merry.Prepend(err, "waiting")
-			return
+		if targetPod, err = pc.k.Engine.WaitPod(
+			podName,
+			kubeengine.ResourceDefaultNamespace,
+			kubeengine.PodWaitingWaitCreation,
+			kubeengine.PodWaitingTimeTenMinutes,
+		); err != nil {
+			return merry.Prepend(err, "failed to wait postrgress pod")
 		}
 
 		pc.clusterSpec.Pods = append(pc.clusterSpec.Pods, targetPod)
+
 		llog.Infof("'%s/%s' pod registered", targetPod.Namespace, targetPod.Name)
+
 		if i == 0 {
 			pc.clusterSpec.MainPod = targetPod
+
 			llog.Debugln("... and this pod is main")
 		}
 	}
 
 	runningPodsCount := len(pc.clusterSpec.Pods)
 	if runningPodsCount < int(postgresPodsCount) {
-		return fmt.Errorf("finded only %d postgres pods, expected %d",
-			runningPodsCount, postgresPodsCount)
+		return merry.New(fmt.Sprintf(
+			"finded only %d postgres pods, expected %d",
+			runningPodsCount,
+			postgresPodsCount,
+		))
 	}
 
 	if pc.clusterSpec.MainPod == nil {
 		return errors.New("main pod does not exists")
 	}
 
-	err = pc.openPortForwarding(pc.clusterSpec.MainPod.Name, []string{"6432:5432"})
-	return
+	if err = pc.openPortForwarding(
+		pc.clusterSpec.MainPod.Name,
+		[]string{"6432:5432"},
+	); err != nil {
+		llog.Errorf("error %s", err.Error())
+	}
+
+	return nil
 }
 
 func (pc *postgresCluster) GetSpecification() (spec ClusterSpec) {

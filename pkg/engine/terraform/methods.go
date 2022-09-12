@@ -91,19 +91,19 @@ func (t *Terraform) InitProvider() (err error) {
 	return
 }
 
-func (t *Terraform) LoadState() (error) {
-    var (
-        err error
-        data []byte
-    )
+func (t *Terraform) LoadState() error {
+	var (
+		err  error
+		data []byte
+	)
 
-	if data, err = ioutil.ReadFile(t.stateFilePath); err != nil {
+	if data, err = os.ReadFile(t.stateFilePath); err != nil {
 		err = merry.Prepend(err, "failed to read file terraform.tfstate")
 	}
 
-    if err = json.Unmarshal(data, t.Provider.GetTfStateScheme()); err != nil {
-        return merry.Prepend(err, "failed to deserialize terrafrom.tfstate")
-    }
+	if err = json.Unmarshal(data, t.Provider.GetTfStateScheme()); err != nil {
+		return merry.Prepend(err, "failed to deserialize terrafrom.tfstate")
+	}
 
 	return nil
 }

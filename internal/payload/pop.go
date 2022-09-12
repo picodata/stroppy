@@ -19,6 +19,7 @@ import (
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/state"
 	"gitlab.com/picodata/stroppy/pkg/statistics"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -41,8 +42,9 @@ type PopStats struct {
 	duplicates uint64
 }
 
-//nolint // mongo
-func (p *BasePayload) Pop(_ string) (err error) {
+func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refactor
+	var err error
+
 	stats := PopStats{}
 
 	if err = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
@@ -94,10 +96,13 @@ func (p *BasePayload) Pop(_ string) (err error) {
 						Code: 1009,
 					}) || errors.Is(err, mongo.CommandError{
 						Code: 133,
-					}) || errors.Is(err, cluster.ErrTxRollback) || mongo.IsNetworkError(err) ||
-
+					}) ||
+						errors.Is(err, cluster.ErrTxRollback) ||
+						mongo.IsNetworkError(err) ||
 						// временная мера до стабилизации mongo
-						mongo.IsTimeout(err) || strings.Contains(err.Error(), "connection ") || strings.Contains(err.Error(), "socket ") ||
+						mongo.IsTimeout(err) ||
+						strings.Contains(err.Error(), "connection ") ||
+						strings.Contains(err.Error(), "socket ") ||
 						errors.Is(err, mongo.WriteConcernError{Code: 64}) ||
 						errors.Is(err, mongo.WriteConcernError{Code: 11602}) ||
 						errors.Is(err, mongo.WriteError{}) {
@@ -127,7 +132,7 @@ func (p *BasePayload) Pop(_ string) (err error) {
 	remainder := p.config.Count - accountsPerWorker*p.config.Workers
 
 	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
-	if err = p.chaos.ExecuteCommand(chaosCommand); err != nil {
+	if err = p.chaos.ExecuteCommand(chaosCommand, shellState); err != nil {
 		llog.Errorf("failed to execute chaos command: %v", err)
 	}
 
@@ -146,5 +151,6 @@ func (p *BasePayload) Pop(_ string) (err error) {
 
 	p.chaos.Stop()
 	statistics.StatsReportSummary()
-	return
+
+	return nil
 }

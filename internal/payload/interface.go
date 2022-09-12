@@ -8,19 +8,20 @@ import (
 	"sync"
 	"time"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/db"
-
-	"github.com/ansel1/merry"
-	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/database"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine/chaos"
+	"gitlab.com/picodata/stroppy/pkg/engine/db"
+	"gitlab.com/picodata/stroppy/pkg/state"
+
+	"github.com/ansel1/merry"
+	llog "github.com/sirupsen/logrus"
 	"gopkg.in/inf.v0"
 )
 
 type Payload interface {
-	Pay(string) error
-	Pop(string) error
+	Pay(*state.State) error
+	Pop(*state.State) error
 	Check(*inf.Dec) (*inf.Dec, error)
 	UpdateSettings(*config.DatabaseSettings)
 	StartStatisticsCollect(statInterval time.Duration) error

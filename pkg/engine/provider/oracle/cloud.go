@@ -7,7 +7,6 @@ package oracle
 import (
 	"fmt"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
@@ -25,7 +24,7 @@ import (
 const oraclePrivateKeyFile = "private_key.pem"
 
 func (oracleProvider *Provider) GetTfStateScheme() interface{} {
-	return oracleProvider.tfState
+	return &oracleProvider.tfState
 }
 
 func CreateProvider(settings *config.DeploymentSettings, wd string) (op *Provider, err error) {
@@ -53,7 +52,7 @@ type Provider struct {
 
 	workingDirectory string
 
-	tfState TfState // TODO
+	tfState TfState
 }
 
 // Prepare - подготовить файл конфигурации кластера terraform
@@ -96,7 +95,6 @@ func (op *Provider) getIQNStorage(workersCount int) (iqnMap map[string]string, e
 	return
 }
 
-//nolint // autored by previous developers and should be refactored in future
 // PerformAdditionalOps - добавить отдельные сетевые диски (для yandex пока неактуально)
 func (op *Provider) AddNetworkDisks(nodes int) error {
 	iqnMap, err := op.getIQNStorage(nodes)
@@ -111,10 +109,12 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 	   Иначе - идем дальше. Это дожно обеспечивать идемпотентность подключения storages в рамках деплоя. */
 
 	for index, address := range op.tfState.Outputs.InstancePublicIps.Value[0] {
-		var newLoginCmd string
-		var updateTargetCmd string
-		var loginTargetCmd string
-		var key string
+		var (
+			newLoginCmd     string
+			updateTargetCmd string
+			loginTargetCmd  string
+			key             string
+		)
 
 		if index == 0 {
 			key = "master"
@@ -291,11 +291,13 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 				)
 				return merry.Prepend(err, errorMessage)
 			}
+
 			llog.Infof(
 				"Mounting of disk /dev/sdb1 to /opt/local-path-provisioner/ %v: success",
 				key,
 			)
 		}
+
 		llog.Infof("added network storage to %v", key)
 
 	}
@@ -303,27 +305,55 @@ func (op *Provider) AddNetworkDisks(nodes int) error {
 	return nil
 }
 
-func (op *Provider) GetInstanceAddress(group, name string) (*provider.Addresses, error) {
-	if group != "master" && name != "master" {
-		var (
-			num int
-			err error
-		)
-
-		if num, err = strconv.Atoi(string(name[len(name)-1])); err != nil {
-			return nil, fmt.Errorf("failed to parse worker number")
-		}
-
-		return &provider.Addresses{
-			Internal: op.tfState.Outputs.InstancePrivateIps.Value[0][num],
-			External: op.tfState.Outputs.InstancePublicIps.Value[0][num],
-		}, nil
+// TODO: should be refactored in future after tests on oracle cloud.
+func (oracleProvider *Provider) GetInstancesAddresses() *provider.InstanceAddresses {
+	instanceAddresses := provider.InstanceAddresses{
+		Masters: make(map[string]provider.AddrPair),
+		Workers: make(map[string]provider.AddrPair),
 	}
 
-	return &provider.Addresses{
-		Internal: op.tfState.Outputs.InstancePrivateIps.Value[0][0],
-		External: op.tfState.Outputs.InstancePublicIps.Value[0][0],
-	}, nil
+	for index, ipAddr := range oracleProvider.tfState.Outputs.InstancePrivateIps.Value[0] {
+		switch {
+		case index == 0:
+			name := fmt.Sprintf("master-%d", index)
+			instanceAddresses.Masters[name] = provider.AddrPair{
+				Internal: ipAddr,
+				External: oracleProvider.tfState.Outputs.InstancePublicIps.Value[0][index],
+			}
+		case index >= 1:
+			name := fmt.Sprintf("worker-%d", index)
+			instanceAddresses.Workers[name] = provider.AddrPair{
+				Internal: ipAddr,
+				External: oracleProvider.tfState.Outputs.InstancePublicIps.Value[0][index],
+			}
+		}
+	}
+
+	return &instanceAddresses
+}
+
+// TODO: should be refactored in future after tests on oracle cloud.
+func (oracleProvider *Provider) GetSubnet() string {
+	panic("unimplemented!")
+}
+
+// TODO: should be refactored in future after tests on oracle cloud.
+func (oracleProvider *Provider) GetNodes() map[string]*provider.Node {
+	nodes := make(map[string]*provider.Node)
+
+	for index, fqdn := range oracleProvider.tfState.Outputs.InstancePublicIps.Value[0] {
+		node := provider.Node{
+			Fqdn: fqdn,
+			Resources: provider.Resources{
+				CPU:    0,
+				Memory: 0,
+				Disk:   0,
+			},
+		}
+		nodes[fmt.Sprintf("node-%d", index)] = &node
+	}
+
+	return nodes
 }
 
 func (op *Provider) IsPrivateKeyExist(workingDirectory string) bool {
@@ -367,12 +397,10 @@ func (op *Provider) GetDeploymentCommands() (firstStep, thirdStep string) {
 	return
 }
 
-//nolint
-func (op *Provider) CheckSSHPrivateKey(workDir string) error {
+func (oracleProvider *Provider) CheckSSHPrivateKey(workDir string) error {
 	return nil
 }
 
-//nolint
-func (op *Provider) CheckSSHPublicKey(workDir string) error {
+func (oracleProvider *Provider) CheckSSHPublicKey(workDir string) error {
 	return nil
 }

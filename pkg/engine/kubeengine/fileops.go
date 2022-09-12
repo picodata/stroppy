@@ -11,6 +11,8 @@ import (
 	"os"
 	"os/exec"
 
+	"gitlab.com/picodata/stroppy/pkg/state"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes/scheme"
 	corev1client "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -24,8 +26,11 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error) {
-	if err = e.installSshKeyFileOnMaster(); err != nil {
+func (e *Engine) LoadFile(
+	sourceFilePath, destinationFilePath string,
+	shellState *state.State,
+) (err error) {
+	if err = e.installSSHKeyFileOnMaster(shellState); err != nil {
 		return
 	}
 
@@ -41,7 +46,10 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 		return
 	}
 
-	masterFullAddress := fmt.Sprintf("%v:22", e.AddressMap["external"]["master"])
+	masterFullAddress := fmt.Sprintf(
+		"%v:22",
+		shellState.InstanceAddresses.GetFirstMaster().External,
+	)
 
 	client := scp.NewClient(masterFullAddress, &clientSSHConfig)
 	if err = client.Connect(); err != nil {
@@ -70,16 +78,20 @@ func (e *Engine) LoadFile(sourceFilePath, destinationFilePath string) (err error
 	return
 }
 
-/// Run few shell commands on remote host, and copy files via scp.
-func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err error) {
+// / Run few shell commands on remote host, and copy files via scp.
+func (e *Engine) LoadDirectory(
+	directorySourcePath, destinationPath string,
+	shellState *state.State,
+) error {
+	var err error
+
 	if err = e.ExecuteF(`mkdir -p "%s"`, destinationPath); err != nil {
-		err = fmt.Errorf("path creation failed: %v", err)
-		return
+		return merry.Prepend(err, fmt.Sprintf("path creation failed: %v", err))
 	}
 
 	destinationPath = fmt.Sprintf(
 		"stroppy@%s:%s",
-		e.AddressMap["external"]["master"],
+		shellState.InstanceAddresses.GetFirstMaster().External,
 		destinationPath,
 	)
 
@@ -106,7 +118,7 @@ func (e *Engine) LoadDirectory(directorySourcePath, destinationPath string) (err
 			err, string(output))
 	}
 
-	return
+	return nil
 }
 
 func (e Engine) DownloadFile(remoteFullSourceFilePath, localPath string) (err error) {
