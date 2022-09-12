@@ -7,17 +7,21 @@ package chaos
 import (
 	"errors"
 	"net/url"
+	"path"
 	"path/filepath"
 	"strings"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	"gitlab.com/picodata/stroppy/pkg/state"
 	v1 "k8s.io/api/core/v1"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 )
 
-func (chaos *workableController) Deploy() (err error) {
+func (chaos *workableController) Deploy(shellState *state.State) error {
+	var err error
+
 	llog.Infoln("Starting chaos-mesh deployment...")
 
 	const deployChaosMesh = "chmod +x cluster/deploy_chaos.sh && ./cluster/deploy_chaos.sh"
@@ -27,16 +31,22 @@ func (chaos *workableController) Deploy() (err error) {
 	llog.Debugln("chaos-mesh prepared successfully")
 
 	if err = chaos.enumChaosParts(); err != nil {
-		return
+		return merry.Prepend(err, "failed to enumChaosParts")
 	}
 
 	const (
 		chaosConfigDirName = "_config"
 		rbacFileName       = "rbac.yaml"
 	)
-	rbacFileSourcePath := filepath.Join(chaos.wd, chaosConfigDirName, rbacFileName)
+
+	rbacFileSourcePath := filepath.Join(
+		path.Join(shellState.Settings.WorkingDirectory, chaosDir),
+		chaosConfigDirName,
+		rbacFileName,
+	)
 	rbacFileKubemasterPath := filepath.Join("home", "stroppy", rbacFileName)
-	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath); err != nil {
+
+	if err = chaos.k.LoadFile(rbacFileSourcePath, rbacFileKubemasterPath, shellState); err != nil {
 		return merry.Prepend(err, "rbac.yaml copying")
 	}
 
@@ -50,12 +60,13 @@ func (chaos *workableController) Deploy() (err error) {
 		"kubectl -n chaos-testing describe secret account-cluster-manager-picodata",
 	)
 
-	if err = chaos.establishDashboardAvailability(); err != nil {
-		return
+	if err = chaos.establishDashboardAvailability(shellState); err != nil {
+		return merry.Prepend(err, "failed to establishDashboardAvailability")
 	}
 
 	llog.Infoln("chaos-mesh deployed successfully")
-	return
+
+	return nil
 }
 
 // ----------------------------
@@ -89,9 +100,15 @@ func (chaos *workableController) enumChaosParts() (err error) {
 	return
 }
 
-func (chaos *workableController) establishDashboardAvailability() (err error) {
+func (chaos *workableController) establishDashboardAvailability(
+	shellState *state.State,
+) error {
 	// прокидываем порты, что бы можно было открыть веб-интерфейс
-	var reqURL *url.URL
+	var (
+		err    error
+		reqURL *url.URL
+	)
+
 	reqURL, err = chaos.k.GetResourceURL(kubeengine.ResourceService,
 		chaosNamespace,
 		chaos.dashboardPod.Name,
@@ -112,8 +129,9 @@ func (chaos *workableController) establishDashboardAvailability() (err error) {
 
 	_ = chaos.k.OpenSecureShellTunnel(
 		chaosDashboardResourceName,
-		chaos.k.AddressMap["external"]["master"],
+		shellState.InstanceAddresses.GetFirstMaster().External,
 		chaosPort,
 	)
-	return
+
+	return nil
 }

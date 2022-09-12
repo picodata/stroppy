@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"path"
-	"path/filepath"
 	"time"
 
 	"github.com/ansel1/merry"
@@ -17,6 +16,7 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
 	"gopkg.in/yaml.v2"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
@@ -39,24 +39,17 @@ type yandexCluster struct {
 	commonCluster *commonCluster
 }
 
-// nolint // should be fixed in future
 // Create createYandexDBCluster.
 func createYandexDBCluster(
 	sc engineSsh.Client,
 	k *kubernetes.Kubernetes,
-	wd string,
-	dbURL string,
-	connectionPoolSize int,
+	shellState *state.State,
 ) Cluster {
 	return &yandexCluster{
 		commonCluster: createCommonCluster(
 			sc,
 			k,
-			filepath.Join(wd, dbWorkingDirectory, yandexDirectory),
-			yandexDirectory,
-			dbURL,
-			connectionPoolSize,
-			false,
+			shellState,
 		),
 	}
 }
@@ -66,20 +59,20 @@ func createYandexDBCluster(
 // the helm operator will be connected first. The operator is always
 // installed from the Yandex repository. Then the store and database
 // manifests will be deserialized and parameterized.
-func (yc *yandexCluster) Deploy() error {
+func (yc *yandexCluster) Deploy(shellState *state.State) error {
 	var err error
 
 	if err = yc.deployYandexDBOperator(); err != nil {
 		return merry.Prepend(err, "Error then deploying ydb operator")
 	}
 
-	if err = yc.deployStorage(); err != nil {
+	if err = yc.deployStorage(shellState); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
 	if err = waitObjectReady(
 		path.Join(
-			yc.commonCluster.k.Engine.WorkingDirectory,
+			shellState.Settings.WorkingDirectory,
 			databasesDir,
 			yandexDirectory,
 			"stroppy-storage.yml",
@@ -88,13 +81,14 @@ func (yc *yandexCluster) Deploy() error {
 	); err != nil {
 		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
-	if err = yc.deployDatabase(); err != nil {
+
+	if err = yc.deployDatabase(shellState); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
 	if err = waitObjectReady(
 		path.Join(
-			yc.commonCluster.k.Engine.WorkingDirectory,
+			shellState.Settings.WorkingDirectory,
 			databasesDir,
 			yandexDirectory,
 			"stroppy-database.yml",
@@ -205,14 +199,14 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 // Parse manifest and deploy yandex db storage via kubectl.
 //
 //nolint:varnamelen // ok is typecasting boolean
-func (yc *yandexCluster) deployStorage() error {
+func (yc *yandexCluster) deployStorage(shellState *state.State) error {
 	var (
 		err     error
 		bytes   []byte
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
+	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
 
 	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
 		return merry.Prepend(err, "Error then reading file")
@@ -269,17 +263,16 @@ func (yc *yandexCluster) deployStorage() error {
 	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
 }
 
-// nolint // ok is typecasting boolean and logic of this function is inseparable
 // Deploy YDB database
 // Parse manifest and deploy yandex db database via kubectl.
-func (yc *yandexCluster) deployDatabase() error {
+func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
 	var (
 		err     error
 		bytes   []byte
 		storage map[interface{}]interface{}
 	)
 
-	mpath := path.Join(yc.commonCluster.k.Engine.WorkingDirectory, databasesDir, yandexDirectory)
+	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
 
 	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
 	if err != nil {
@@ -413,7 +406,6 @@ func waitObjectReady(fpath, name string) error {
 	return nil
 }
 
-// nolint // ok is typecasting boolean and logic of this function is inseparable
 // Generate parameters for `storage` CRD.
 func paramStorageConfig(storage string) ([]byte, error) {
 	var (
@@ -499,7 +491,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        2,
+						"node_id":        2, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -508,7 +500,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        3,
+						"node_id":        3, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -517,7 +509,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        4,
+						"node_id":        4, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -526,7 +518,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        5,
+						"node_id":        5, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -535,7 +527,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        6,
+						"node_id":        6, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -544,7 +536,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        7,
+						"node_id":        7, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
@@ -553,7 +545,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 			map[string]interface{}{
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
-						"node_id":        8,
+						"node_id":        8, //nolint
 						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},

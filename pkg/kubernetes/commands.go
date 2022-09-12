@@ -11,6 +11,7 @@ import (
 
 	engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	v1 "k8s.io/api/core/v1"
@@ -26,6 +27,7 @@ func (k *Kubernetes) ExecuteRemoteCommand(
 	_, containerName string,
 	testCmd []string,
 	logFileName string,
+	shellState *state.State,
 ) (int64, int64, error) {
 	var (
 		beginTime int64
@@ -75,7 +77,7 @@ func (k *Kubernetes) ExecuteRemoteCommand(
 		return beginTime, endTime, merry.Prepend(err, "failed to execute remote test")
 	}
 
-	logFilePath := filepath.Join(k.Engine.WorkingDirectory, logFileName)
+	logFilePath := filepath.Join(shellState.Settings.WorkingDirectory, logFileName)
 
 	var logFile *os.File
 	if logFile, err = os.Create(logFilePath); err != nil {

@@ -14,16 +14,18 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"sort"
+	"strings"
 	"time"
+
+	"gitlab.com/picodata/stroppy/pkg/engine"
+	kubeEngine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	"github.com/apenella/go-ansible/pkg/options"
 	"github.com/apenella/go-ansible/pkg/playbook"
 	llog "github.com/sirupsen/logrus"
-	"gitlab.com/picodata/stroppy/pkg/engine"
-	kube_engine "gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	yaml "gopkg.in/yaml.v3"
 )
 
@@ -33,13 +35,20 @@ const (
 roles_path =third_party/.roles/
 collections_paths=third_party/.collections/
 `
-	SSHUser           string = "ubuntu"
+	SSHUser string = "ubuntu"
+)
+
+const (
 	grafanaVer        string = "0.17.0"
 	nodeExporterVer   string = "2.0.0"
 	kubernetesColVer  string = "2.0.1"
 	grafanaColVer     string = "1.4.0"
 	forceReinstallReq bool   = false //nolint
-	roAll             int    = 0o644
+)
+
+const (
+	roAll         int = 0o644
+	etcdNormalCnt int = 3
 )
 
 type Inventory struct {
@@ -60,22 +69,25 @@ type Host struct {
 
 var errPortCheck = errors.New("port check failed")
 
+// TODO: unused function!
 // скопировать на мастер-ноду private key для работы мастера с воркерами
 // и файлы для развертывания мониторинга и postgres.
-func (k *Kubernetes) loadFilesToMaster() (err error) {
-	masterExternalIP := k.Engine.AddressMap["external"]["master"]
+func (k *Kubernetes) loadFilesToMaster(shellState *state.State) (err error) { //nolint
+	masterExternalIP := shellState.InstanceAddresses.GetFirstMaster().External
 	llog.Infof("Connecting to master %v", masterExternalIP)
 
-	if k.provider.Name() == provider.Yandex {
+	if shellState.Settings.DeploymentSettings.Provider == provider.Yandex {
 		/* проверяем доступность порта 22 мастер-ноды, чтобы не столкнуться с ошибкой копирования ключа,
 		если кластер пока не готов*/
 		llog.Infoln("Checking status of port 22 on the cluster's master...")
+
 		var masterPortAvailable bool
-		for i := 0; i <= kube_engine.ConnectionRetryCount; i++ {
+
+		for i := 0; i <= kubeEngine.ConnectionRetryCount; i++ {
 			masterPortAvailable = engine.IsRemotePortOpen(masterExternalIP, 22)
 			if !masterPortAvailable {
 				llog.Infof("status of check the master's port 22:%v. Repeat #%v", errPortCheck, i)
-				time.Sleep(kube_engine.ExecTimeout * time.Second)
+				time.Sleep(kubeEngine.ExecTimeout * time.Second)
 			} else {
 				break
 			}
@@ -86,49 +98,59 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	}
 
 	metricsServerFilePath := filepath.Join(
-		k.Engine.WorkingDirectory,
+		shellState.Settings.WorkingDirectory,
 		"monitoring",
 		"metrics-server.yaml",
 	)
 	if err = k.Engine.LoadFile(
 		metricsServerFilePath,
 		"/home/ubuntu/metrics-server.yaml",
+		shellState,
 	); err != nil {
 		return
 	}
 	llog.Infoln("copying metrics-server.yaml: success")
 
 	ingressGrafanaFilePath := filepath.Join(
-		k.Engine.WorkingDirectory,
+		shellState.Settings.WorkingDirectory,
 		"monitoring",
 		"ingress-grafana.yaml",
 	)
 	if err = k.Engine.LoadFile(
 		ingressGrafanaFilePath,
 		"/home/ubuntu/ingress-grafana.yaml",
+		shellState,
 	); err != nil {
 		return
 	}
 	llog.Infoln("copying ingress-grafana.yaml: success")
 
 	grafanaDirectoryPath := filepath.Join(
-		k.Engine.WorkingDirectory,
+		shellState.Settings.WorkingDirectory,
 		"monitoring",
 		"grafana-on-premise",
 	)
-	if err = k.Engine.LoadDirectory(grafanaDirectoryPath, "/home/ubuntu"); err != nil {
+	if err = k.Engine.LoadDirectory(grafanaDirectoryPath, "/home/ubuntu", shellState); err != nil {
 		return
 	}
 	llog.Infoln("copying grafana-on-premise: success")
 
-	commonShFilePath := filepath.Join(k.Engine.WorkingDirectory, "common.sh")
-	if err = k.Engine.LoadFile(commonShFilePath, "/home/ubuntu/common.sh"); err != nil {
+	commonShFilePath := filepath.Join(shellState.Settings.WorkingDirectory, "common.sh")
+	if err = k.Engine.LoadFile(
+		commonShFilePath,
+		"/home/ubuntu/common.sh",
+		shellState,
+	); err != nil {
 		return
 	}
 	llog.Infoln("copying common.sh: success")
 
-	clusterDeploymentDirectoryPath := filepath.Join(k.Engine.WorkingDirectory, "cluster")
-	if err = k.Engine.LoadDirectory(clusterDeploymentDirectoryPath, "/home/ubuntu"); err != nil {
+	clusterDeploymentDirectoryPath := filepath.Join(shellState.Settings.WorkingDirectory, "cluster")
+	if err = k.Engine.LoadDirectory(
+		clusterDeploymentDirectoryPath,
+		"/home/ubuntu",
+		shellState,
+	); err != nil {
 		return
 	}
 	llog.Infoln("cluster directory copied successfully")
@@ -136,54 +158,8 @@ func (k *Kubernetes) loadFilesToMaster() (err error) {
 	return
 }
 
-// "Deprecated: deployment script replaced to ansible inventory, and go-ansible wrapper"
-// craftClusterDeploymentScript - получить атрибуты для заполнения файла hosts.ini
-// для использования при деплое k8s кластера.
-func (k *Kubernetes) craftClusterDeploymentScript() (deployK8sSecondStep string) {
-	var workersAddressString string
-	var masterAddressString string
-	var workersString string
-
-	internalAddressMap := k.Engine.AddressMap["internal"]
-
-	var keys []string
-	for k := range k.Engine.AddressMap["internal"] {
-		keys = append(keys, k)
-	}
-
-	sort.Strings(keys)
-
-	for i, k := range keys {
-		if i == 0 {
-			masterAddressString = fmt.Sprintf(
-				"master ansible_host=%v ip=%v etcd_member_name=etcd1 \n",
-				internalAddressMap["master"],
-				internalAddressMap["master"],
-			)
-		} else {
-			workersAddressString += fmt.Sprintf(
-				"worker-%v ansible_host=%v ip=%v etcd_member_name=etcd%v \n", i,
-				internalAddressMap[k],
-				internalAddressMap[k], i+1,
-			)
-			workersString += fmt.Sprintf("worker-%v \n", i)
-		}
-	}
-
-	instancesString := masterAddressString + workersAddressString
-	llog.Debugln(instancesString)
-
-	deployK8sSecondStep = fmt.Sprintf(
-		clusterHostsIniTemplate,
-		instancesString,
-		workersString,
-		workersString,
-	)
-	return
-}
-
 // Generate monitoring inventory based on hosts.
-func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
+func (k *Kubernetes) GenerateMonitoringInventory(shellState *state.State) ([]byte, error) {
 	var (
 		bytes []byte
 		err   error
@@ -191,8 +167,8 @@ func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
 
 	hosts := make(map[string]map[string]string)
 
-	for k, v := range k.Engine.AddressMap["internal"] {
-		hosts[k] = map[string]string{"ansible_host": v}
+	for name, node := range shellState.InstanceAddresses.GetWorkersAndMastersAddrPairs() {
+		hosts[name] = map[string]string{"ansible_host": node.Internal}
 	}
 
 	//  vars:
@@ -254,36 +230,77 @@ func (k *Kubernetes) GenerateMonitoringInventory() ([]byte, error) {
 }
 
 // Generate kubespray inventory based on hosts addresses list.
-func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
+func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, error) { //nolint
 	var (
-		empty map[string]interface{}
-		bytes []byte
-		err   error
+		empty             map[string]interface{}
+		supplementaryAddr []string
+		bytes             []byte
+		err               error
 	)
+
+	childrenAll := make(map[string]interface{})
+	childrenETCD := make(map[string]interface{})
+	childrenControlPlane := make(map[string]interface{})
+	hostsAll := make(map[string]interface{})
+
+	for name, node := range shellState.InstanceAddresses.GetWorkersAndMastersAddrPairs() {
+		hostsAll[name] = Host{
+			AnsibleHost: node.Internal,
+			AccessIp:    node.Internal,
+			Ip:          node.Internal,
+		}
+		childrenAll[name] = map[string]interface{}{}
+
+		switch {
+		// if [master-1, worker-1, worker-2, worker-3] -> etcd[worker-1, worker-2, worker-3]
+		case strings.Contains(name, "worker") &&
+			len(shellState.NodesInfo.Params) >= etcdNormalCnt &&
+			len(childrenETCD) < etcdNormalCnt:
+			llog.Tracef("node %s added to etcd hosts", name)
+
+			childrenETCD[name] = map[string]interface{}{}
+
+			continue
+
+		case strings.Contains(name, "master"):
+			childrenControlPlane[name] = map[string]interface{}{}
+
+			supplementaryAddr = append(supplementaryAddr, node.Internal, node.External)
+
+			// if [master-1] -> etcd[master-1]
+		case len(shellState.NodesInfo.Params) == 1|2 &&
+			len(childrenETCD) == 0:
+			childrenETCD[name] = map[string]interface{}{}
+
+			continue
+		// if [master-1, worker-1, worker-2] -> etcd[master-1, worker-1, worker-2]
+		case len(shellState.NodesInfo.Params) >= etcdNormalCnt:
+			childrenETCD[name] = map[string]interface{}{}
+
+			continue
+		}
+	}
 
 	inventory := Inventory{
 		All: All{
 			Vars: map[string]interface{}{
-				"kube_version":              "v1.23.7",
-				"ansible_user":              SSHUser,
-				"ansible_ssh_common_args":   "-F .ssh/config",
-				"ignore_assert_errors":      "yes",
-				"docker_dns_servers_strict": "no",
-				"download_force_cache":      false,
-				"download_run_once":         false,
-				"supplementary_addresses_in_ssl_keys": []string{
-					k.Engine.AddressMap["internal"]["master"],
-					k.Engine.AddressMap["external"]["master"],
+				"kube_version":                        "v1.23.7",
+				"ansible_user":                        SSHUser,
+				"ansible_ssh_common_args":             "-F .ssh/config",
+				"ignore_assert_errors":                "yes",
+				"docker_dns_servers_strict":           "no",
+				"download_force_cache":                false,
+				"download_run_once":                   false,
+				"supplementary_addresses_in_ssl_keys": supplementaryAddr,
+				"addons": map[string]interface{}{
+					"ingress_nginx_enabled": false,
 				},
-				"addons": map[string]interface{}{"ingress_nginx_enabled": false},
-                "node_taints": []string{},
+				"node_taints": []string{},
 			},
-			Hosts: make(map[string]interface{}),
+			Hosts: hostsAll,
 			Children: map[string]interface{}{
 				"kube_control_plane": map[string]interface{}{
-					"hosts": map[string]interface{}{
-						"master": empty,
-					},
+					"hosts": childrenControlPlane,
 				},
 				"k8s_cluster": map[string]interface{}{
 					"children": map[string]interface{}{
@@ -294,29 +311,14 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 				"calico_rr": map[string]interface{}{
 					"hosts": map[string]string{},
 				},
+				"etcd": map[string]interface{}{
+					"hosts": childrenETCD,
+				},
+				"kube_node": map[string]interface{}{
+					"hosts": childrenAll,
+				},
 			},
 		},
-	}
-
-	inventory.All.Hosts["master"] = Host{
-		k.Engine.AddressMap["internal"]["master"],
-		k.Engine.AddressMap["internal"]["master"],
-		k.Engine.AddressMap["internal"]["master"],
-	}
-
-	hosts := make(map[string]interface{})
-
-	for k, v := range k.Engine.AddressMap["internal"] {
-		inventory.All.Hosts[k] = Host{v, v, v}
-		hosts[k] = empty
-	}
-
-	inventory.All.Children["kube_node"] = map[string]interface{}{
-		"hosts": hosts,
-	}
-
-	inventory.All.Children["etcd"] = map[string]interface{}{
-		"hosts": hosts,
 	}
 
 	if bytes, err = yaml.Marshal(inventory); err != nil {
@@ -329,7 +331,7 @@ func (k *Kubernetes) generateK8sInventory() ([]byte, error) {
 }
 
 // Generate `default` inventory for any another actions related with ansible.
-func (k *Kubernetes) generateSimplifiedInventory() ([]byte, error) {
+func (k *Kubernetes) generateSimplifiedInventory(shellState *state.State) ([]byte, error) {
 	var (
 		bytes []byte
 		err   error
@@ -337,8 +339,8 @@ func (k *Kubernetes) generateSimplifiedInventory() ([]byte, error) {
 
 	hosts := make(map[string]map[string]string)
 
-	for k, v := range k.Engine.AddressMap["internal"] {
-		hosts[k] = map[string]string{"ansible_host": v}
+	for name, node := range shellState.InstanceAddresses.GetWorkersAndMastersAddrPairs() {
+		hosts[name] = map[string]string{"ansible_host": node.Internal}
 	}
 
 	inventory := map[string]map[string]interface{}{
@@ -347,7 +349,7 @@ func (k *Kubernetes) generateSimplifiedInventory() ([]byte, error) {
 				"cloud_type":              "yandex",
 				"ansible_user":            SSHUser,
 				"ansible_ssh_common_args": "-F .ssh/config",
-				"kube_master_ext_ip":      k.Engine.AddressMap["external"]["master"],
+				"kube_master_ext_ip":      shellState.InstanceAddresses.GetFirstMaster().External,
 				"kube_apiserver_port":     6443, //nolint //TODO: End-to-end inventory configuration for kubespray #issue97
 			},
 			"hosts": hosts,

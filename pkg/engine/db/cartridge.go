@@ -1,13 +1,13 @@
 package db
 
 import (
-	"path/filepath"
-
-	"github.com/ansel1/merry"
 	clusterImplementation "gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
+	"gitlab.com/picodata/stroppy/pkg/state"
+
+	"github.com/ansel1/merry"
 )
 
 const (
@@ -16,19 +16,18 @@ const (
 	cartridgeDirectory             = "cartridge"
 )
 
-func createCartridgeCluster(sc engineSsh.Client, k *kubernetes.Kubernetes, wd, dbURL string, connectionPoolSize int) (cartridge Cluster) {
-	cartridge = &cartridgeCluster{
+func createCartridgeCluster(
+	sshClient engineSsh.Client,
+	kube *kubernetes.Kubernetes,
+	shellState *state.State,
+) Cluster {
+	return &cartridgeCluster{
 		commonCluster: createCommonCluster(
-			sc,
-			k,
-			filepath.Join(wd, dbWorkingDirectory, cartridgeDirectory),
-			cartridgeDirectory,
-			dbURL,
-			connectionPoolSize,
-			false,
+			sshClient,
+			kube,
+			shellState,
 		),
 	}
-	return
 }
 
 type cartridgeCluster struct {
@@ -41,16 +40,26 @@ func (cartridge *cartridgeCluster) Connect() (cluster interface{}, err error) {
 		cartridge.DBUrl = "127.0.0.1:8081"
 	}
 
-	connectionPool := uint64(cartridge.commonCluster.connectionPoolSize) + uint64(cartridge.commonCluster.addPool)
-	cluster, err = clusterImplementation.NewCartridgeCluster(cartridge.DBUrl, connectionPool, cartridge.commonCluster.sharded)
+	connectionPool := uint64(
+		cartridge.commonCluster.connectionPoolSize,
+	) + uint64(
+		cartridge.commonCluster.addPool,
+	)
+	cluster, err = clusterImplementation.NewCartridgeCluster(
+		cartridge.DBUrl,
+		connectionPool,
+		cartridge.commonCluster.sharded,
+	)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to cartridge cluster")
 	}
 	return
 }
 
-func (cartridge *cartridgeCluster) Deploy() (err error) {
-	if err = cartridge.deploy(); err != nil {
+func (cartridge *cartridgeCluster) Deploy(shellState *state.State) error {
+	var err error
+
+	if err = cartridge.deploy(shellState); err != nil {
 		return merry.Prepend(err, "deploy failed")
 	}
 
@@ -59,8 +68,9 @@ func (cartridge *cartridgeCluster) Deploy() (err error) {
 		tarantoolCartridgeOperatorName,
 		cartridgeCheckPodName)
 	if err != nil {
-		return
+		return merry.Prepend(err, "failed to examine cartridge cluster")
 	}
+
 	return nil
 }
 

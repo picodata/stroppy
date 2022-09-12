@@ -10,4 +10,5 @@ const (
 	chaosControlManagerName    = "chaos-controller-manager"
 
 	chaosPort = 2333
+	chaosDir  = "chaos"
 )

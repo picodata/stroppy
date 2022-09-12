@@ -7,13 +7,12 @@ package db
 import (
 	"os/exec"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	"gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
-
-	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -27,7 +26,7 @@ type ClusterSpec struct {
 }
 
 type Cluster interface {
-	Deploy() error
+	Deploy(*state.State) error
 	GetSpecification() ClusterSpec
 	Connect() (interface{}, error)
 }
@@ -43,12 +42,10 @@ type ClusterTunnel struct {
 	LocalPort *int
 }
 
-//nolint // for future refactoring
 func CreateCluster(
-	dbConfig *config.DatabaseSettings,
 	sshClient ssh.Client,
 	kube *kubernetes.Kubernetes,
-	workDir string,
+	shellState *state.State,
 ) (Cluster, error) {
 	var (
 		dbcluster Cluster
@@ -56,61 +53,58 @@ func CreateCluster(
 	)
 
 	// если кол-во соединений не задано, приравниваем к кол-ву воркеров
-	if dbConfig.ConnectPoolSize == 0 {
-		dbConfig.ConnectPoolSize = dbConfig.Workers
+	if shellState.Settings.DatabaseSettings.ConnectPoolSize == 0 {
+		shellState.Settings.DatabaseSettings.ConnectPoolSize = shellState.
+			Settings.DatabaseSettings.Workers
 	}
 
-	switch dbConfig.DBType {
+	switch shellState.Settings.DatabaseSettings.DBType {
 	default:
-		err = merry.Errorf("unknown database type '%s'", dbConfig.DBType)
+		err = merry.Errorf(
+			"unknown database type '%s'",
+			shellState.Settings.DatabaseSettings.DBType,
+		)
 
 	case cluster.Postgres:
 		dbcluster = createPostgresCluster(
 			sshClient,
 			kube,
-			workDir,
-			dbConfig.DBURL,
-			dbConfig.ConnectPoolSize,
+			shellState,
 		)
 
 	case cluster.Foundation:
-		dbcluster = createFoundationCluster(sshClient, kube, workDir, dbConfig.DBURL)
+		dbcluster = createFoundationCluster(
+			sshClient,
+			kube,
+			shellState,
+		)
 
 	case cluster.MongoDB:
 		dbcluster = createMongoCluster(
 			sshClient,
 			kube,
-			workDir,
-			dbConfig.DBURL,
-			dbConfig.ConnectPoolSize,
-			dbConfig.Sharded,
+			shellState,
 		)
 
 	case cluster.Cockroach:
 		dbcluster = createCockroachCluster(
 			sshClient,
 			kube,
-			workDir,
-			dbConfig.DBURL,
-			dbConfig.ConnectPoolSize,
+			shellState,
 		)
 
 	case cluster.Cartridge:
 		dbcluster = createCartridgeCluster(
 			sshClient,
 			kube,
-			workDir,
-			dbConfig.DBURL,
-			dbConfig.ConnectPoolSize,
+			shellState,
 		)
 
 	case cluster.YandexDB:
 		dbcluster = createYandexDBCluster(
 			sshClient,
 			kube,
-			workDir,
-			dbConfig.DBURL,
-			dbConfig.ConnectPoolSize,
+			shellState,
 		)
 	}
 

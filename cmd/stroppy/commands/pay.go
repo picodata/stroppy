@@ -9,10 +9,12 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	llog "github.com/sirupsen/logrus"
-	"github.com/spf13/cobra"
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
+	"gitlab.com/picodata/stroppy/pkg/state"
+
+	llog "github.com/sirupsen/logrus"
+	"github.com/spf13/cobra"
 	"gopkg.in/inf.v0"
 )
 
@@ -49,33 +51,38 @@ func newPayCommand(settings *config.Settings) *cobra.Command {
 					llog.Fatalf("test failed with error %v", err)
 				}
 			} else {
-				p := createPayload(settings)
-				err := p.Connect()
+				shellState := state.State{Settings: settings} //nolint
+				dbPayload, err := createPayload(&shellState)
 				if err != nil {
+					llog.Fatalf("failed to create payload: %v", err)
+				}
+
+				if err = dbPayload.Connect(); err != nil {
 					llog.Fatalf("failed to connect to cluster: %v", err)
 				}
 
-				err = p.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
-				if err != nil {
+				if err = dbPayload.StartStatisticsCollect(
+					settings.DatabaseSettings.StatInterval,
+				); err != nil {
 					llog.Fatalf("%v", err)
 				}
 
 				var sum *inf.Dec
-				if sum, err = p.Check(nil); err != nil {
+				if sum, err = dbPayload.Check(nil); err != nil {
 					llog.Fatalf("%v", err)
 				}
 
 				llog.Infof("Initial balance: %v", sum)
 
 				beginTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
-				if err = p.Pay(""); err != nil {
+				if err = dbPayload.Pay(&shellState); err != nil {
 					llog.Fatalf("%v", err)
 				}
 				endTime := (time.Now().UTC().UnixNano() / int64(time.Millisecond)) - 20000
 				llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
 				if settings.DatabaseSettings.Check {
-					balance, err := p.Check(sum)
+					balance, err := dbPayload.Check(sum)
 					if err != nil {
 						llog.Fatalf("%v", err)
 					}

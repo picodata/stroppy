@@ -4,7 +4,9 @@
 
 package provider
 
-import "errors"
+import (
+	"errors"
+)
 
 const (
 	Oracle  = "oracle"
@@ -21,12 +23,14 @@ var ErrChooseConfig = errors.New(
 type Provider interface {
 	Prepare() error
 	AddNetworkDisks(int) error
-    GetInstanceAddress(string, string) (*Addresses, error)
+	GetInstancesAddresses() *InstanceAddresses
+	GetSubnet() string
+	GetNodes() map[string]*Node
 	CheckSSHPrivateKey(string) error
 	CheckSSHPublicKey(string) error
 	RemoveProviderSpecificFiles()
 	GetDeploymentCommands() (string, string)
-    GetTfStateScheme() interface{}
+	GetTfStateScheme() interface{}
 	Name() string
 }
 
@@ -47,7 +51,62 @@ type ClusterConfigurations struct {
 	Maximum  ClusterParameters
 }
 
-type Addresses struct {
+type InstanceAddresses struct {
+	Masters map[string]AddrPair
+	Workers map[string]AddrPair
+}
+
+func (insAddr *InstanceAddresses) GetWorkersAndMastersAddrPairs() map[string]*AddrPair {
+	pairs := make(map[string]*AddrPair)
+
+	for nodeName, pair := range insAddr.Masters {
+		pair := pair
+		pairs[nodeName] = &pair
+	}
+
+	for nodeName, pair := range insAddr.Workers {
+		pair := pair
+		pairs[nodeName] = &pair
+	}
+
+	return pairs
+}
+
+func (insAddr *InstanceAddresses) GetFirstMaster() AddrPair {
+	if value, ok := insAddr.Masters["master-1"]; ok {
+		return value
+	}
+
+	if value, ok := insAddr.Masters["master"]; ok {
+		return value
+	}
+
+	return AddrPair{
+		Internal: "",
+		External: "",
+	}
+}
+
+func (insAddr *InstanceAddresses) MastersCnt() int {
+	return len(insAddr.Masters)
+}
+
+func (insAddr *InstanceAddresses) WorkersCnt() int {
+	return len(insAddr.Workers)
+}
+
+type AddrPair struct {
 	Internal string
 	External string
+}
+
+type Node struct {
+	Fqdn      string
+	Resources Resources
+}
+
+type Resources struct {
+	CPU    uint64
+	Memory uint64
+	Disk   uint64
 }

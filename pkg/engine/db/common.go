@@ -7,10 +7,12 @@ package db
 import (
 	"fmt"
 	"net/url"
+	"path"
 	"strings"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	v1 "k8s.io/api/core/v1"
 
@@ -22,24 +24,25 @@ import (
 func createCommonCluster(
 	sshClient engineSsh.Client,
 	kube *kubernetes.Kubernetes,
-	workDir, databaseTag, dbURL string,
-	connectionPoolSize int,
-	sharded bool,
+	shellState *state.State,
 ) *commonCluster {
 	return &commonCluster{
 		sc: sshClient,
 		k:  kube,
-		wd: workDir,
-		tg: databaseTag,
+		wd: path.Join(
+			shellState.Settings.WorkingDirectory,
+			shellState.Settings.DatabaseSettings.DBType,
+		),
+		tg: shellState.Settings.DatabaseSettings.DBType,
 		clusterSpec: ClusterSpec{
 			MainPod: &v1.Pod{},              //nolint       // errors in import
 			Pods:    make([]*v1.Pod, 0, 10), //nolint:gomnd // this is pods count
 		},
 		portForwardControlChan: make(chan struct{}),
-		DBUrl:                  dbURL,
-		connectionPoolSize:     connectionPoolSize,
+		DBUrl:                  shellState.Settings.DatabaseSettings.DBURL,
+		connectionPoolSize:     shellState.Settings.DatabaseSettings.ConnectPoolSize,
 		addPool:                0,
-		sharded:                sharded,
+		sharded:                shellState.Settings.DatabaseSettings.Sharded,
 	}
 }
 
@@ -60,27 +63,35 @@ type commonCluster struct {
 	sharded bool
 }
 
-func (cc *commonCluster) deploy() (err error) {
+func (cc *commonCluster) deploy(shellState *state.State) error {
+	var err error
+
 	llog.Infof("Prepare '%s' deployment\n", cc.tg)
 
 	deployConfigDirectory := cc.wd
-	if err = cc.k.Engine.LoadDirectory(deployConfigDirectory, ".tmp/databases"); err != nil {
-		return
+	if err = cc.k.Engine.LoadDirectory(
+		deployConfigDirectory,
+		".tmp/databases",
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to load directory")
 	}
-	llog.Infof("copying %s directory: success\n", cc.tg)
 
+	llog.Infof("copying %s directory: success\n", cc.tg)
 	llog.Infof("%s deploy started\n", cc.tg)
+
 	deployCmd := fmt.Sprintf(
 		"chmod +x databases/%s/deploy_operator.sh && ./databases/%s/deploy_operator.sh",
 		cc.tg,
 		cc.tg,
 	)
 	if err = cc.k.Engine.DebugCommand(deployCmd, false); err != nil {
-		return
+		return merry.Prepend(err, "failed to debug command")
 	}
 
 	llog.Infof("%s deploy finished", cc.tg)
-	return
+
+	return nil
 }
 
 func (cc *commonCluster) examineCluster(tag, targetNamespace,

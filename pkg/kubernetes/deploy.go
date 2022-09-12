@@ -21,10 +21,11 @@ import (
 	"github.com/apenella/go-ansible/pkg/playbook"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
-	"k8s.io/apimachinery/pkg/util/yaml"
+	"gitlab.com/picodata/stroppy/pkg/state"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
+	"k8s.io/apimachinery/pkg/util/yaml"
 )
 
 const (
@@ -48,7 +49,7 @@ Host master
   ControlPersist 5m
 `
 	INVENTORY_NAME      string        = "inventory.yml" //nolint // constant
-	GRAFANA_PORT        int           = 3000            //nolint // constant
+	grafanaPort         int           = 3000            //nolint // constant
 	GRAFANA_REQ_TIMEOUT time.Duration = 10              //nolint // constant
 	EXIT_CODE_127       int           = 127             //nolint // constant
 )
@@ -59,7 +60,6 @@ type SshK8SOpts struct {
 	BastionPubIP  string
 }
 
-//nolint
 // Deploy kubernetes and other infrastructure
 // #steps:
 // 1. Create directory for ssh config if it is not exists
@@ -76,20 +76,22 @@ type SshK8SOpts struct {
 // 12. Add node labels
 // 13. Deploy container with stroppy
 // 14. Deploy stroppy pod.
-func (k *Kubernetes) DeployK8S(wd string) error {
+func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
 	var (
 		file *os.File
 		err  error
 	)
 
-	file, err = os.Create(path.Join(wd, ".ssh/config"))
-	if err != nil {
+	if file, err = os.Create(
+		path.Join(shellState.Settings.WorkingDirectory, ".ssh/config"),
+	); err != nil {
 		llog.Infoln("Error then creating ssh config file")
 	}
+
 	ssh_opts := SshK8SOpts{
 		".ssh/id_rsa",
-		strings.ReplaceAll(k.Engine.AddressMap["subnet"]["ip_v4"], "0/24", "*"),
-		k.Engine.AddressMap["external"]["master"],
+		strings.ReplaceAll(shellState.Subnet, "0/24", "*"),
+		shellState.InstanceAddresses.GetFirstMaster().External,
 	}
 
 	// replace template values to shh config variables
@@ -106,12 +108,12 @@ func (k *Kubernetes) DeployK8S(wd string) error {
 	options.AnsibleForceColor()
 
 	// 4. generate ansible requirements
-	if err = writeAnsibleRequirements(wd); err != nil {
+	if err = writeAnsibleRequirements(shellState.Settings.WorkingDirectory); err != nil {
 		return merry.Prepend(err, "Error then generating ansible requirements")
 	}
 
 	// 5. generate ansible config
-	if err = writeAnsibleConfig(wd); err != nil {
+	if err = writeAnsibleConfig(shellState.Settings.WorkingDirectory); err != nil {
 		return merry.Prepend(err, "Error then generating ansible config")
 	}
 
@@ -121,17 +123,17 @@ func (k *Kubernetes) DeployK8S(wd string) error {
 	}
 
 	// 7. run grafana on premise ansible playbook
-	if err = k.deployMonitoring(wd); err != nil {
+	if err = k.deployMonitoring(shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy monitoring")
 	}
 
 	// 8. generate inventory and run kubespray ansible playbook
-	if err = k.deploySelf(wd); err != nil {
+	if err = k.deploySelf(shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
 	// 9. generate inventory and run kubespray ansible playbook
-	if err = k.finalizeDeployment(wd); err != nil {
+	if err = k.finalizeDeployment(shellState); err != nil {
 		return merry.Prepend(err, "failed to finalize k8s deploy")
 	}
 
@@ -142,7 +144,7 @@ func (k *Kubernetes) DeployK8S(wd string) error {
 	// 11. Open port forwarding
 	k.KubernetesPort = k.Engine.OpenSecureShellTunnel(
 		kubeengine.SSHEntity,
-		k.Engine.AddressMap["external"]["master"],
+		shellState.InstanceAddresses.GetFirstMaster().External,
 		clusterK8sPort,
 	)
 	if k.KubernetesPort.Err != nil {
@@ -157,12 +159,12 @@ func (k *Kubernetes) DeployK8S(wd string) error {
 
 	// 13. Create stroppy deployment with one pod on master node
 	k.StroppyPod = stroppy.CreateStroppyPod(k.Engine)
-	if err = k.StroppyPod.DeployNamespace(); err != nil {
+	if err = k.StroppyPod.DeployNamespace(shellState); err != nil {
 		return merry.Prepend(err, "failed to create stroppy namespace")
 	}
 
 	// 14. Deploy stroppy pod
-	if err = k.StroppyPod.DeployPod(); err != nil {
+	if err = k.StroppyPod.DeployPod(shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy stroppy pod")
 	}
 
@@ -171,10 +173,10 @@ func (k *Kubernetes) DeployK8S(wd string) error {
 	return nil
 }
 
-func (k *Kubernetes) OpenPortForwarding() (err error) {
+func (k *Kubernetes) OpenPortForwarding(shellState *state.State) error {
 	k.MonitoringPort = k.Engine.OpenSecureShellTunnel(
 		monitoringSshEntity,
-		k.Engine.AddressMap["external"]["master"],
+		shellState.InstanceAddresses.GetFirstMaster().External,
 		clusterMonitoringPort,
 	)
 	if k.MonitoringPort.Err != nil {
@@ -182,16 +184,18 @@ func (k *Kubernetes) OpenPortForwarding() (err error) {
 	}
 
 	llog.Infoln("Status of creating ssh tunnel for the access to monitoring: success")
-	return
+
+	return nil
 }
 
 func (k *Kubernetes) Shutdown() {
 	k.MonitoringPort.Tunnel.Close()
 }
 
-//nolint:funlen // deploy all monitoring components
 // Deploy monitoring (grafana, node_exporter, promtail)
-func (k *Kubernetes) deployMonitoring(workDir string) error {
+//
+//nolint:funlen // deploy all monitoring components
+func (k *Kubernetes) deployMonitoring(shellState *state.State) error {
 	// create monitoring inventory
 	var (
 		file   *os.File
@@ -201,9 +205,9 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		err    error
 	)
 
-	workDir = path.Join(workDir, "third_party/monitoring")
+	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party/monitoring")
 
-	if bytes, err = k.GenerateMonitoringInventory(); err != nil {
+	if bytes, err = k.GenerateMonitoringInventory(shellState); err != nil {
 		return merry.Prepend(err, "Error then serializing monitoring inventory")
 	}
 
@@ -239,8 +243,8 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 		Opaque: "",
 		User:   &url.Userinfo{},
 		Host: net.JoinHostPort(
-			k.Engine.AddressMap["external"]["master"],
-			fmt.Sprintf("%d", GRAFANA_PORT), //nolint
+			shellState.InstanceAddresses.GetFirstMaster().External,
+			fmt.Sprintf("%d", grafanaPort),
 		),
 		Path:        "",
 		RawPath:     "",
@@ -317,7 +321,7 @@ func (k *Kubernetes) deployMonitoring(workDir string) error {
 // Function execution order
 // 1. Check that kubernetes already deployed
 // 2. Deploy kubernetes via kubespray
-func (k *Kubernetes) deploySelf(workDir string) error {
+func (k *Kubernetes) deploySelf(shellState *state.State) error {
 	// create kubespray inventory
 	var (
 		file   *os.File
@@ -326,7 +330,13 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 		err    error
 	)
 
-	inventoryDir := path.Join(workDir, "third_party", "kubespray", "inventory", "stroppy")
+	inventoryDir := path.Join(
+		shellState.Settings.WorkingDirectory,
+		"third_party",
+		"kubespray",
+		"inventory",
+		"stroppy",
+	)
 
 	// run on bastion (master) host shell command `kubectl get pods`
 	// if command returns something (0 or 127 exit code) kubernetes is deployed
@@ -334,7 +344,7 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 		return nil
 	}
 
-	if bytes, err = k.generateK8sInventory(); err != nil {
+	if bytes, err = k.generateK8sInventory(shellState); err != nil {
 		return merry.Prepend(err, "Error then serializing kubespray inventory")
 	}
 
@@ -364,7 +374,7 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 		AskBecomePass: false,
 	}
 
-	workDir = path.Join(workDir, "third_party", "kubespray")
+	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party", "kubespray")
 
 	playbook := &playbook.AnsiblePlaybookCmd{
 		Binary:                     "",
@@ -388,7 +398,7 @@ func (k *Kubernetes) deploySelf(workDir string) error {
 // 1. Get kube config from master node
 // 2. Install grafana ingress into cluster
 // 3. Install metrics server
-func (k *Kubernetes) finalizeDeployment(workDir string) error {
+func (k *Kubernetes) finalizeDeployment(shellState *state.State) error {
 	llog.Debugln("Run 'finalize deployment' playbooks")
 
 	// create generic inventory
@@ -399,9 +409,9 @@ func (k *Kubernetes) finalizeDeployment(workDir string) error {
 		err    error
 	)
 
-	workDir = path.Join(workDir, "third_party/extra")
+	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party/extra")
 
-	if bytes, err = k.generateSimplifiedInventory(); err != nil {
+	if bytes, err = k.generateSimplifiedInventory(shellState); err != nil {
 		return merry.Prepend(err, "Error then serializing generic inventory")
 	}
 

@@ -5,7 +5,7 @@
 package chaos
 
 import (
-	"path/filepath"
+	"path"
 	"strings"
 	"sync"
 
@@ -15,24 +15,22 @@ import (
 
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	"gitlab.com/picodata/stroppy/pkg/state"
 )
 
-func createWorkableController(k *kubeengine.Engine, wd string) (c Controller) {
-	c = &workableController{
-		wd: filepath.Join(wd, "chaos"),
-		k:  k,
-
+func createWorkableController(k *kubeengine.Engine, shellState state.State) Controller {
+	return &workableController{
+		k:                    k,
 		runningScenarios:     map[string]scenario{},
 		runningScenariosLock: sync.Mutex{},
-
-		portForwardStopChan: make(chan struct{}),
+		portForwardStopChan:  make(chan struct{}),
+		controllerPod:        &v1.Pod{}, //nolint
+		dashboardPod:         &v1.Pod{}, //nolint
 	}
-	return
 }
 
 type workableController struct {
-	k  *kubeengine.Engine
-	wd string
+	k *kubeengine.Engine
 
 	runningScenarios     map[string]scenario
 	runningScenariosLock sync.Mutex
@@ -42,35 +40,53 @@ type workableController struct {
 	controllerPod, dashboardPod *v1.Pod
 }
 
-func (chaos *workableController) executeAtomicCommand(scenarioName string) (err error) {
+func (chaos *workableController) executeAtomicCommand(
+	scenarioName string,
+	shellState *state.State,
+) error {
+	var err error
+
 	llog.Infof("now starting chaos '%s' scenario", scenarioName)
 
-	scenario := createScenario(scenarioName, chaos.wd)
-	if err = chaos.k.LoadFile(scenario.sourcePath, scenario.destinationPath); err != nil {
+	chaosScenario := createScenario(
+		scenarioName,
+		path.Join(shellState.Settings.WorkingDirectory, chaosDir),
+	)
+	if err = chaos.k.LoadFile(
+		chaosScenario.sourcePath,
+		chaosScenario.destinationPath,
+		shellState,
+	); err != nil {
 		return merry.Prepend(err, "load file failed")
 	}
-	llog.Debugf("full chaos command object is '%v'", scenario)
 
-	if err = chaos.k.ExecuteF("kubectl apply -f %s", scenario.destinationPath); err != nil {
+	llog.Debugf("full chaos command object is '%v'", chaosScenario)
+
+	if err = chaos.k.ExecuteF("kubectl apply -f %s", chaosScenario.destinationPath); err != nil {
 		return merry.Prepend(err, "scenario run failed")
 	}
 
 	chaos.runningScenariosLock.Lock()
 	defer chaos.runningScenariosLock.Unlock()
-	chaos.runningScenarios[scenario.scenarioName] = scenario
+	chaos.runningScenarios[chaosScenario.scenarioName] = chaosScenario
 
-	return
+	return nil
 }
 
-func (chaos *workableController) ExecuteCommand(scenarioName string) (err error) {
+func (chaos *workableController) ExecuteCommand(
+	scenarioName string,
+	shellState *state.State,
+) error {
+	var err error
+
 	commandList := strings.Split(scenarioName, ",")
 	for _, command := range commandList {
-		if err = chaos.executeAtomicCommand(command); err != nil {
-			return
+		if err = chaos.executeAtomicCommand(command, shellState); err != nil {
+			return merry.Prepend(err, "failed to executeAtomicCommand")
 		}
 	}
 
-	return
+	return nil
 }
 
 func (chaos *workableController) Stop() {

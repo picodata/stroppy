@@ -6,30 +6,29 @@ import (
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 )
 
-func createNeutralProvider() (op *neutralProvider) {
-	op = &neutralProvider{}
-	return
+var (
+	errPrepare = errors.New(
+		"neutral provider does not support deployment preparaion, please specify yandex or oracle",
+	)
+	errNetworkLabel = errors.New(
+		"neutral provider does not support deployment additional step operation, use yandex or oracle",
+	)
+)
+
+func createNeutralProvider() *neutralProvider {
+	return &neutralProvider{}
 }
 
 type neutralProvider struct{}
 
-//nolint
-func (np *neutralProvider) Prepare() (err error) {
-	err = errors.New(
-		"neutral provider does not support deployment preparaion, please specify yandex or oracle",
-	)
-	return
+func (np *neutralProvider) Prepare() error {
+	return errPrepare
 }
 
-//nolint
 func (np *neutralProvider) AddNetworkDisks(_ int) (err error) {
-	err = errors.New(
-		"neutral provider does not support deployment additional step operation, use yandex or oracle",
-	)
-	return
+	return errNetworkLabel
 }
 
-//nolint
 func (np *neutralProvider) GetAddressMap(
 	_ int,
 ) (mapIPAddresses map[string]map[string]string, _ error) {
@@ -37,10 +36,23 @@ func (np *neutralProvider) GetAddressMap(
 	return
 }
 
-func (np *neutralProvider) GetInstanceAddress(
-	group, name string,
-) (*provider.Addresses, error) {
-    return &provider.Addresses{}, nil
+func (np *neutralProvider) GetInstancesAddresses() *provider.InstanceAddresses {
+	return &provider.InstanceAddresses{
+		Masters: make(map[string]provider.AddrPair),
+		Workers: make(map[string]provider.AddrPair),
+	}
+}
+
+func (np *neutralProvider) GetSubnet() string {
+	return ""
+}
+
+func (np *neutralProvider) GetNodes() map[string]*provider.Node {
+	return make(map[string]*provider.Node)
+}
+
+func (np *neutralProvider) GetInternalSubnet() (string, error) {
+	return "", nil
 }
 
 func (np *neutralProvider) IsPrivateKeyExist(_ string) bool {
@@ -69,5 +81,5 @@ func (np *neutralProvider) CheckSSHPublicKey(workDir string) error {
 }
 
 func (np *neutralProvider) GetTfStateScheme() interface{} {
-    return nil
+	return nil
 }
