@@ -32,13 +32,14 @@ const (
 	castingError         string = "Error then casting type into interface"
 	roAll                int    = 0o644
 	stroppyNamespaceName string = "stroppy"
+	erasureSpecies       string = "block-4-2"
 )
 
 type yandexCluster struct {
 	commonCluster *commonCluster
 }
 
-//nolint // should be fixed in future
+// nolint // should be fixed in future
 // Create createYandexDBCluster.
 func createYandexDBCluster(
 	sc engineSsh.Client,
@@ -111,8 +112,9 @@ func (yc *yandexCluster) GetSpecification() ClusterSpec {
 	return yc.commonCluster.clusterSpec
 }
 
-//nolint:funlen // because logic of this function is inseparable
 // Deploy yandex db operator via helmclient library.
+//
+//nolint:funlen // because logic of this function is inseparable
 func (yc *yandexCluster) deployYandexDBOperator() error {
 	var (
 		client helmclient.Client
@@ -199,9 +201,10 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 	return nil
 }
 
-//nolint:varnamelen // ok is typecasting boolean
 // Deploy YDB storage
 // Parse manifest and deploy yandex db storage via kubectl.
+//
+//nolint:varnamelen // ok is typecasting boolean
 func (yc *yandexCluster) deployStorage() error {
 	var (
 		err     error
@@ -235,20 +238,22 @@ func (yc *yandexCluster) deployStorage() error {
 
 	// TODO: get it from terraform.tfstate
 	// https://github.com/picodata/stroppy/issues/94
-	spec["nodes"] = 4
+	spec["nodes"] = 8
+	spec["domain"] = "root"
+	spec["erasure"] = erasureSpecies // TODO to constant
 
-	resources, ok := spec["resources"].(map[interface{}]interface{})
-	if !ok {
-		return merry.Prepend(err, castingError)
-	}
+	// resources, ok := spec["resources"].(map[interface{}]interface{})
+	// if !ok {
+	// 	return merry.Prepend(err, castingError)
+	// }
 
-	resources["limits"] = map[string]interface{}{
-		// TODO: replace to formula based on host resources
-		// https://github.com/picodata/stroppy/issues/94
-		// resources can fe fetched from terraform.tfstate
-		"cpu":    "1000m",
-		"memory": "2048Mi",
-	}
+	// resources["limits"] = map[string]interface{}{
+	// 	// TODO: replace to formula based on host resources
+	// 	// https://github.com/picodata/stroppy/issues/94
+	// 	// resources can fe fetched from terraform.tfstate
+	// 	"cpu":    "1000m",
+	// 	"memory": "2048Mi",
+	// }
 
 	var configuration string
 
@@ -277,7 +282,7 @@ func (yc *yandexCluster) deployStorage() error {
 	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
 }
 
-//nolint // ok is typecasting boolean and logic of this function is inseparable
+// nolint // ok is typecasting boolean and logic of this function is inseparable
 // Deploy YDB database
 // Parse manifest and deploy yandex db database via kubectl.
 func (yc *yandexCluster) deployDatabase() error {
@@ -341,8 +346,7 @@ func (yc *yandexCluster) deployDatabase() error {
 		// TODO: replace to formula based on host resources
 		// https://github.com/picodata/stroppy/issues/94
 		// resources can fe fetched from terraform.tfstate
-		"cpu":    "500m",
-		"memory": "512Mi",
+		"cpu": "100m",
 	}
 
 	if bytes, err = yaml.Marshal(storage); err != nil {
@@ -422,7 +426,7 @@ func waitObjectReady(fpath, name string) error {
 	return nil
 }
 
-//nolint // ok is typecasting boolean and logic of this function is inseparable
+// nolint // ok is typecasting boolean and logic of this function is inseparable
 // Generate parameters for `storage` CRD.
 func paramStorageConfig(storage string) ([]byte, error) {
 	var (
@@ -456,7 +460,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 	}
 
 	drive[0] = map[interface{}]interface{}{
-		"path": "SectorMap:1:64",
+		"path": "/dev/kikimr_ssd_00",
 		"type": "SSD",
 	}
 
@@ -475,9 +479,9 @@ func paramStorageConfig(storage string) ([]byte, error) {
 	stateStorage[0] = map[string]interface{}{
 		"ring": map[string]interface{}{
 			"node": []interface{}{
-				1,
+				1, 2, 3, 5, 6, 7, 8,
 			},
-			"nto_select": 1, //nolint:misspell // nto_select is parameter for nto
+			"nto_select": 5, //nolint // nto_select is parameter for nto
 		},
 		"ssid": 1,
 	}
@@ -500,7 +504,70 @@ func paramStorageConfig(storage string) ([]byte, error) {
 				"vdisk_locations": []interface{}{
 					map[string]interface{}{
 						"node_id":        1,
-						"path":           "SectorMap:1:64",
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        2,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        3,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        4,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        5,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        6,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        7,
+						"path":           "/dev/kikimr_ssd_00",
+						"pdisk_category": "SSD",
+					},
+				},
+			},
+			map[string]interface{}{
+				"vdisk_locations": []interface{}{
+					map[string]interface{}{
+						"node_id":        8,
+						"path":           "/dev/kikimr_ssd_00",
 						"pdisk_category": "SSD",
 					},
 				},
@@ -510,7 +577,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 
 	serviceSet["groups"] = []interface{}{
 		map[string]interface{}{
-			"erasure_species": "none",
+			"erasure_species": erasureSpecies,
 			"rings": []interface{}{
 				failDomains,
 			},
@@ -532,17 +599,17 @@ func paramStorageConfig(storage string) ([]byte, error) {
 	profile[0] = map[string]interface{}{
 		"channel": []interface{}{
 			map[string]interface{}{
-				"erasure_species":   "none",
+				"erasure_species":   erasureSpecies,
 				"pdisk_category":    1,
 				"storage_pool_kind": "ssd",
 			},
 			map[string]interface{}{
-				"erasure_species":   "none",
+				"erasure_species":   erasureSpecies,
 				"pdisk_category":    1,
 				"storage_pool_kind": "ssd",
 			},
 			map[string]interface{}{
-				"erasure_species":   "none",
+				"erasure_species":   erasureSpecies,
 				"pdisk_category":    1,
 				"storage_pool_kind": "ssd",
 			},

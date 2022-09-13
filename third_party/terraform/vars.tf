@@ -30,7 +30,38 @@ variable "service_account_id" {
   default = "ajevdf69bgecucb0tn7n"
 }
 
+# Master params
+variable "masters_count" {
+    type = number
+    description = "Yandex Cloud disk size gigabytes per master"
+    default = 2
+}
+
+variable "masters_cpu" {
+    type = number
+    description = "Yandex Cloud cpu cores per master"
+    default = 4
+}
+
+variable "masters_memory" {
+    type = number
+    description = "Yandex Cloud memory gigabytes per master"
+    default = 16
+}
+
+variable "masters_disk" {
+    type = number
+    description = "Yandex Cloud disk size gigabytes per master"
+    default = 25
+}
+
 # Worker params
+variable "workers_count" {
+    type = number
+    description = "Yandex Cloud count of workers"
+    default = 6
+}
+
 variable "workers_cpu" {
     type = number
     description = "Yandex Cloud cpu in cores per worker"
@@ -40,18 +71,12 @@ variable "workers_cpu" {
 variable "workers_memory" {
     type = number
     description = "Yandex Cloud memory in GB per worker"
-    default = 8
+    default = 16
 }
 
 variable "workers_disk" {
     type = number
     description = "Yandex Cloud disk size in GB per worker"
-    default = 30
-}
-
-variable "workers_count" {
-    type = number
-    description = "Yandex Cloud count of workers"
-    default = 3
+    default = 25
 }
 

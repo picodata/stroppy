@@ -1,6 +1,6 @@
 module gitlab.com/picodata/stroppy
 
-go 1.18
+go 1.19
 
 require (
 	github.com/ansel1/merry v1.6.1
