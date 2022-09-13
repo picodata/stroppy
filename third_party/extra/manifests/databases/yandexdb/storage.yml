@@ -7,19 +7,16 @@ spec:
   dataStore: []
   image:
     name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.47
-  nodes: 1
+  nodes: 8
   domain: root
-  erasure: none
-  resources:
-    limits:
-      cpu: 500m
+  erasure: block-4-2
   configuration: |-
       table_service_config:
         sql_version: 1
-      static_erasure: none
+      static_erasure: block-4-2
       host_configs:
         - drive:
-            - path: SectorMap:1:64
+            - path: /dev/kikimr_ssd_00
               type: SSD
           host_config_id: 1
       grpc_config:
@@ -31,7 +28,7 @@ spec:
               - kind: ssd
                 pool_config:
                   box_id: 1
-                  erasure_species: none
+                  erasure_species: block-4-2
                   kind: ssd
                   pdisk_filter:
                     - property:
@@ -39,9 +36,8 @@ spec:
                   vdisk_kind: Default
         state_storage:
           - ring:
-              node:
-                - 1
-              nto_select: 1
+              node: [ 1, 2, 3, 4, 5, 6, 7, 8 ]
+              nto_select: 5
             ssid: 1
       actor_system_config:
         executor:
@@ -72,24 +68,55 @@ spec:
           spin_threshold: 0
       blob_storage_config:
         service_set:
+          availability_domains: 1
           groups:
-            - erasure_species: none
+            - erasure_species: mirror-3-dc
+              group_id: 0
+              group_generation: 1
               rings:
                 - fail_domains:
-                    - vdisk_locations:
-                        - node_id: 1
-                          path: SectorMap:1:64
-                          pdisk_category: SSD
+                  - vdisk_locations:
+                    - node_id: 1
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 2
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 3
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 4
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 5
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 6
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 7
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
+                  - vdisk_locations:
+                    - node_id: 8
+                      pdisk_category: SSD
+                      path: /dev/kikimr_ssd_00
       channel_profile_config:
         profile:
           - channel:
-              - erasure_species: none
+              - erasure_species: block-4-2
                 pdisk_category: 1
                 storage_pool_kind: ssd
-              - erasure_species: none
+              - erasure_species: block-4-2
                 pdisk_category: 1
                 storage_pool_kind: ssd
-              - erasure_species: none
+              - erasure_species: block-4-2
                 pdisk_category: 1
                 storage_pool_kind: ssd
             profile_id: 0

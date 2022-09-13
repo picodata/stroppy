@@ -8,6 +8,7 @@ private_key.pem
 **.tfstate.backup
 .DS_Store
 .idea
+venv/
 
 benchmark
 terraform*.zip
