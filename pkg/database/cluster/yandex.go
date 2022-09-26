@@ -147,12 +147,12 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 
 	// Prepare transfer insert
 	var (
-		transferPrep table.Statement
-		selectPrep   table.Statement
-		unifiedPrep  table.Statement
+		transferStmnt table.Statement
+		selectStmnt   table.Statement
+		unifiedStmnt  table.Statement
 	)
 
-	if transferPrep, err = ydbSession.Prepare(
+	if transferStmnt, err = ydbSession.Prepare(
 		ydbContext,
 		insertEscapedPath(insertYdbTransfer, tablePath),
 	); err != nil {
@@ -161,21 +161,21 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 
 	tablePath = path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
 
-	if selectPrep, err = ydbSession.Prepare(
+	if selectStmnt, err = ydbSession.Prepare(
 		ydbContext,
 		insertEscapedPath(srcAndDstYdbSelect, tablePath, tablePath),
 	); err != nil {
 		return merry.Prepend(err, "failed to prepare select accounts")
 	}
 
-	if unifiedPrep, err = ydbSession.Prepare(
+	if unifiedStmnt, err = ydbSession.Prepare(
 		ydbContext,
 		insertEscapedPath(unifiedTransfer, tablePath, tablePath, tablePath),
 	); err != nil {
 		return merry.Prepend(err, "failed to prepare unified query")
 	}
 
-	if transaction, queryResult, err = selectPrep.Execute(
+	if transaction, queryResult, err = selectStmnt.Execute(
 		ydbContext,
 		rwTX,
 		table.NewQueryParameters(table.ValueParam(
@@ -224,7 +224,7 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 
 	if _, err = transaction.ExecuteStatement(
 		ydbContext,
-		transferPrep,
+		transferStmnt,
 		table.NewQueryParameters(table.ValueParam(
 			"params", types.StructValue(
 				types.StructFieldValue(
@@ -263,7 +263,7 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 
 	if _, err = transaction.ExecuteStatement(
 		ydbContext,
-		unifiedPrep,
+		unifiedStmnt,
 		table.NewQueryParameters(
 			table.ValueParam("params", types.StructValue(
 				types.StructFieldValue("src_bic", types.StringValue([]byte(transfer.Acs[0].Bic))),

@@ -242,19 +242,6 @@ func (yc *yandexCluster) deployStorage() error {
 	spec["domain"] = "root"
 	spec["erasure"] = erasureSpecies // TODO to constant
 
-	// resources, ok := spec["resources"].(map[interface{}]interface{})
-	// if !ok {
-	// 	return merry.Prepend(err, castingError)
-	// }
-
-	// resources["limits"] = map[string]interface{}{
-	// 	// TODO: replace to formula based on host resources
-	// 	// https://github.com/picodata/stroppy/issues/94
-	// 	// resources can fe fetched from terraform.tfstate
-	// 	"cpu":    "1000m",
-	// 	"memory": "2048Mi",
-	// }
-
 	var configuration string
 
 	if configuration, ok = spec["configuration"].(string); !ok {
