@@ -18,7 +18,7 @@ var (
 	ErrInsufficientFunds = errors.New("cluster: insufficient funds for transfer")
 
 	// ErrTxRollback should be returned if tx was rollbacked and is safe to retry.
-	ErrTxRollback = errors.New("cluster: transaction rollback")
+	ErrTxRollback = errors.New("cluster: transaction was not successful and should be rolled back")
 
 	// ErrNoRows is a general 'not found' err, to abstract from sql.ErrNoRows.
 	ErrNoRows = errors.New("cluster: no rows in result set")
@@ -33,9 +33,6 @@ var (
 
 	ErrCockroachTxClosed      = errors.New("tx is closed")
 	ErrCockroachUnexpectedEOF = errors.New("unexpected EOF")
-
-	// ErrTransactionInvalidated is returned then another transaction lock this this row first.
-	ErrTransactionInvalidated = errors.New("cluster: transaction invalidated")
 )
 
 // DBClusterType is type for choose ClusterType.
