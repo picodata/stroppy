@@ -21,7 +21,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		Use:     "pop",
 		Aliases: []string{"populate"},
 		Short:   "Create and populate the accounts database",
-		Example: "./stroppy pop -c 100000000",
+		Example: "./stroppy pop -n 100000000",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return initLogFacility(settings)
