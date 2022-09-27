@@ -177,8 +177,8 @@ In this case, the ready-made Stroppy container from the GitLab repository will b
 
 ```sh
 # FoundationDB libs
-wget https://www.foundationdb.org/downloads/6.3.15/ubuntu/installers/foundationdb-clients_6.3.15-1_amd64.deb
-sudo dpkg -i foundationdb-clients_6.3.15-1_amd64.deb
+wget https://github.com/apple/foundationdb/releases/download/6.3.24/foundationdb-clients_6.3.24-1_amd64.deb
+sudo dpkg -i foundationdb-clients_6.3.24-1_amd64.deb
 # Terraform
 curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
 sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
@@ -228,8 +228,8 @@ Runtime dependencies.
 
 ```sh
 # FoundationDB libs
-wget https://www.foundationdb.org/downloads/6.3.15/ubuntu/installers/foundationdb-clients_6.3.15-1_amd64.deb
-sudo dpkg -i foundationdb-clients_6.3.15-1_amd64.deb
+wget https://github.com/apple/foundationdb/releases/download/6.3.24/foundationdb-clients_6.3.24-1_amd64.deb
+sudo dpkg -i foundationdb-clients_6.3.24-1_amd64.deb
 # Terraform
 curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
 sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
@@ -310,8 +310,8 @@ Runtime dependencies.
 
 ```sh
 # FoundationDB libs
-wget https://www.foundationdb.org/downloads/6.3.15/ubuntu/installers/foundationdb-clients_6.3.15-1_amd64.deb
-sudo dpkg -i foundationdb-clients_6.3.15-1_amd64.deb
+wget https://github.com/apple/foundationdb/releases/download/6.3.24/foundationdb-clients_6.3.24-1_amd64.deb
+sudo dpkg -i foundationdb-clients_6.3.24-1_amd64.deb
 # Terraform
 curl -fsSL https://apt.releases.hashicorp.com/gpg | sudo apt-key add -
 sudo apt-add-repository "deb [arch=amd64] https://apt.releases.hashicorp.com $(lsb_release -cs) main"
@@ -323,8 +323,8 @@ Compile and container build dependencies.
 ```sh
 # Go & make & gcc
 sudo apt install -y make gcc
-wget https://golang.org/dl/go1.16.5.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.16.5.linux-amd64.tar.gz
+wget https://go.dev/dl/go1.19.1.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.19.1.linux-amd64.tar.gz
 export PATH=$PATH:/usr/local/go/bin
 # Docker
 sudo apt-get install -y apt-transport-https ca-certificates curl software-properties-common
