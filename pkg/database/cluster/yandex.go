@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/ansel1/merry/v2"
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
+	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
 	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
@@ -30,6 +32,19 @@ type YandexDBCluster struct {
 	ydbConnection ydb.Connection
 }
 
+func envExists(key string) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		return len(value) > 0
+	}
+	return false
+}
+
+func envConfigured() bool {
+	return (envExists("YDB_SERVICE_ACCOUNT_KEY_FILE_CREDENTIALS") ||
+		envExists("YDB_METADATA_CREDENTIALS") ||
+		envExists("YDB_ACCESS_TOKEN_CREDENTIALS"))
+}
+
 func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBCluster, error) {
 	llog.Infof("Establishing connection to YDB on %s", dbURL)
 
@@ -38,7 +53,13 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBClus
 		err      error
 	)
 
-	if database, err = ydb.Open(ydbContext, dbURL); err != nil {
+	if envConfigured() {
+		database, err = ydb.Open(ydbContext, dbURL, environ.WithEnvironCredentials(ydbContext))
+	} else {
+		database, err = ydb.Open(ydbContext, dbURL)
+	}
+
+	if err != nil {
 		return nil, merry.Prepend(err, "Error then creating YDB connection holder")
 	}
 
@@ -552,7 +573,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 	return nil
 }
 
-//nolint // functions is not same
+// nolint // functions is not same
 func createSettingsTable(ydbContext context.Context, ydbClient table.Client, prefix string) error {
 	var err error
 
@@ -644,7 +665,7 @@ func createTransferTable(ydbContext context.Context, ydbClient table.Client, pre
 	return nil
 }
 
-//nolint // functions createChecksumTable and createSettingsTable is not same
+// nolint // functions createChecksumTable and createSettingsTable is not same
 func createChecksumTable(ydbContext context.Context, ydbClient table.Client, prefix string) error {
 	var err error
 
