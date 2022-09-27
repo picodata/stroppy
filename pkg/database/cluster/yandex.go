@@ -842,6 +842,7 @@ func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) error {
 
 			return nil
 		},
+		table.WithIdempotent(),
 	); err != nil {
 		return merry.Prepend(err, "Error then inserting data in table")
 	}
