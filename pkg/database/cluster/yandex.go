@@ -127,7 +127,7 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 				return merry.Prepend(err, "failed to fetch rows")
 			}
 
-			llog.Infoln("Settings successfully fetched from ydb")
+			llog.Traceln("Settings successfully fetched from ydb")
 
 			defer func() {
 				_ = queryResult.Close()
@@ -305,15 +305,107 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 }
 
 func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
-	panic("unimplemented!")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	tablePath := path.Join(stroppyDir, "account")
+	selectStmnt := fmt.Sprintf("SELECT bic, ban, balance FROM `%s`", tablePath)
+
+	var accs []model.Account
+
+	err := ydbCluster.ydbConnection.Table().Do(
+		ydbContext,
+		func(ctx context.Context, sess table.Session) (err error) {
+			rows, err := sess.StreamExecuteScanQuery(ctx, selectStmnt, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+			for rows.NextResultSet(ydbContext) {
+				for rows.NextRow() {
+					var Balance int64
+					var acc model.Account
+					if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
+						return merry.Prepend(err, "failed to scan account for FetchAccounts")
+					}
+					dec := new(inf.Dec)
+					dec.SetUnscaled(Balance)
+					acc.Balance = dec
+					accs = append(accs, acc)
+				}
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch accounts")
+	}
+
+	return accs, nil
 }
 
-//nolint:gocritic // two conflicting linters
 func (ydbCluster *YandexDBCluster) FetchBalance(
 	bic string,
 	ban string,
 ) (*inf.Dec, *inf.Dec, error) {
-	panic("unimplemented!")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	tablePath := path.Join(stroppyDir, "account")
+	selectStmnt := fmt.Sprintf("DECLARE $bic AS String; DECLARE $ban AS String; "+
+		"SELECT balance, CAST(0 AS Int64) FROM `%s` WHERE bic = $bic AND ban = $ban", tablePath)
+
+	readTx := table.TxControl(
+		table.BeginTx(table.WithOnlineReadOnly()),
+		table.CommitTx(),
+	)
+
+	var (
+		err           error
+		rows          result.Result
+		balance       inf.Dec
+		pendingAmount inf.Dec
+	)
+
+	found := false
+	if err = ydbCluster.ydbConnection.Table().Do(
+		ydbContext,
+		func(ydbContext context.Context, ydbSession table.Session) error {
+			if _, rows, err = ydbSession.Execute(
+				ydbContext, readTx, selectStmnt,
+				table.NewQueryParameters(
+					table.ValueParam("bic", types.BytesValueFromString(bic)),
+					table.ValueParam("ban", types.BytesValueFromString(ban)),
+				),
+				options.WithKeepInCache(true),
+			); err != nil {
+				return err
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+
+			if rows.NextResultSet(ydbContext) {
+				if rows.NextRow() {
+					err = rows.Scan(&balance, &pendingAmount)
+					if err != nil {
+						return err
+					}
+					found = true
+				}
+			}
+			return nil
+		},
+	); err != nil {
+		return nil, nil, err
+	}
+
+	if !found {
+		return nil, nil, merry.Errorf("No amount for bic %s and ban %s", bic, ban)
+	}
+	return &balance, &pendingAmount, nil
 }
 
 func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
