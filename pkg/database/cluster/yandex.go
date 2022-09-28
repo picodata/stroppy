@@ -589,7 +589,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	defer cancel()
 
-	prefix := stroppyDir
+	prefix := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir)
 
 	if err = createStroppyDirectory(
 		ydbContext,
@@ -685,6 +685,12 @@ func createAccountTable(ydbContext context.Context, ydbClient table.Client, pref
 				options.WithColumn("ban", types.Optional(types.TypeString)),
 				options.WithColumn("balance", types.Optional(types.TypeInt64)),
 				options.WithPrimaryKeyColumn("bic", "ban"),
+				options.WithPartitioningSettings(
+					options.WithPartitioningByLoad(options.FeatureEnabled),
+					options.WithPartitioningBySize(options.FeatureEnabled),
+					options.WithMinPartitionsCount(50),
+					options.WithPartitionSizeMb(256),
+				),
 			); err != nil {
 				return merry.Prepend(err, "Error then calling function for creating table")
 			}
@@ -721,6 +727,12 @@ func createTransferTable(ydbContext context.Context, ydbClient table.Client, pre
 				options.WithColumn("client_id", types.Optional(types.TypeString)),
 				options.WithColumn("client_timestamp", types.Optional(types.TypeTimestamp)),
 				options.WithPrimaryKeyColumn("transfer_id"),
+				options.WithPartitioningSettings(
+					options.WithPartitioningByLoad(options.FeatureEnabled),
+					options.WithPartitioningBySize(options.FeatureEnabled),
+					options.WithMinPartitionsCount(50),
+					options.WithPartitionSizeMb(256),
+				),
 			); err != nil {
 				return merry.Prepend(err, "Error then calling function for creating table")
 			}
