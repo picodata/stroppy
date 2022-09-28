@@ -59,12 +59,12 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) 
 
 	if envConfigured() {
 		database, err = ydb.Open(ydbContext, dbURL,
-			ydb.WithSessionPoolSizeLimit(poolSize),
+			ydb.WithSessionPoolSizeLimit(poolSize+10),
 			environ.WithEnvironCredentials(ydbContext),
 		)
 	} else {
 		database, err = ydb.Open(ydbContext, dbURL,
-			ydb.WithSessionPoolSizeLimit(poolSize),
+			ydb.WithSessionPoolSizeLimit(poolSize+10),
 		)
 	}
 
