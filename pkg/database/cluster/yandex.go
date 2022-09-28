@@ -24,8 +24,10 @@ import (
 )
 
 const (
-	schemeErr  string = "Path does not exist"
-	stroppyDir string = "stroppy"
+	schemeErr      string = "Path does not exist"
+	stroppyDir     string = "stroppy"
+	stroppyAgent   string = "stroppy 1.0"
+	defaultTimeout        = time.Second * 5
 )
 
 type YandexDBCluster struct {
@@ -59,12 +61,18 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) 
 
 	if envConfigured() {
 		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithUserAgent(stroppyAgent),
 			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
+			ydb.WithDiscoveryInterval(defaultTimeout),
 			environ.WithEnvironCredentials(ydbContext),
 		)
 	} else {
 		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithUserAgent(stroppyAgent),
 			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
+			ydb.WithDiscoveryInterval(defaultTimeout),
 		)
 	}
 
@@ -104,10 +112,7 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 	)
 
 	tableFullPath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "settings")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second,
-	)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 
 	defer ctxCloseFn()
 
@@ -176,7 +181,7 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 	transfer *model.Transfer, //nolint
 	clientID uuid.UUID,
 ) error {
-	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	txc := table.TxControl(
@@ -319,7 +324,7 @@ func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
 	)
 
 	tablePath := path.Join(stroppyDir, "checksum")
-	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	readTx := table.TxControl(
@@ -385,10 +390,7 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 	)
 
 	tablePath := path.Join(stroppyDir, "account")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second*10, //nolint
-	)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	readTx := table.TxControl(
@@ -448,7 +450,7 @@ func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) error {
 	var err error
 	tablePath := path.Join(stroppyDir, "checksum")
 
-	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	writeTX := table.TxControl(
@@ -491,10 +493,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	llog.Infof("Creating the folders and tables...")
 
-	ydbContext, cancel := context.WithTimeout(
-		context.Background(),
-		time.Second*30, //nolint
-	)
+	ydbContext, cancel := context.WithCancel(context.Background())
 
 	defer cancel()
 
@@ -789,7 +788,7 @@ func upsertSettings(
 func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) error {
 	var err error
 
-	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	writeTX := table.TxControl(
