@@ -49,8 +49,8 @@ func envConfigured() bool {
 		envExists("YDB_ACCESS_TOKEN_CREDENTIALS"))
 }
 
-func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBCluster, error) {
-	llog.Infof("Establishing connection to YDB on %s", dbURL)
+func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) (*YandexDBCluster, error) {
+	llog.Infof("Establishing connection to YDB on %s with poolSize %d", dbURL, poolSize)
 
 	var (
 		database ydb.Connection
@@ -58,9 +58,14 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBClus
 	)
 
 	if envConfigured() {
-		database, err = ydb.Open(ydbContext, dbURL, environ.WithEnvironCredentials(ydbContext))
+		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithSessionPoolSizeLimit(poolSize),
+			environ.WithEnvironCredentials(ydbContext),
+		)
 	} else {
-		database, err = ydb.Open(ydbContext, dbURL)
+		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithSessionPoolSizeLimit(poolSize),
+		)
 	}
 
 	if err != nil {

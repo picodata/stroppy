@@ -630,6 +630,7 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	if connection, err = cluster.NewYandexDBCluster(
 		ydbContext,
 		yc.commonCluster.DBUrl,
+		yc.commonCluster.connectionPoolSize,
 	); err != nil {
 		return nil, merry.Prepend(err, "Error then creating new YDB cluster")
 	}
