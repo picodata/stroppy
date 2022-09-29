@@ -112,11 +112,19 @@ func (sh *shell) prepareEngine() error {
 	sh.state.NodesInfo = state.NodesInfo{
 		MastersCnt: instanceAddresses.MastersCnt(),
 		WorkersCnt: instanceAddresses.WorkersCnt(),
-		Params:     sh.tf.Provider.GetNodes(),
+		IPs: state.IPs{
+			FirstMasterIP: instanceAddresses.GetFirstMaster(),
+			FirstWokerIP:  instanceAddresses.GetFirstWorker(),
+		},
+		NodesParams: sh.tf.Provider.GetNodes(),
 	}
 
 	sh.state.InstanceAddresses = instanceAddresses
 	sh.state.Subnet = sh.tf.Provider.GetSubnet()
+
+	sh.state.Settings.DatabaseSettings.Workers = int(
+		sh.state.NodesInfo.GetFirstMaster().Resources.CPU * 4, //nolint
+	)
 
 	// string var (like `remote` or `local`) which will be used to create ssh the client
 	commandClientType := engineSsh.RemoteClient
@@ -199,11 +207,11 @@ func (sh *shell) deploy() error {
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
 	// TODO: rename to deploy infrastructure
-	if err = sh.k.DeployK8S(&sh.state); err != nil {
+	if err = sh.k.DeployK8SWithInfrastructure(&sh.state); err != nil {
 		return merry.Prepend(err, "Failed to deploy kubernetes and infrastructure")
 	}
 
-	if err = sh.tf.Provider.AddNetworkDisks(len(sh.state.NodesInfo.Params)); err != nil {
+	if err = sh.tf.Provider.AddNetworkDisks(len(sh.state.NodesInfo.NodesParams)); err != nil {
 		return merry.Prepend(err, "Failed to add network storages to provider")
 	}
 
@@ -220,7 +228,7 @@ func (sh *shell) deploy() error {
 	}
 
 	// Deploy database cluster
-	if err = sh.cluster.Deploy(&sh.state); err != nil {
+	if err = sh.cluster.Deploy(sh.k, &sh.state); err != nil {
 		return merry.Prependf(
 			err,
 			"'%s' database deploy failed",
@@ -248,7 +256,15 @@ func (sh *shell) deploy() error {
 		"Databale cluster of '%s' deployed successfully",
 		sh.state.Settings.DatabaseSettings.DBType,
 	)
-	llog.Infof(interactiveUsageHelpTemplate, sh.k.MonitoringPort.Port, sh.k.KubernetesPort.Port)
+	llog.Infof(
+		interactiveUsageHelpTemplate,
+		sh.state.Settings.DeploymentSettings.GrUser,
+		sh.state.Settings.DeploymentSettings.GrPassword,
+		sh.state.NodesInfo.IPs.FirstMasterIP.External,
+		sh.state.Settings.DeploymentSettings.GrPort,
+		sh.state.NodesInfo.IPs.FirstMasterIP.External,
+		sh.state.Settings.DeploymentSettings.PromPort,
+	)
 
 	return nil
 }

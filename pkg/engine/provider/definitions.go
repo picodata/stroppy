@@ -4,9 +4,7 @@
 
 package provider
 
-import (
-	"errors"
-)
+import "errors"
 
 const (
 	Oracle  = "oracle"
@@ -73,17 +71,9 @@ func (insAddr *InstanceAddresses) GetWorkersAndMastersAddrPairs() map[string]*Ad
 }
 
 func (insAddr *InstanceAddresses) GetFirstMaster() AddrPair {
-	if value, ok := insAddr.Masters["master-1"]; ok {
-		return value
-	}
-
-	if value, ok := insAddr.Masters["master"]; ok {
-		return value
-	}
-
 	return AddrPair{
-		Internal: "",
-		External: "",
+		Internal: insAddr.Masters["master-1"].Internal,
+		External: insAddr.Masters["master-1"].External,
 	}
 }
 
@@ -95,12 +85,20 @@ func (insAddr *InstanceAddresses) WorkersCnt() int {
 	return len(insAddr.Workers)
 }
 
+func (insAddr *InstanceAddresses) GetFirstWorker() AddrPair {
+	return AddrPair{
+		Internal: insAddr.Workers["worker-1"].Internal,
+		External: insAddr.Workers["worker-1"].External,
+	}
+}
+
 type AddrPair struct {
 	Internal string
 	External string
 }
 
 type Node struct {
+	Index     int
 	Fqdn      string
 	Resources Resources
 }

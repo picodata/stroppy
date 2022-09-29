@@ -4,7 +4,13 @@ kind: Storage
 metadata:
   name: stroppy-ydb-storage
 spec:
-  dataStore: []
+  dataStore:
+    - volumeMode: Block
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 80Gi
   image:
     name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.47
   nodes: 8
@@ -121,4 +127,5 @@ spec:
                 storage_pool_kind: ssd
             profile_id: 0
   nodeSelector:
-    node-type: "dbms-worker"
+    dbms-worker: "true"
+

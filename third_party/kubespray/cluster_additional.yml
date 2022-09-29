@@ -1,0 +1,21 @@
+- name: Addtional actions for kubernetes cluster
+  hosts: k8s_cluster
+  tasks:
+    - name: Create directories
+      ansible.builtin.file:
+        path: /data/volumes/local-pv-database
+        state: directory
+        recurse: yes
+        mode: "777"
+
+    - name: Add entry for prometheus server
+      ansible.builtin.lineinfile:
+        dest: /etc/hosts
+        line: "{{ hostvars[groups.kube_control_plane[0]].ansible_host }} prometheus.stropy.io"
+        state: present
+
+    - name: Add entry for ydb monitoring panel
+      ansible.builtin.lineinfile:
+        dest: /etc/hosts
+        line: "{{ hostvars[groups.kube_node[0]].ansible_host }} stroppy-ydb-storage.stropy.io"
+        state: present

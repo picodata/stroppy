@@ -1,0 +1,11 @@
+---
+- name: Deploy promtail for Tarantool Cartridge
+  hosts: all
+  become: true
+
+  tasks:
+
+  - name: Import promtail role
+    import_role:
+      name: picomon-promtail
+

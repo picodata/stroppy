@@ -1,0 +1,223 @@
+- hosts: master
+  become: true
+  any_errors_fatal: false
+  tasks:
+      - name: Create prometheus mount directory
+        ansible.builtin.file:
+          path: /data/volumes/local-pv-mon/prometheus
+          state: directory
+          recurse: yes
+
+      - name: Install/update Grafana grafana-image-renderer plugin
+        community.grafana.grafana_plugin:
+          name: grafana-image-renderer
+          version: latest
+          state: present
+
+      - name: Install/update Grafana grafana-image-renderer plugin
+        community.grafana.grafana_plugin:
+          name: grafana-image-renderer
+          version: latest
+          state: present
+
+      - name: Restart grafana-server service
+        systemd:
+          name: grafana-server.service
+          state: restarted
+          daemon_reload: yes
+          enabled: yes
+          masked: no
+
+      - name: Install grafana-image-renderer dependencies
+        apt:
+          name: "{{ packages }}"
+          state: present
+          update_cache: yes
+          cache_valid_time: 3600
+        vars:
+          packages:
+          - libx11-xcb1
+          - libxcb-dri3-0
+          - libxcomposite1
+          - libxcb-cursor0
+          - libxcursor1
+          - libxdamage1
+          - libxi6
+          - libxtst6
+          - libnss3
+          - libatk1.0-0
+          - libatk-bridge2.0-0
+          - libcups2
+          - libxss1
+          - libxrandr2
+          - libgbm1
+          - libasound2
+          - libgtk-3-0
+          - libpangocairo-1.0-0
+          - libx11-6
+          - libxext6
+          - libxfixes3
+          - libxrender1
+          - libglib2.0-0
+          - libdbus-1-3
+          - libxshmfence1
+
+      - name: Import Grafana dashboard node-exporter-full
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/1860/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_API_server
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12006/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Compute_Resources_Cluster
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12114/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_ComputeResources_Namespace(Pods)
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12117/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_ComputeResources_Namespace(Workloads)
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12118/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_ComputeResources_Node(Pods)
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/14437/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_ComputeResources_Workload
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12121/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Kubelet
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12123/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Networking_Cluster
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12124/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Networking_Namespace(Pods)
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12125/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Networking_Namespace(Workload)
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12126/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Networking_Pod
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12661/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Networking_Workload
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12665/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_PersistentVolumes
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/13646/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_Scheduler
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/12130/revisions/1/download
+
+      - name: Import Grafana dashboard Kubernetes_StatefulSets
+        community.grafana.grafana_dashboard:
+          grafana_url: "http://{{ grafana_address }}:{{ grafana_port }}"
+          grafana_user: "{{ grafana_security.admin_user | default('admin') }}"
+          grafana_password: "{{ grafana_security.admin_password | default('admin') }}"
+          commit_message: Updated by ansible
+          folder: General 
+          overwrite: yes
+          dashboard_url: https://grafana.com/api/dashboards/7581/revisions/1/download

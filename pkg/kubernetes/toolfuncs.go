@@ -25,8 +25,9 @@ import (
 	"github.com/ansel1/merry"
 	"github.com/apenella/go-ansible/pkg/options"
 	"github.com/apenella/go-ansible/pkg/playbook"
+	"github.com/sethvargo/go-password/password"
 	llog "github.com/sirupsen/logrus"
-	yaml "gopkg.in/yaml.v3"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -38,14 +39,14 @@ collections_paths=third_party/.collections/
 	SSHUser string = "ubuntu"
 )
 
+// monitoring.
 const (
-	grafanaVer        string = "0.17.0"
-	nodeExporterVer   string = "2.0.0"
-	kubernetesColVer  string = "2.0.1"
-	grafanaColVer     string = "1.4.0"
-	forceReinstallReq bool   = false //nolint
+	grafanaVer    string = "0.17.0"
+	grafanaColVer string = "1.4.0"
+	lokiPort      uint16 = 3100
 )
 
+// another consts.
 const (
 	roAll         int = 0o644
 	etcdNormalCnt int = 3
@@ -73,7 +74,7 @@ var errPortCheck = errors.New("port check failed")
 // скопировать на мастер-ноду private key для работы мастера с воркерами
 // и файлы для развертывания мониторинга и postgres.
 func (k *Kubernetes) loadFilesToMaster(shellState *state.State) (err error) { //nolint
-	masterExternalIP := shellState.InstanceAddresses.GetFirstMaster().External
+	masterExternalIP := shellState.NodesInfo.IPs.FirstMasterIP.External
 	llog.Infof("Connecting to master %v", masterExternalIP)
 
 	if shellState.Settings.DeploymentSettings.Provider == provider.Yandex {
@@ -161,62 +162,63 @@ func (k *Kubernetes) loadFilesToMaster(shellState *state.State) (err error) { //
 // Generate monitoring inventory based on hosts.
 func (k *Kubernetes) GenerateMonitoringInventory(shellState *state.State) ([]byte, error) {
 	var (
-		bytes []byte
-		err   error
+		bytes      []byte
+		err        error
+		grPassword string
 	)
 
-	hosts := make(map[string]map[string]string)
-
-	for name, node := range shellState.InstanceAddresses.GetWorkersAndMastersAddrPairs() {
-		hosts[name] = map[string]string{"ansible_host": node.Internal}
+	if grPassword, err = password.Generate(20, 7, 0, false, true); err != nil { //nolint
+		return nil, merry.Prepend(err, "failed to generate password")
 	}
 
-	//  vars:
-	//  prometheus_targets:
-	//    node:
-	//    - targets:
-	//      - master:9100
-	//      labels:
-	//        env: localhost
+	shellState.Settings.DeploymentSettings.GrPassword = grPassword
 
-	//  grafana_security:
-	//    admin_user: admin
-	//    admin_password: admin
-	//
-	//  grafana_address: 0.0.0.0
-	//  grafana_port: 3000
 	inventory := map[string]map[string]interface{}{
 		"all": {
 			"vars": map[string]interface{}{
-				"cloud_type":               "yandex",
-				"ansible_user":             SSHUser,
-				"ansible_ssh_common_args":  "-F .ssh/config",
-				"promtail_force_reinstall": false,
-				"nodeexp_force_reinstall":  false,
-				"grafana_force_reinstall":  false,
-				"loki_force_reinstall":     false,
-				"grafana_security": map[string]interface{}{
-					"admin_user":     "admin",
-					"admin_password": "admin",
+				"cloud_type":              "yandex",
+				"ansible_user":            SSHUser,
+				"ansible_ssh_common_args": "-F .ssh/config",
+				"grafana_auth": map[string]interface{}{
+					"basic": map[string]interface{}{
+						"enabled": true,
+					},
 				},
+				"grafana_security": map[string]interface{}{
+					"admin_user":     "stroppy",
+					"admin_password": grPassword,
+				},
+				"grafana_address": shellState.NodesInfo.IPs.FirstMasterIP.Internal,
+				"grafana_port":    grafanaPort,
 				"grafana_datasources": []interface{}{
 					map[string]interface{}{
-						"name":      "Prometheus",
-						"type":      "prometheus",
-						"access":    "proxy",
-						"url":       "http://localhost:9090",
+						"name":   "Prometheus",
+						"type":   "prometheus",
+						"access": "proxy",
+						"url": fmt.Sprintf( //nolint
+							"http://%s:%d",
+							shellState.NodesInfo.IPs.FirstMasterIP.Internal,
+							shellState.Settings.DeploymentSettings.PromPort,
+						),
 						"basicAuth": false,
 					},
 					map[string]interface{}{
-						"name":      "Loki",
-						"type":      "loki",
-						"access":    "proxy",
-						"url":       "http://localhost:3100",
+						"name":   "Loki",
+						"type":   "loki",
+						"access": "proxy",
+						"url": fmt.Sprintf( //nolint
+							"http://prometheus.picodata.io:%d",
+							lokiPort,
+						),
 						"basicAuth": false,
 					},
 				},
 			},
-			"hosts": hosts,
+			"hosts": map[string]interface{}{
+				"master": map[string]interface{}{
+					"ansible_host": shellState.NodesInfo.IPs.FirstMasterIP.Internal,
+				},
+			},
 		},
 	}
 
@@ -254,7 +256,7 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 		switch {
 		// if [master-1, worker-1, worker-2, worker-3] -> etcd[worker-1, worker-2, worker-3]
 		case strings.Contains(name, "worker") &&
-			len(shellState.NodesInfo.Params) >= etcdNormalCnt &&
+			len(shellState.NodesInfo.NodesParams) >= etcdNormalCnt &&
 			len(childrenETCD) < etcdNormalCnt:
 			llog.Tracef("node %s added to etcd hosts", name)
 
@@ -267,19 +269,21 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 
 			supplementaryAddr = append(supplementaryAddr, node.Internal, node.External)
 
-			// if [master-1] -> etcd[master-1]
-		case len(shellState.NodesInfo.Params) == 1|2 &&
+		// if [master-1] -> etcd[master-1]
+		case len(shellState.NodesInfo.NodesParams) == 1|2 &&
 			len(childrenETCD) == 0:
 			childrenETCD[name] = map[string]interface{}{}
 
 			continue
 		// if [master-1, worker-1, worker-2] -> etcd[master-1, worker-1, worker-2]
-		case len(shellState.NodesInfo.Params) >= etcdNormalCnt:
+		case len(shellState.NodesInfo.NodesParams) >= etcdNormalCnt:
 			childrenETCD[name] = map[string]interface{}{}
 
 			continue
 		}
 	}
+
+	llog.Debugf("%#v", shellState.NodesInfo.IPs)
 
 	inventory := Inventory{
 		All: All{
@@ -295,7 +299,9 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 				"addons": map[string]interface{}{
 					"ingress_nginx_enabled": false,
 				},
-				"node_taints": []string{},
+				"node_taints":           []string{},
+				"control_plane_port":    6443, //nolint
+				"control_plane_address": shellState.NodesInfo.IPs.FirstMasterIP.External,
 			},
 			Hosts: hostsAll,
 			Children: map[string]interface{}{
@@ -326,41 +332,6 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 	}
 
 	llog.Tracef("Serialized kubespray inventory %v", string(bytes))
-
-	return bytes, nil
-}
-
-// Generate `default` inventory for any another actions related with ansible.
-func (k *Kubernetes) generateSimplifiedInventory(shellState *state.State) ([]byte, error) {
-	var (
-		bytes []byte
-		err   error
-	)
-
-	hosts := make(map[string]map[string]string)
-
-	for name, node := range shellState.InstanceAddresses.GetWorkersAndMastersAddrPairs() {
-		hosts[name] = map[string]string{"ansible_host": node.Internal}
-	}
-
-	inventory := map[string]map[string]interface{}{
-		"all": {
-			"vars": map[string]interface{}{
-				"cloud_type":              "yandex",
-				"ansible_user":            SSHUser,
-				"ansible_ssh_common_args": "-F .ssh/config",
-				"kube_master_ext_ip":      shellState.InstanceAddresses.GetFirstMaster().External,
-				"kube_apiserver_port":     6443, //nolint //TODO: End-to-end inventory configuration for kubespray #issue97
-			},
-			"hosts": hosts,
-		},
-	}
-
-	if bytes, err = yaml.Marshal(inventory); err != nil {
-		return nil, merry.Prepend(err, "Error then serializing inventory")
-	}
-
-	llog.Tracef("Serialized generic inventory %v\n", string(bytes))
 
 	return bytes, nil
 }
@@ -401,16 +372,8 @@ func writeAnsibleRequirements(workDir string) error {
 				"name":    "cloudalchemy.grafana",
 				"version": grafanaVer,
 			},
-			{
-				"name":    "cloudalchemy.node_exporter",
-				"version": nodeExporterVer,
-			},
 		},
 		"collections": []map[string]string{
-			{
-				"name":    "community.kubernetes",
-				"version": kubernetesColVer,
-			},
 			{
 				"name":    "community.grafana",
 				"version": grafanaColVer,
@@ -419,7 +382,7 @@ func writeAnsibleRequirements(workDir string) error {
 	}
 
 	if bytes, err = yaml.Marshal(requirements); err != nil {
-		merry.Prepend(err, "Error then marshaling requirements to yaml format")
+		return merry.Prepend(err, "Error then marshaling requirements to yaml format")
 	}
 
 	if file, err = os.Create(path.Join(workDir, "requirements.yml")); err != nil {
@@ -464,14 +427,17 @@ func installGalaxyRoles() error {
 }
 
 // Create request and return response.
-func sendGetWithContext(ctx context.Context, body io.Reader, url string) (*http.Response, error) {
+func getServerStatus(body io.Reader, url string) (*http.Response, error) {
 	var (
 		req *http.Request
 		res *http.Response
 		err error
 	)
 
-	if req, err = http.NewRequestWithContext(ctx, http.MethodGet, url, body); err != nil {
+	reqContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second*3) //nolint
+	defer ctxCloseFn()
+
+	if req, err = http.NewRequestWithContext(reqContext, http.MethodGet, url, body); err != nil {
 		return nil, merry.Prepend(err, "Error then constructing request")
 	}
 
@@ -484,7 +450,10 @@ func sendGetWithContext(ctx context.Context, body io.Reader, url string) (*http.
 
 func createAnsibleOpts(
 	inventoryPath string,
+	shellState *state.State,
 ) (*options.AnsibleConnectionOptions, *playbook.AnsiblePlaybookOptions) {
+	var verbose bool
+
 	ansibleConnectionOpts := &options.AnsibleConnectionOptions{
 		AskPass:       false,
 		Connection:    "ssh",
@@ -497,30 +466,16 @@ func createAnsibleOpts(
 		User:          "",
 	}
 
-	ansiblePlaybookOptions := &playbook.AnsiblePlaybookOptions{
-		AskVaultPassword:  false,
-		Check:             false,
-		Diff:              false,
-		ExtraVars:         map[string]interface{}{},
-		ExtraVarsFile:     []string{},
-		FlushCache:        false,
-		ForceHandlers:     false,
-		Forks:             "",
-		Inventory:         inventoryPath,
-		Limit:             "",
-		ListHosts:         false,
-		ListTags:          false,
-		ListTasks:         false,
-		ModulePath:        "",
-		SkipTags:          "",
-		StartAtTask:       "",
-		Step:              false,
-		SyntaxCheck:       false,
-		Tags:              "",
-		VaultID:           "",
-		VaultPasswordFile: "",
-		Verbose:           false,
-		Version:           false,
+	switch shellState.Settings.DeploymentSettings.AnsibleVerbosity {
+	case "v", "vv", "vvv", "vvvv", "vvvvv", "vvvvvv":
+		verbose = true
+	default:
+		verbose = false
+	}
+
+	ansiblePlaybookOptions := &playbook.AnsiblePlaybookOptions{ //nolint
+		Inventory: inventoryPath,
+		Verbose:   verbose,
 	}
 
 	return ansibleConnectionOpts, ansiblePlaybookOptions

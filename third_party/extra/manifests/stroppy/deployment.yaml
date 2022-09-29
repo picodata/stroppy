@@ -11,5 +11,6 @@ spec:
     command: ["/bin/sleep"]
     args: [ "infinity" ]
   nodeSelector:
-    node-type: "stroppy-worker"
+    dbms-master: "true"
+
 

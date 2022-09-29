@@ -7,10 +7,12 @@ package kubeengine
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
+	"gitlab.com/picodata/stroppy/pkg/state"
 	"gitlab.com/picodata/stroppy/pkg/tools"
 	v1 "k8s.io/api/core/v1"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
@@ -21,10 +23,12 @@ import (
 const waitTimeQuantum = 10 * time.Second
 
 const (
-	nodeTypeKey        = "node-type"
-	nodeNameForStroppy = "stroppy-worker"
-	nodeNameForDBMS    = "dbms-worker"
+	NodeNameMonitoring = "dbms-monitoring"
+	NodeNameMaster     = "dbms-master"
+	NodeNameDBMS       = "dbms-worker"
 )
+
+const True = "true"
 
 func (e *Engine) waitPodCreation(clientSet *kubernetes.Clientset,
 	creationWait bool, waitTime time.Duration, podName, namespace string,
@@ -148,8 +152,7 @@ func (e *Engine) WaitPod(podName, namespace string,
 }
 
 // AddNodeLabels - добавить labels worker-нодам кластера для разделения stroppy и СУБД
-//nolint
-func (e *Engine) AddNodeLabels(_ string) error {
+func (e *Engine) AddNodeLabels(shellState *state.State) error { //nolint
 	var (
 		clientSet *kubernetes.Clientset
 		nodesList *v1.NodeList
@@ -174,39 +177,41 @@ func (e *Engine) AddNodeLabels(_ string) error {
 		return merry.Prepend(err, "Failed to get nodes list")
 	}
 
-	// set label for master
-	nodesNamesList := []string{nodesList.Items[0].Name}
-	currentLabels := nodesList.Items[0].GetLabels()
+	for index, node := range nodesList.Items { //nolint
+		newLabels := make(map[string]string)
+		nodeLabels := nodesList.Items[index].GetLabels()
 
-	if _, ok := currentLabels[nodeTypeKey]; !ok {
-		currentLabels[nodeTypeKey] = nodeNameForStroppy
-	}
+		switch {
+		case node.Name == "master-1":
+			if shellState.Settings.DeploymentSettings.AllWorkers {
+				newLabels[NodeNameDBMS] = True
+			}
 
-	nodesList.Items[0].SetLabels(currentLabels)
+			newLabels[NodeNameMonitoring] = True
+			newLabels[NodeNameMaster] = True
+		case strings.Contains(node.Name, "master"):
+			if shellState.Settings.DeploymentSettings.AllWorkers {
+				newLabels[NodeNameDBMS] = True
+			}
 
-	for index := 1; index < len(nodesList.Items); index++ {
-		nodesNamesList = append(nodesNamesList, nodesList.Items[index].Name)
-
-		currentLabels = nodesList.Items[index].GetLabels()
-
-		if _, ok := currentLabels[nodeTypeKey]; ok {
-			llog.Infof(
-				"Node %s already been marked as '%s'",
-				nodesList.Items[index].Name,
-				nodeNameForDBMS,
-			)
-			continue
+			newLabels[NodeNameMaster] = True
+		case strings.Contains(node.Name, "worker"):
+			newLabels[NodeNameDBMS] = True
 		}
 
-		currentLabels[nodeTypeKey] = nodeNameForDBMS
-		nodesList.Items[index].SetLabels(currentLabels)
+		for key, value := range newLabels {
+			nodeLabels[key] = value
+		}
+
+		nodesList.Items[index].SetLabels(nodeLabels)
+
+		llog.Tracef("Cluster node %s now has new lables: %v", node.Name, nodeLabels)
 	}
 
 	if err = applyNodeLabels(clientSet, nodesList); err != nil {
-		return merry.Prepend(err, "Failed to apply node labels")
+		return merry.Prepend(err, "failed to apply node labels")
 	}
 
-	llog.Debugf("K8S cluster nodes list: %v", nodesNamesList)
 	llog.Infoln("Add labels to cluster nodes: success")
 
 	return nil

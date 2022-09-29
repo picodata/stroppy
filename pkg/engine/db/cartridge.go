@@ -56,7 +56,10 @@ func (cartridge *cartridgeCluster) Connect() (cluster interface{}, err error) {
 	return
 }
 
-func (cartridge *cartridgeCluster) Deploy(shellState *state.State) error {
+func (cartridge *cartridgeCluster) Deploy(
+	_ *kubernetes.Kubernetes,
+	shellState *state.State,
+) error {
 	var err error
 
 	if err = cartridge.deploy(shellState); err != nil {

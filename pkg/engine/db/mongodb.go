@@ -65,7 +65,10 @@ func (mongo *mongoCluster) Connect() (cluster interface{}, err error) {
 	return
 }
 
-func (mongo *mongoCluster) Deploy(shellState *state.State) error {
+func (mongo *mongoCluster) Deploy(
+	_ *kubernetes.Kubernetes,
+	shellState *state.State,
+) error {
 	var err error
 
 	if err = mongo.deploy(shellState); err != nil {

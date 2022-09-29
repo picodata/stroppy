@@ -1,0 +1,77 @@
+resources:
+  limits:
+    cpu: 200m
+    memory: 128Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+defaultVolumes:
+  - name: run
+    hostPath:
+      path: /run/promtail
+  - name: containers
+    hostPath:
+      path: /var/lib/docker/containers
+
+defaultVolumeMounts:
+  - name: run
+    mountPath: /run/promtail
+  - name: containers
+    mountPath: /var/lib/docker/containers
+    readOnly: true
+
+extraVolumes:
+  - name: varlog
+    hostPath: 
+      path: /var/log
+
+extraVolumeMounts:
+  - name: varlog
+    mountPath: /var/log
+    readOnly: true
+
+config:
+  serverPort: 3101
+  clients:
+    - url: http://172.16.25.99:3100/loki/api/v1/push
+  snippets:
+    extraScrapeConfigs: |
+      - job_name: journal
+        journal:
+          max_age: 12h
+          labels:
+            job: systemd-journal
+        relabel_configs:
+          - source_labels: ['__journal__systemd_unit']
+            target_label: 'unit'
+          - source_labels: [ '__journal__hostname']
+            target_label: 'nodename'
+        pipeline_stages:
+        - multiline:
+            firstline: '^\d{4}-\d{2}-\d{2} \d{1,2}:\d{2}:\d{2}'
+        - replace:
+            expression: '.* (E>) .*'
+            replace: 'level=error E>'
+        - replace:
+            expression: '.* (W>) .*'
+            replace: 'level=warning W>'
+        - replace:
+            expression: '.* (I>) .*'
+            replace: 'level=info I>'
+        - replace:
+            expression: '.* (F>) .*'
+            replace: 'level=fatal F>'
+        - replace:
+            expression: '.* (C>) .*'
+            replace: 'level=crit C>'
+      - job_name: system
+        journal:
+          max_age: 12h
+        static_configs:
+        - targets:
+            - localhost
+          labels:
+            job: varlogs
+            __path__: /var/log/*log
+            __path_exclude__: /host/var/pods/*log

@@ -134,11 +134,15 @@ func (yandexProvider *Provider) GetNodes() map[string]*provider.Node {
 	nodes := make(map[string]*provider.Node)
 	resources := yandexProvider.tfState.GetResourcesByType("yandex_compute_instance_group")
 
+	index := 0
+
 	for _, resource := range resources {
 		for _, instance := range resource.Instances { //nolint
 			for _, innerInstance := range instance.Attributes.InnerInstances {
+				index++
 				node := provider.Node{
-					Fqdn: innerInstance.Fqdn,
+					Index: index,
+					Fqdn:  innerInstance.Fqdn,
 					Resources: provider.Resources{
 						CPU: instance.Attributes.InstanceTemplate[0].
 							Resources[0].Cores,
