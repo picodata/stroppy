@@ -40,7 +40,10 @@ func (cc *cockroachCluster) Connect() (interface{}, error) {
 	return cluster.NewCockroachCluster(cc.DBUrl, cc.connectionPoolSize) //nolint
 }
 
-func (cc *cockroachCluster) Deploy(shellState *state.State) error {
+func (cc *cockroachCluster) Deploy(
+	_ *kubernetes.Kubernetes,
+	shellState *state.State,
+) error {
 	var err error
 
 	if err = cc.deploy(shellState); err != nil {

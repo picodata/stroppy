@@ -15,7 +15,6 @@ import (
 	"path"
 	"strings"
 	"text/template"
-	"time"
 
 	"github.com/apenella/go-ansible/pkg/options"
 	"github.com/apenella/go-ansible/pkg/playbook"
@@ -25,7 +24,12 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	"k8s.io/apimachinery/pkg/util/yaml"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	cconfig "k8s.io/client-go/applyconfigurations/core/v1"
+	sconfig "k8s.io/client-go/applyconfigurations/storage/v1"
+	"k8s.io/client-go/kubernetes"
+	"sigs.k8s.io/yaml"
 )
 
 const (
@@ -48,10 +52,19 @@ Host master
   ControlPath ansible-kubespray-%r@%h:%p
   ControlPersist 5m
 `
-	INVENTORY_NAME      string        = "inventory.yml" //nolint // constant
-	grafanaPort         int           = 3000            //nolint // constant
-	GRAFANA_REQ_TIMEOUT time.Duration = 10              //nolint // constant
-	EXIT_CODE_127       int           = 127             //nolint // constant
+	inventoryName string = "inventory.yml"
+	grafanaPort   int    = 3000
+	exitCode127   int    = 127
+)
+
+// helm repositories.
+const (
+	grafanaHelmRepoURL     = "https://grafana.github.io/helm-charts"
+	grafanaHelmRepoName    = "grafana"
+	prometheusHelmRepoURL  = "https://prometheus-community.github.io/helm-charts"
+	prometheusHelmRepoName = "prometheus-community"
+	nginxHelmRepoURL       = "https://kubernetes.github.io/ingress-nginx"
+	nginxHelmRepoName      = "nginx"
 )
 
 type SshK8SOpts struct {
@@ -76,7 +89,7 @@ type SshK8SOpts struct {
 // 12. Add node labels
 // 13. Deploy container with stroppy
 // 14. Deploy stroppy pod.
-func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
+func (k *Kubernetes) DeployK8SWithInfrastructure(shellState *state.State) error { //nolint
 	var (
 		file *os.File
 		err  error
@@ -95,7 +108,7 @@ func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
 	}
 
 	// replace template values to shh config variables
-	tmpl, err := template.New("config").Parse(SSH_CONFIG) //nolint:nosnakecase // constant
+	tmpl, err := template.New("config").Parse(SSH_CONFIG) //nolint
 	if err != nil {
 		merry.Prepend(err, "Error then parsing ssh config template")
 	}
@@ -122,26 +135,56 @@ func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
 		return merry.Prepend(err, "failed to intall galaxy roles")
 	}
 
-	// 7. run grafana on premise ansible playbook
-	if err = k.deployMonitoring(shellState); err != nil {
-		return merry.Prepend(err, "failed to deploy monitoring")
-	}
-
-	// 8. generate inventory and run kubespray ansible playbook
+	// 7. generate inventory and run kubespray ansible playbook
 	if err = k.deploySelf(shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy k8s")
 	}
 
-	// 9. generate inventory and run kubespray ansible playbook
-	if err = k.finalizeDeployment(shellState); err != nil {
-		return merry.Prepend(err, "failed to finalize k8s deploy")
-	}
-
-	// 10. set path variable to kubeconfig file
+	// 8. set path variable to kubeconfig file
 	// by default kubeconfig everytime in ~/.kube/config
 	k.Engine.SetClusterConfigFile(fmt.Sprintf("%s/.kube/config", os.Getenv("HOME")))
 
-	// 11. Open port forwarding
+	// 9. Add nodes labels
+	if err = k.Engine.AddNodeLabels(shellState); err != nil {
+		return merry.Prepend(err, "failed to add labels to cluster nodes")
+	}
+
+	// 10. Deploy ingress
+	if err = k.deployIngress(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy ingress")
+	}
+
+	/// 11. Deploy storage class and persistent volume
+	if err = k.deployStorageClassAndPV(shellState); err != nil {
+		return merry.Prepend(err, "failed to create storageClass and PV")
+	}
+
+	// 12. run grafana on premise ansible playbook
+	if err = k.deployGrafana(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy grafana")
+	}
+
+	// 12. run grafana on premise ansible playbook
+	if err = k.deployLoki(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy loki")
+	}
+
+	// 13. run grafana on premise ansible playbook
+	if err = k.deployPromtail(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy promtail")
+	}
+
+	// 14. run grafana on premise ansible playbook
+	if err = k.deployNodeExporter(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy node-exporter")
+	}
+
+	// 15. run grafana on premise ansible playbook
+	if err = k.deployPrometheus(shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy prometheus")
+	}
+
+	// 16. Open port forwarding
 	k.KubernetesPort = k.Engine.OpenSecureShellTunnel(
 		kubeengine.SSHEntity,
 		shellState.InstanceAddresses.GetFirstMaster().External,
@@ -152,18 +195,13 @@ func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
 	}
 	llog.Infoln("Status of creating ssh tunnel for the access to k8s: success")
 
-	// 12. Add nodes labels
-	if err = k.Engine.AddNodeLabels(kubeengine.ResourceDefaultNamespace); err != nil {
-		return merry.Prepend(err, "failed to add labels to cluster nodes")
-	}
-
-	// 13. Create stroppy deployment with one pod on master node
+	// 17. Create stroppy deployment with one pod on master node
 	k.StroppyPod = stroppy.CreateStroppyPod(k.Engine)
 	if err = k.StroppyPod.DeployNamespace(shellState); err != nil {
 		return merry.Prepend(err, "failed to create stroppy namespace")
 	}
 
-	// 14. Deploy stroppy pod
+	// 18. Deploy stroppy pod
 	if err = k.StroppyPod.DeployPod(shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy stroppy pod")
 	}
@@ -176,7 +214,7 @@ func (k *Kubernetes) DeployK8S(shellState *state.State) error { //nolint
 func (k *Kubernetes) OpenPortForwarding(shellState *state.State) error {
 	k.MonitoringPort = k.Engine.OpenSecureShellTunnel(
 		monitoringSshEntity,
-		shellState.InstanceAddresses.GetFirstMaster().External,
+		shellState.NodesInfo.IPs.FirstMasterIP.External,
 		clusterMonitoringPort,
 	)
 	if k.MonitoringPort.Err != nil {
@@ -192,135 +230,10 @@ func (k *Kubernetes) Shutdown() {
 	k.MonitoringPort.Tunnel.Close()
 }
 
-// Deploy monitoring (grafana, node_exporter, promtail)
-//
-//nolint:funlen // deploy all monitoring components
-func (k *Kubernetes) deployMonitoring(shellState *state.State) error {
-	// create monitoring inventory
-	var (
-		file   *os.File
-		length int
-		bytes  []byte
-		resp   *http.Response
-		err    error
-	)
-
-	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party/monitoring")
-
-	if bytes, err = k.GenerateMonitoringInventory(shellState); err != nil {
-		return merry.Prepend(err, "Error then serializing monitoring inventory")
-	}
-
-	if file, err = os.OpenFile(
-		path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
-		os.O_RDWR|os.O_CREATE|os.O_TRUNC,   //nolint:nosnakecase // constant
-		os.FileMode(roAll),
-	); err == nil {
-		if length, err = file.Write(bytes); err != nil {
-			return merry.Prepend(err, "Error then writing monitoring inventory")
-		}
-
-		llog.Tracef(
-			"%v bytes successfully written to %v",
-			length,
-			path.Join(workDir, INVENTORY_NAME), //nolint:nosnakecase // constant
-		)
-	}
-
-	//nolint:nosnakecase // constant
-	// next variables is wrappers around ansible
-	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
-
-	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{
-		Become:        false,
-		BecomeMethod:  "",
-		BecomeUser:    "",
-		AskBecomePass: false,
-	}
-
-	grafanaURL := url.URL{
-		Scheme: "http",
-		Opaque: "",
-		User:   &url.Userinfo{},
-		Host: net.JoinHostPort(
-			shellState.InstanceAddresses.GetFirstMaster().External,
-			fmt.Sprintf("%d", grafanaPort),
-		),
-		Path:        "",
-		RawPath:     "",
-		ForceQuery:  false,
-		RawQuery:    "",
-		Fragment:    "",
-		RawFragment: "",
-	}
-
-	//nolint:nosnakecase // constant
-	// check that grafana is deployed
-	llog.Tracef(
-		"grafana uri %s",
-		grafanaURL.String(),
-	)
-
-	contextWithTimeout, closeFn := context.WithTimeout(
-		context.Background(),
-		GRAFANA_REQ_TIMEOUT*time.Second, //nolint // constant
-	)
-
-	if resp, err = sendGetWithContext(
-		contextWithTimeout,
-		nil,
-		grafanaURL.String(),
-	); err != nil || (resp.StatusCode > 500 && resp.StatusCode < 599) {
-		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
-
-		llog.Tracef("Response: %v", resp)
-
-		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{
-			Binary:                     "",
-			Exec:                       nil,
-			Playbooks:                  []string{path.Join(workDir, "grafana.yml")},
-			Options:                    PBOpts,
-			ConnectionOptions:          connOpts,
-			PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
-			StdoutCallback:             "",
-		}
-
-		closeFn()
-
-		if err = grafanaPlaybook.Run(context.TODO()); err != nil {
-			return merry.Prepend(err, "Error then running monitoring playbooks")
-		}
-	} else {
-		llog.Infoln("Grafana already deployed. skipping")
-
-		closeFn()
-	}
-
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-
-	nodePlaybook := &playbook.AnsiblePlaybookCmd{
-		Binary:                     "",
-		Exec:                       nil,
-		Playbooks:                  []string{path.Join(workDir, "nodeexp.yml")},
-		Options:                    PBOpts,
-		ConnectionOptions:          connOpts,
-		PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
-		StdoutCallback:             "",
-	}
-
-	if err = nodePlaybook.Run(context.TODO()); err != nil {
-		return merry.Prepend(err, "Error then running monitoring playbooks")
-	}
-
-	return nil
-}
-
 // Deploy kubernetes cluster and all dependent software
 // Function execution order
 // 1. Check that kubernetes already deployed
-// 2. Deploy kubernetes via kubespray
+// 2. Deploy kubernetes via kubespray.
 func (k *Kubernetes) deploySelf(shellState *state.State) error {
 	// create kubespray inventory
 	var (
@@ -348,8 +261,7 @@ func (k *Kubernetes) deploySelf(shellState *state.State) error {
 		return merry.Prepend(err, "Error then serializing kubespray inventory")
 	}
 
-	//nolint:nosnakecase // constant
-	if file, err = os.Create(path.Join(inventoryDir, INVENTORY_NAME)); err != nil {
+	if file, err = os.Create(path.Join(inventoryDir, inventoryName)); err != nil {
 		return merry.Prepend(err, "Error then creating kubespray inventory file")
 	}
 
@@ -360,110 +272,395 @@ func (k *Kubernetes) deploySelf(shellState *state.State) error {
 	llog.Tracef(
 		"%v bytes successfully written to %v",
 		length,
-		path.Join(inventoryDir, INVENTORY_NAME), //nolint:nosnakecase // constant
+		path.Join(inventoryDir, inventoryName),
 	)
 
-	//nolint:nosnakecase // constant
 	// next variable is an ansible interaction objects
-	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, INVENTORY_NAME))
+	connOpts, PBOpts := createAnsibleOpts(path.Join(inventoryDir, inventoryName), shellState)
 
-	ansiblePrivelegeOptions := &options.AnsiblePrivilegeEscalationOptions{
+	ansiblePrivelegeOptions := &options.AnsiblePrivilegeEscalationOptions{ //nolint
 		Become:        true,
-		BecomeMethod:  "",
-		BecomeUser:    "",
 		AskBecomePass: false,
 	}
 
 	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party", "kubespray")
 
-	playbook := &playbook.AnsiblePlaybookCmd{
-		Binary:                     "",
-		Exec:                       nil,
-		Playbooks:                  []string{path.Join(workDir, "cluster.yml")},
+	playbook := &playbook.AnsiblePlaybookCmd{ //nolint
+		Playbooks: []string{
+			path.Join(workDir, "cluster.yml"),
+			path.Join(workDir, "kubeconfig.yml"),
+			path.Join(workDir, "cluster_additional.yml"),
+		},
 		Options:                    PBOpts,
 		ConnectionOptions:          connOpts,
 		PrivilegeEscalationOptions: ansiblePrivelegeOptions,
-		StdoutCallback:             "",
 	}
 
+	ansibleContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
 	// run kubespray ansible playbook
-	if err = playbook.Run(context.Background()); err != nil {
+	if err = playbook.Run(ansibleContext); err != nil {
 		return merry.Prepend(err, "Error then running kubespray playbook")
 	}
 
 	return nil
 }
 
-// Function for final k8s deployment steps
-// 1. Get kube config from master node
-// 2. Install grafana ingress into cluster
-// 3. Install metrics server
-func (k *Kubernetes) finalizeDeployment(shellState *state.State) error {
-	llog.Debugln("Run 'finalize deployment' playbooks")
+func (k *Kubernetes) deployStorageClassAndPV(shellState *state.State) error {
+	var err error
 
-	// create generic inventory
+	storageClass := sconfig.StorageClass("local-storage")
+
+	manifestDir := path.Join(
+		shellState.Settings.WorkingDirectory, "third_party", "extra", "manifests",
+	)
+
+	if err = k.Engine.ToEngineObject(
+		path.Join(manifestDir, "local-storage-class.yml"),
+		&storageClass,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into storageClass")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.StorageV1().StorageClasses().Apply(
+			kubeContext,
+			storageClass,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply storageClass manifest")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("Error then deploying storageClass"))
+	}
+
+	llog.Infoln("Local storage class creation: success")
+
+	if err = k.deployPV(
+		"local-pv-mon",
+		"default",
+		path.Join(manifestDir, "local-pv.yml"),
+		kubeengine.NodeNameMonitoring,
+		path.Join("/data", "volumes", "local-pv-mon"),
+		"2Gi", //nolint
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy PV local-pv-mon")
+	}
+
+	for name, node := range shellState.NodesInfo.NodesParams {
+		if err = k.deployPV(
+			fmt.Sprintf("local-pv-database-%d", node.Index),
+			"default",
+			path.Join(manifestDir, "local-pv.yml"),
+			kubeengine.NodeNameDBMS,
+			path.Join("/data", "volumes", "local-pv-database"),
+			fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.Disk-5), //nolint
+			shellState,
+		); err != nil {
+			return merry.Prepend(err, fmt.Sprintf("failed to deploy PV %s-%d", name, node.Index))
+		}
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployPV(
+	name, namespace, manifestPath, nodeName, filesystemPath string,
+	storageQantity string,
+	shellState *state.State,
+) error {
+	var (
+		err          error
+		diskQuantity resource.Quantity
+	)
+
+	if err = yaml.Unmarshal([]byte(storageQantity), &diskQuantity); err != nil {
+		return merry.Prepend(err, "failed to deserialize resources into Quantity")
+	}
+
+	persistentVolume := cconfig.PersistentVolume(name)
+
+	if err = k.Engine.ToEngineObject(
+		manifestPath,
+		&persistentVolume,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into persistentVolume")
+	}
+
+	inSelector := v1.NodeSelectorOpIn
+
+	persistentVolume.Name = &name
+	persistentVolume.Namespace = &namespace
+	persistentVolume.Spec.Capacity = &v1.ResourceList{
+		v1.ResourceName("storage"): diskQuantity,
+	}
+	persistentVolume.Spec.Local.Path = &filesystemPath
+	persistentVolume.Spec.NodeAffinity.Required.NodeSelectorTerms = []cconfig.
+		NodeSelectorTermApplyConfiguration{
+		{
+			MatchExpressions: []cconfig.NodeSelectorRequirementApplyConfiguration{
+				{
+					Key:      &nodeName,
+					Operator: &inSelector,
+					Values:   []string{"true"},
+				},
+			},
+		},
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.CoreV1().PersistentVolumes().Apply(
+			kubeContext,
+			persistentVolume,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply persistentVolume manifest")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployObject(
+		kubeContext, objectApplyFunc,
+	); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("Error then deploying persistentVolume"))
+	}
+
+	llog.Infof("Local persistent volume %s creation: success", name)
+
+	return nil
+}
+
+// Deploy monitoring (grafana, node_exporter, promtail)
+//
+//nolint:funlen // deploy all monitoring components
+func (k *Kubernetes) deployGrafana(shellState *state.State) error {
+	// create monitoring inventory
 	var (
 		file   *os.File
 		length int
 		bytes  []byte
+		resp   *http.Response
 		err    error
 	)
 
-	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party/extra")
+	workDir := path.Join(shellState.Settings.WorkingDirectory, "third_party/monitoring")
 
-	if bytes, err = k.generateSimplifiedInventory(shellState); err != nil {
-		return merry.Prepend(err, "Error then serializing generic inventory")
+	if bytes, err = k.GenerateMonitoringInventory(shellState); err != nil {
+		return merry.Prepend(err, "Error then serializing monitoring inventory")
 	}
 
-	//nolint:nosnakecase // constant
-	if file, err = os.Create(path.Join(workDir, INVENTORY_NAME)); err != nil {
-		return merry.Prepend(err, "Error then creating ansible inventory")
+	if file, err = os.OpenFile(
+		path.Join(workDir, inventoryName),
+		os.O_RDWR|os.O_CREATE|os.O_TRUNC, //nolint
+		os.FileMode(roAll),
+	); err == nil {
+		if length, err = file.Write(bytes); err != nil {
+			return merry.Prepend(err, "Error then writing monitoring inventory")
+		}
+
+		llog.Tracef(
+			"%v bytes successfully written to %v",
+			length,
+			path.Join(workDir, inventoryName),
+		)
 	}
 
-	if length, err = file.Write(bytes); err != nil {
-		return merry.Prepend(err, "Error then creating generic inventory")
-	}
-
-	//nolint:nosnakecase // constant
-	llog.Tracef("%v bytes successfully written to %v", length, path.Join(workDir, INVENTORY_NAME))
-
-	//nolint:nosnakecase // constant
 	// next variables is wrappers around ansible
-	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, INVENTORY_NAME))
+	connOpts, PBOpts := createAnsibleOpts(path.Join(workDir, inventoryName), shellState)
 
-	privOpts := options.AnsiblePrivilegeEscalationOptions{
+	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{ //nolint
 		Become:        false,
-		BecomeMethod:  "",
-		BecomeUser:    "",
 		AskBecomePass: false,
 	}
 
-	finalizePlaybook := &playbook.AnsiblePlaybookCmd{
-		Binary:                     "",
-		Exec:                       nil,
-		Playbooks:                  []string{path.Join(workDir, "finalize.yml")},
-		Options:                    PBOpts,
-		ConnectionOptions:          connOpts,
-		PrivilegeEscalationOptions: &privOpts,
-		StdoutCallback:             "",
+	grafanaURL := url.URL{ //nolint
+		Scheme: "http",
+		Host: net.JoinHostPort(
+			shellState.NodesInfo.IPs.FirstMasterIP.External,
+			fmt.Sprintf("%d", shellState.Settings.DeploymentSettings.GrPort),
+		),
 	}
 
-	if err = finalizePlaybook.Run(context.Background()); err != nil {
-		return merry.Prepend(err, "Error then finalizing deployment with finalize playbook")
+	// check that grafana is deployed
+	llog.Tracef(
+		"grafana uri %s",
+		grafanaURL.String(),
+	)
+
+	if resp, err = getServerStatus(
+		nil,
+		grafanaURL.String(),
+	); err != nil || (resp.StatusCode > 500 && resp.StatusCode < 599) {
+		llog.Infoln("Grafana is not deployed yet, run grafana playbook")
+
+		llog.Tracef("Response: %v", resp)
+
+		grafanaPlaybook := &playbook.AnsiblePlaybookCmd{ //nolint
+			Playbooks: []string{
+				path.Join(workDir, "grafana.yml"),
+				path.Join(workDir, "grafana_additional.yml"),
+			},
+			Options:                    PBOpts,
+			ConnectionOptions:          connOpts,
+			PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+		}
+
+		runCtx, grCtxCloseFn := context.WithCancel(context.Background())
+		defer grCtxCloseFn()
+
+		if err = grafanaPlaybook.Run(runCtx); err != nil {
+			return merry.Prepend(err, "failed to run grafana playbook")
+		}
+	} else {
+		llog.Infoln("Grafana deploy status: skipping")
 	}
 
-	manifestsPlaybook := &playbook.AnsiblePlaybookCmd{
-		Binary:                     "",
-		Exec:                       nil,
-		Playbooks:                  []string{path.Join(workDir, "manifests.yml")},
-		Options:                    PBOpts,
-		ConnectionOptions:          connOpts,
-		PrivilegeEscalationOptions: &privOpts,
-		StdoutCallback:             "",
+	if resp != nil {
+		defer resp.Body.Close()
 	}
 
-	if err = manifestsPlaybook.Run(context.Background()); err != nil {
-		return merry.Prepend(err, "Error then finalizing deployment with manifests playbook")
+	return nil
+}
+
+func (k *Kubernetes) deployLoki(shellState *state.State) error {
+	var (
+		resp *http.Response
+		err  error
+	)
+
+	monDir := path.Join(shellState.Settings.WorkingDirectory, "third_party", "monitoring")
+
+	// next variables is wrappers around ansible
+	connOpts, PBOpts := createAnsibleOpts(path.Join(monDir, "inventory.yml"), shellState)
+
+	ansiblePrivelegeOpts := options.AnsiblePrivilegeEscalationOptions{ //nolint
+		Become:        false,
+		AskBecomePass: false,
+	}
+
+	lokiUrl := url.URL{ //nolint
+		Scheme: "http",
+		Host: net.JoinHostPort(
+			shellState.NodesInfo.IPs.FirstMasterIP.External,
+			fmt.Sprintf("%d", lokiPort),
+		),
+	}
+
+	// check that grafana is deployed
+	llog.Tracef(
+		"loki uri %s",
+		lokiUrl.String(),
+	)
+
+	if resp, err = getServerStatus(
+		nil,
+		lokiUrl.String(),
+	); err != nil || (resp.StatusCode > 500 && resp.StatusCode < 599) {
+		lokiPlaybook := &playbook.AnsiblePlaybookCmd{ //nolint
+			Playbooks:                  []string{path.Join(monDir, "loki.yml")},
+			Options:                    PBOpts,
+			ConnectionOptions:          connOpts,
+			PrivilegeEscalationOptions: &ansiblePrivelegeOpts,
+		}
+
+		runCtx, lokiCtxCloseFn := context.WithCancel(context.Background())
+		defer lokiCtxCloseFn()
+
+		if err = lokiPlaybook.Run(runCtx); err != nil {
+			return merry.Prepend(err, "failed to run loki playbook")
+		}
+	} else {
+		llog.Infof("Loki deploy status: skipping")
+	}
+
+	if resp != nil {
+		defer resp.Body.Close()
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployPromtail(shellState *state.State) error { //nolint
+	var (
+		err   error
+		bytes []byte
+	)
+
+	if bytes, err = kubeengine.GetPromtailValues(shellState); err != nil {
+		return merry.Prepend(err, "failed to get promtail values")
+	}
+
+	if err = k.Engine.DeployChart(
+		&kubeengine.InstallOptions{ //nolint
+			ChartName:      path.Join(grafanaHelmRepoName, "promtail"),
+			ChartNamespace: "default",
+			ReleaseName:    "promtail",
+			RepositoryURL:  grafanaHelmRepoURL,
+			RepositoryName: grafanaHelmRepoName,
+			ValuesYaml:     string(bytes),
+		},
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy promtail chart")
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployNodeExporter(shellState *state.State) error {
+	var err error
+
+	if err = k.Engine.DeployChart(
+		&kubeengine.InstallOptions{ //nolint
+			ChartName:      path.Join(prometheusHelmRepoName, "prometheus-node-exporter"),
+			ChartNamespace: "default",
+			ReleaseName:    "node-exporter",
+			RepositoryURL:  prometheusHelmRepoURL,
+			RepositoryName: prometheusHelmRepoName,
+		},
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy node-exporter chart")
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployPrometheus(shellState *state.State) error { //nolint
+	var (
+		err   error
+		bytes []byte
+	)
+
+	if bytes, err = kubeengine.GetPrometheusValues(shellState); err != nil {
+		return merry.Prepend(err, "failed to get prometheus values")
+	}
+
+	if err = k.Engine.DeployChart(
+		&kubeengine.InstallOptions{ //nolint
+			ChartName:      path.Join(prometheusHelmRepoName, "prometheus"),
+			ChartNamespace: "default",
+			ReleaseName:    "prometheus",
+			RepositoryURL:  prometheusHelmRepoURL,
+			RepositoryName: prometheusHelmRepoName,
+			ValuesYaml:     string(bytes),
+		},
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy node-exporter chart")
 	}
 
 	return nil
@@ -501,7 +698,7 @@ func (k *Kubernetes) checkMasterDeploymentStatus() bool {
 	if stdout, err = cmd.Output(); err != nil {
 		llog.Warnln("kubectl command has non zero exit code")
 
-		if cmd.ProcessState.ExitCode() != EXIT_CODE_127 { //nolint:nosnakecase // constant
+		if cmd.ProcessState.ExitCode() != exitCode127 {
 			llog.Warnf("Error then retrieving k8s cluster status: %v", err)
 
 			return false
@@ -530,4 +727,31 @@ func (k *Kubernetes) checkMasterDeploymentStatus() bool {
 	llog.Infoln("Cluster already deployed and running")
 
 	return true
+}
+
+func (k *Kubernetes) deployIngress(shellState *state.State) error { //nolint
+	var (
+		err   error
+		bytes []byte
+	)
+
+	if bytes, err = kubeengine.GetIngressValues(shellState); err != nil {
+		return merry.Prepend(err, "failed to get ingress values")
+	}
+
+	if err = k.Engine.DeployChart(
+		&kubeengine.InstallOptions{ //nolint
+			ChartName:      path.Join(nginxHelmRepoName, "ingress-nginx"),
+			ChartNamespace: "default",
+			ReleaseName:    "ingress-nginx",
+			RepositoryURL:  nginxHelmRepoURL,
+			RepositoryName: nginxHelmRepoName,
+			ValuesYaml:     string(bytes),
+		},
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy nginx ingress")
+	}
+
+	return nil
 }

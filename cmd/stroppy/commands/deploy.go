@@ -105,6 +105,63 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 		"count nodes of cluster",
 	)
 
+	deployCmd.PersistentFlags().StringVar(
+		&deploySettings.AnsibleVerbosity,
+		"ansible-verbosity",
+		"",
+		"level of ansible stdout",
+	)
+
+	deployCmd.PersistentFlags().BoolVarP(
+		&deploySettings.ForceReinstall,
+		"force-reinstall",
+		"f",
+		false,
+		"force reinstall all componets",
+	)
+
+	deployCmd.PersistentFlags().StringVar(
+		&deploySettings.GrUser,
+		"grafana-user",
+		"stroppy",
+		"set user for grafana server",
+	)
+
+	deployCmd.PersistentFlags().StringVar(
+		&deploySettings.GrPassword,
+		"grafana-password",
+		"",
+		"set password for grafana server",
+	)
+
+	deployCmd.PersistentFlags().Uint16Var(
+		&deploySettings.GrPort,
+		"grafana-port",
+		3000, //nolint
+		"set port for grafana server",
+	)
+
+	deployCmd.PersistentFlags().Uint16Var(
+		&deploySettings.PromPort,
+		"prometheus-port",
+		30080, //nolint
+		"set port for prometheus server",
+	)
+
+	deployCmd.PersistentFlags().Uint16Var(
+		&deploySettings.PromSPort,
+		"prometheus-secure-port",
+		30443, //nolint
+		"set https port for prometheus server",
+	)
+
+	deployCmd.PersistentFlags().BoolVar(
+		&deploySettings.AllWorkers,
+		"all-workers",
+		false,
+		"use all nodes as dbms workers (including control plane nodes)",
+	)
+
 	deployCmd.PersistentFlags().BoolVarP(
 		&settings.DatabaseSettings.Sharded,
 		"sharded", "",

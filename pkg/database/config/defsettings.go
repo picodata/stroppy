@@ -5,7 +5,6 @@
 package config
 
 import (
-	"runtime"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
@@ -16,10 +15,7 @@ import (
 )
 
 const (
-	defaultCountCPU = 4
-
-	workingDirectory = "benchmark/deploy"
-
+	workingDirectory  = "."
 	chaosParameterFdb = "fdb-pod-kill-first,fdb-pod-kill-second"
 	chaosParameterPg  = "pg-pod-kill-first,pg-pod-kill-second"
 )
@@ -110,9 +106,8 @@ type DatabaseSettings struct {
 // DatabaseDefaults заполняет параметры для запуска тестов значениями по умолчанию
 // линтер требует указания всех полей структуры при присвоении переменной
 func DatabaseDefaults() *DatabaseSettings {
-	return &DatabaseSettings{
+	return &DatabaseSettings{ //nolint
 		DBType:             cluster.Postgres,
-		Workers:            defaultCountCPU * runtime.NumCPU(),
 		Count:              10000,
 		User:               "",
 		Password:           "",
@@ -130,9 +125,17 @@ func DatabaseDefaults() *DatabaseSettings {
 }
 
 type DeploymentSettings struct {
-	Provider string
-	Flavor   string
-	Nodes    int
+	Provider         string
+	Flavor           string
+	Nodes            int
+	AnsibleVerbosity string
+	ForceReinstall   bool
+	GrUser           string
+	GrPassword       string
+	GrPort           uint16
+	PromPort         uint16
+	PromSPort        uint16
+	AllWorkers       bool
 }
 
 // DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.

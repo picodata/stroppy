@@ -1,0 +1,19 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ydb-status-ingress
+  namespace: stroppy
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: stroppy-ydb-storage.picodata.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: stroppy-ydb-storage-status
+            port: 
+              number: 8765

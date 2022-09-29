@@ -17,4 +17,5 @@ spec:
   storageClusterRef:
     name: stroppy-ydb-storage
   nodeSelector:
-    node-type: "dbms-worker"
+    dbms-worker: "true"
+

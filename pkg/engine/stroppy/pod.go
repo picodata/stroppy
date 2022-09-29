@@ -60,7 +60,6 @@ func (pod *Pod) DeployNamespace(shellState *state.State) error {
 	stroppyNSConfig := applyconfig.Namespace(StroppyClientNSName)
 
 	if err = pod.e.ToEngineObject(
-		StroppyClientNSName,
 		path.Join(
 			shellState.Settings.WorkingDirectory,
 			"third_party", "extra", "manifests", "stroppy",
@@ -111,7 +110,6 @@ func (pod *Pod) DeployPod(shellState *state.State) error {
 	)
 
 	if err = pod.e.ToEngineObject(
-		StroppyClientPodName,
 		path.Join(
 			shellState.Settings.WorkingDirectory,
 			"third_party", "extra", "manifests", "stroppy",

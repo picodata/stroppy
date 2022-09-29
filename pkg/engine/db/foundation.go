@@ -51,7 +51,10 @@ func (fc *foundationCluster) Connect() (cluster interface{}, err error) {
 	return
 }
 
-func (fc *foundationCluster) Deploy(shellState *state.State) error {
+func (fc *foundationCluster) Deploy(
+	_ *kubernetes.Kubernetes,
+	shellState *state.State,
+) error {
 	var err error
 
 	if err = fc.deploy(shellState); err != nil {

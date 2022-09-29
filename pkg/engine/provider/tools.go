@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 
 	"github.com/ansel1/merry"
-	"github.com/ghodss/yaml"
 	llog "github.com/sirupsen/logrus"
+	"sigs.k8s.io/yaml"
 )
 
 func LoadClusterTemplate(dir string) (*ClusterConfigurations, error) {
@@ -31,10 +31,9 @@ func LoadClusterTemplate(dir string) (*ClusterConfigurations, error) {
 }
 
 func DispatchTemplate(
-    templatesConfig *ClusterConfigurations,
+	templatesConfig *ClusterConfigurations,
 	flavor string,
 ) (template ClusterParameters, err error) {
-
 	switch flavor {
 	case "small":
 		template = templatesConfig.Small
@@ -50,22 +49,5 @@ func DispatchTemplate(
 		err = merry.Wrap(ErrChooseConfig)
 	}
 
-	return
-}
-
-func DeepCopyAddressMap(addressMap map[string]map[string]string) (copy map[string]map[string]string) {
-	if addressMap == nil {
-		return
-	}
-
-	copy = make(map[string]map[string]string, len(addressMap))
-	for key, val := range addressMap {
-		valLen := len(val)
-		valCopy := make(map[string]string, valLen)
-		for valKey, valVal := range val {
-			valCopy[valKey] = valVal[:]
-		}
-		copy[key] = valCopy
-	}
 	return
 }

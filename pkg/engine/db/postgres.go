@@ -11,20 +11,18 @@ import (
 	"io/ioutil"
 	"path/filepath"
 
+	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/state"
 
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/kubernetes/scheme"
-
-	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	kuberv1 "k8s.io/api/core/v1"
-
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
 	v1 "github.com/zalando/postgres-operator/pkg/apis/acid.zalan.do/v1"
-	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
+	kuberv1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/scheme"
 )
 
 func createPostgresCluster(
@@ -66,7 +64,7 @@ func (pc *postgresCluster) Connect() (interface{}, error) {
 
 // Deploy
 // разворачивает postgres в кластере
-func (pc *postgresCluster) Deploy(shellState *state.State) error {
+func (pc *postgresCluster) Deploy(_ *kubernetes.Kubernetes, shellState *state.State) error {
 	var err error
 
 	if err = pc.deploy(shellState); err != nil {

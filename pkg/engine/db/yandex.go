@@ -9,17 +9,21 @@ import (
 	"path"
 	"time"
 
-	"github.com/ansel1/merry"
-	helmclient "github.com/mittwald/go-helm-client"
-	llog "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/state"
-	"gopkg.in/yaml.v2"
+
+	"github.com/ansel1/merry"
+	helmclient "github.com/mittwald/go-helm-client"
+	llog "github.com/sirupsen/logrus"
+	"github.com/tidwall/gjson"
+	goYaml "gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+	config "k8s.io/client-go/applyconfigurations/networking/v1"
+	k8sClient "k8s.io/client-go/kubernetes"
+	k8sYaml "sigs.k8s.io/yaml"
 )
 
 const (
@@ -59,10 +63,10 @@ func createYandexDBCluster(
 // the helm operator will be connected first. The operator is always
 // installed from the Yandex repository. Then the store and database
 // manifests will be deserialized and parameterized.
-func (yc *yandexCluster) Deploy(shellState *state.State) error {
+func (yc *yandexCluster) Deploy(kube *kubernetes.Kubernetes, shellState *state.State) error {
 	var err error
 
-	if err = yc.deployYandexDBOperator(); err != nil {
+	if err = yc.deployYandexDBOperator(shellState); err != nil {
 		return merry.Prepend(err, "Error then deploying ydb operator")
 	}
 
@@ -98,6 +102,10 @@ func (yc *yandexCluster) Deploy(shellState *state.State) error {
 		return merry.Prepend(err, "Error while waiting for YDB database")
 	}
 
+	if err = deployStatusIngress(kube, shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy ydb status ingress ingress")
+	}
+
 	return err
 }
 
@@ -107,12 +115,11 @@ func (yc *yandexCluster) GetSpecification() ClusterSpec {
 }
 
 // Deploy yandex db operator via helmclient library.
-//
-//nolint:funlen // because logic of this function is inseparable
-func (yc *yandexCluster) deployYandexDBOperator() error {
+func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error { //nolint
 	var (
 		client helmclient.Client
 		rel    *release.Release
+		bytes  []byte
 	)
 
 	kubeconfig, err := os.ReadFile(path.Join(os.Getenv("HOME"), ".kube/config"))
@@ -121,18 +128,15 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 	}
 
 	options := &helmclient.KubeConfClientOptions{
-		Options: &helmclient.Options{
+		Options: &helmclient.Options{ //nolint
 			Namespace:        "stroppy",
 			RepositoryCache:  "/tmp/.helmcache",
 			RepositoryConfig: "/tmp/.helmrepo",
 			RegistryConfig:   "/tmp/.config/helm",
 			Debug:            true,
 			Linting:          true,
-			DebugLog:         func(format string, v ...interface{}) {},
-			Output:           os.Stdout,
 		},
-		KubeContext: "",
-		KubeConfig:  kubeconfig,
+		KubeConfig: kubeconfig,
 	}
 
 	if client, err = helmclient.NewClientFromKubeConf(options); err != nil {
@@ -140,16 +144,9 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 	}
 
 	// Add YandexDB helm repository
-	chartRepo := repo.Entry{
-		Name:                  "ydb",
-		URL:                   ydbHelmRepo,
-		Username:              "",
-		Password:              "",
-		CertFile:              "",
-		KeyFile:               "",
-		CAFile:                "",
-		InsecureSkipTLSverify: false,
-		PassCredentialsAll:    false,
+	chartRepo := repo.Entry{ //nolint
+		Name: "ydb",
+		URL:  ydbHelmRepo,
 	}
 
 	// Add a chart-repository to the client.
@@ -157,33 +154,29 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 		return merry.Prepend(err, "Error then adding ydb helm repository")
 	}
 
+	if bytes, err = os.ReadFile(path.Join(
+		shellState.Settings.WorkingDirectory,
+		"third_party",
+		"extra",
+		"manifests",
+		"databases",
+		"yandexdb",
+		"opeator-values-tpl.yml",
+	)); err != nil {
+		return merry.Prepend(err, "failed to read ydb operator values yaml")
+	}
+
 	// Define the chart to be installed
-	chartSpec := helmclient.ChartSpec{
-		ReleaseName:      "ydb-operator",
-		ChartName:        "ydb/operator",
-		Namespace:        "stroppy",
-		ValuesYaml:       "",
-		Version:          "",
-		CreateNamespace:  false,
-		DisableHooks:     false,
-		Replace:          false,
-		Wait:             true,
-		WaitForJobs:      false,
-		DependencyUpdate: false,
-		Timeout:          time.Duration(helmTimeout),
-		GenerateName:     false,
-		NameTemplate:     "",
-		Atomic:           false,
-		SkipCRDs:         false,
-		UpgradeCRDs:      true,
-		SubNotes:         false,
-		Force:            false,
-		ResetValues:      false,
-		ReuseValues:      false,
-		Recreate:         false,
-		MaxHistory:       0,
-		CleanupOnFail:    false,
-		DryRun:           false,
+	chartSpec := helmclient.ChartSpec{ //nolint
+		ReleaseName: "ydb-operator",
+		ChartName:   "ydb/operator",
+		Namespace:   "stroppy",
+		ValuesYaml:  string(bytes),
+		Wait:        true,
+		Timeout:     time.Duration(helmTimeout),
+		Atomic:      true,
+		UpgradeCRDs: true,
+		MaxHistory:  5, //nolint
 	}
 
 	if rel, err = client.InstallOrUpgradeChart(context.Background(), &chartSpec, nil); err != nil {
@@ -197,13 +190,11 @@ func (yc *yandexCluster) deployYandexDBOperator() error {
 
 // Deploy YDB storage
 // Parse manifest and deploy yandex db storage via kubectl.
-//
-//nolint:varnamelen // ok is typecasting boolean
 func (yc *yandexCluster) deployStorage(shellState *state.State) error {
 	var (
 		err     error
 		bytes   []byte
-		storage map[interface{}]interface{}
+		storage map[string]interface{}
 	)
 
 	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
@@ -214,20 +205,35 @@ func (yc *yandexCluster) deployStorage(shellState *state.State) error {
 
 	llog.Tracef("%v bytes read from storage.yml\n", len(bytes))
 
-	if err = yaml.Unmarshal(bytes, &storage); err != nil {
-		return merry.Prepend(err, "Error then deserizalizing storage manifest")
+	if err = k8sYaml.Unmarshal(bytes, &storage); err != nil {
+		return merry.Prepend(err, "failed to deserizalize storage manifest")
 	}
 
-	metadata, ok := storage["metadata"].(map[interface{}]interface{})
-	if !ok {
+	metadata, statusOk := storage["metadata"].(map[string]interface{})
+	if !statusOk {
 		return merry.Prepend(err, castingError)
 	}
 
 	metadata["namespace"] = stroppyNamespaceName
 
-	spec, ok := storage["spec"].(map[interface{}]interface{})
-	if !ok {
+	spec, statusOk := storage["spec"].(map[string]interface{})
+	if !statusOk {
 		return merry.Prepend(err, castingError)
+	}
+
+	spec["dataStore"] = []interface{}{
+		map[string]interface{}{
+			"volumeMode":  "Filesystem",
+			"accessModes": []interface{}{"ReadWriteOnce"},
+			"resources": map[string]interface{}{
+				"requests": map[string]interface{}{
+					"storage": fmt.Sprintf(
+						"%dGi",
+						shellState.NodesInfo.GetFirstWorker().Resources.Disk-5, //nolint
+					),
+				},
+			},
+		},
 	}
 
 	// TODO: get it from terraform.tfstate
@@ -236,9 +242,8 @@ func (yc *yandexCluster) deployStorage(shellState *state.State) error {
 	spec["domain"] = "root"
 	spec["erasure"] = erasureSpecies // TODO to constant
 
-	var configuration string
-
-	if configuration, ok = spec["configuration"].(string); !ok {
+	configuration, statusOk := spec["configuration"].(string)
+	if !statusOk {
 		return merry.Prepend(err, castingError)
 	}
 
@@ -248,7 +253,7 @@ func (yc *yandexCluster) deployStorage(shellState *state.State) error {
 
 	spec["configuration"] = string(bytes)
 
-	if bytes, err = yaml.Marshal(storage); err != nil {
+	if bytes, err = k8sYaml.Marshal(storage); err != nil {
 		return merry.Prepend(err, "Error then serializing storage")
 	}
 
@@ -269,7 +274,7 @@ func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
 	var (
 		err     error
 		bytes   []byte
-		storage map[interface{}]interface{}
+		storage map[string]interface{}
 	)
 
 	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
@@ -281,20 +286,20 @@ func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
 
 	llog.Tracef("%v bytes read from database.yml\n", len(bytes))
 
-	if err = yaml.Unmarshal(bytes, &storage); err != nil {
+	if err = k8sYaml.Unmarshal(bytes, &storage); err != nil {
 		return merry.Prepend(err, "Error then deserializing database manifest")
 	}
 
-	metadata, ok := storage["metadata"].(map[interface{}]interface{})
-	if !ok {
+	metadata, statusOk := storage["metadata"].(map[string]interface{})
+	if !statusOk {
 		return merry.Prepend(err, castingError)
 	}
 
 	metadata["namespace"] = stroppyNamespaceName
 
 	// TODO: get it from terraform.tfstate
-	spec, ok := storage["spec"].(map[interface{}]interface{})
-	if !ok {
+	spec, statusOk := storage["spec"].(map[string]interface{})
+	if !statusOk {
 		return merry.Prepend(err, castingError)
 	}
 
@@ -302,8 +307,8 @@ func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
 	// https://github.com/picodata/stroppy/issues/94
 	spec["nodes"] = 1
 
-	resources, ok := spec["resources"].(map[interface{}]interface{})
-	if !ok {
+	resources, statusOk := spec["resources"].(map[string]interface{})
+	if !statusOk {
 		return merry.Prepend(err, castingError)
 	}
 
@@ -317,19 +322,19 @@ func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
 		},
 	}
 
-	containerResources, ok := resources["containerResources"].(map[interface{}]interface{})
+	containerResources, ok := resources["containerResources"].(map[string]interface{})
 	if !ok {
 		return merry.Prepend(err, castingError)
 	}
 
-	containerResources["limits"] = map[interface{}]interface{}{
+	containerResources["limits"] = map[string]interface{}{
 		// TODO: replace to formula based on host resources
 		// https://github.com/picodata/stroppy/issues/94
 		// resources can fe fetched from terraform.tfstate
 		"cpu": "100m",
 	}
 
-	if bytes, err = yaml.Marshal(storage); err != nil {
+	if bytes, err = k8sYaml.Marshal(storage); err != nil {
 		return merry.Prepend(err, "Error then serializing database.yml")
 	}
 
@@ -409,16 +414,16 @@ func waitObjectReady(fpath, name string) error {
 // Generate parameters for `storage` CRD.
 func paramStorageConfig(storage string) ([]byte, error) {
 	var (
-		confMap map[interface{}]interface{}
+		confMap map[string]interface{}
 		bytes   []byte
 		err     error
 	)
 
-	if err = yaml.Unmarshal(
+	if err = goYaml.Unmarshal(
 		[]byte(storage),
 		&confMap,
 	); err != nil {
-		return nil, merry.Prepend(err, "Error then deserializing storage manifest")
+		return nil, merry.Prepend(err, "failed to deserialize ydb configuration")
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
@@ -428,7 +433,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 		return nil, merry.Prepend(err, castingError)
 	}
 
-	hostConfigsFirst, ok := hostConfigs[0].(map[interface{}]interface{})
+	hostConfigsFirst, ok := hostConfigs[0].(map[string]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
 	}
@@ -438,14 +443,14 @@ func paramStorageConfig(storage string) ([]byte, error) {
 		return nil, merry.Prepend(err, castingError)
 	}
 
-	drive[0] = map[interface{}]interface{}{
+	drive[0] = map[string]interface{}{
 		"path": "/dev/kikimr_ssd_00",
 		"type": "SSD",
 	}
 
 	// TODO: replace to config based on resources from terraform.tfstate
 	// https://github.com/picodata/stroppy/issues/94
-	domainsConfig, ok := confMap["domains_config"].(map[interface{}]interface{})
+	domainsConfig, ok := confMap["domains_config"].(map[string]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
 	}
@@ -458,7 +463,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 	stateStorage[0] = map[string]interface{}{
 		"ring": map[string]interface{}{
 			"node": []interface{}{
-				1, 2, 3, 5, 6, 7, 8,
+				1, 2, 3, 4, 5, 6, 7, 8,
 			},
 			"nto_select": 5, //nolint // nto_select is parameter for nto
 		},
@@ -467,15 +472,17 @@ func paramStorageConfig(storage string) ([]byte, error) {
 
 	// TODO: replace to config based on resources from terraform.tfstate
 	// https://github.com/picodata/stroppy/issues/94
-	blobStorageConfig, ok := confMap["blob_storage_config"].(map[interface{}]interface{})
+	blobStorageConfig, ok := confMap["blob_storage_config"].(map[string]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
 	}
 
-	serviceSet, ok := blobStorageConfig["service_set"].(map[interface{}]interface{})
+	serviceSet, ok := blobStorageConfig["service_set"].(map[string]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
 	}
+
+	serviceSet["availability_domains"] = 1
 
 	failDomains := map[string]interface{}{
 		"fail_domains": []interface{}{
@@ -556,7 +563,9 @@ func paramStorageConfig(storage string) ([]byte, error) {
 
 	serviceSet["groups"] = []interface{}{
 		map[string]interface{}{
-			"erasure_species": erasureSpecies,
+			"group_id":         0,
+			"group_generation": 1,
+			"erasure_species":  erasureSpecies,
 			"rings": []interface{}{
 				failDomains,
 			},
@@ -565,7 +574,7 @@ func paramStorageConfig(storage string) ([]byte, error) {
 
 	// TODO: replace to config based on resources from terraform.tfstate
 	// https://github.com/picodata/stroppy/issues/94
-	chProfileConfig, ok := confMap["channel_profile_config"].(map[interface{}]interface{})
+	chProfileConfig, ok := confMap["channel_profile_config"].(map[string]interface{})
 	if !ok {
 		return nil, merry.Prepend(err, castingError)
 	}
@@ -593,9 +602,10 @@ func paramStorageConfig(storage string) ([]byte, error) {
 				"storage_pool_kind": "ssd",
 			},
 		},
+		"profile_id": 0,
 	}
 
-	if bytes, err = yaml.Marshal(confMap); err != nil {
+	if bytes, err = goYaml.Marshal(confMap); err != nil {
 		return []byte{}, merry.Prepend(err, "Error then serializing storage configuration")
 	}
 
@@ -629,4 +639,46 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	llog.Debugln("Connection to YDB successfully created")
 
 	return connection, nil
+}
+
+func deployStatusIngress(kube *kubernetes.Kubernetes, shellState *state.State) error {
+	var err error
+
+	statusIngress := config.Ingress("ydb-status-ingress", stroppyNamespaceName)
+
+	if err = kube.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party",
+			"extra",
+			"databases",
+			"yandexdb",
+		),
+		&statusIngress,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into ingress")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *k8sClient.Clientset) error {
+		if _, err = clientSet.NetworkingV1().Ingresses(stroppyNamespaceName).Apply(
+			kubeContext,
+			statusIngress,
+			kube.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply ingress manifest")
+		}
+
+		return nil
+	}
+
+	if err = kube.Engine.DeployObject(
+		kubeContext, objectApplyFunc,
+	); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy ingress"))
+	}
+
+	return nil
 }

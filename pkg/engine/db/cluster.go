@@ -26,7 +26,7 @@ type ClusterSpec struct {
 }
 
 type Cluster interface {
-	Deploy(*state.State) error
+	Deploy(*kubernetes.Kubernetes, *state.State) error
 	GetSpecification() ClusterSpec
 	Connect() (interface{}, error)
 }

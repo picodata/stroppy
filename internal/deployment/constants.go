@@ -10,8 +10,8 @@ const (
 
 	interactiveUsageHelpTemplate = `
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
-To access Grafana use address localhost:%d.
-To access to kubernetes cluster in cloud use address localhost:%d.
+To access Grafana use address http://%s:%s@%s:%d
+To access Prometheus use address http://%s:%d.
 Enter "quit" or "exit" to exit stroppy and destroy cluster.
 Enter "pop" to start populating deployed DB with accounts.
 Enter "pay" to start transfers test in deployed DB.

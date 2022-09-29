@@ -67,7 +67,7 @@ resource "yandex_compute_instance_group" "masters" {
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
             size     = var.masters_disk
-            type     = "network-ssd"
+            type     = "network-ssd-nonreplicated"
           }
         }
         network_interface {
@@ -113,7 +113,7 @@ resource "yandex_compute_instance_group" "workers" {
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
             size     = var.workers_disk
-            type     = "network-ssd"
+            type     = "network-ssd-nonreplicated"
           }
         }
         network_interface {
