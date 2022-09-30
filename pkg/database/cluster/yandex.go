@@ -3,6 +3,7 @@ package cluster
 import (
 	"context"
 	"fmt"
+	"os"
 	"path"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/ansel1/merry/v2"
 	"github.com/google/uuid"
 	llog "github.com/sirupsen/logrus"
+	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
 	"github.com/ydb-platform/ydb-go-sdk/v3"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table"
 	"github.com/ydb-platform/ydb-go-sdk/v3/table/options"
@@ -22,27 +24,82 @@ import (
 )
 
 const (
-	schemeErr  string = "Path does not exist"
-	stroppyDir string = "stroppy"
+	schemeErr      string = "Path does not exist"
+	stroppyDir     string = "stroppy"
+	stroppyAgent   string = "stroppy 1.0"
+	defaultTimeout        = time.Second * 5
 )
 
 type YandexDBCluster struct {
 	ydbConnection ydb.Connection
+	at_transfer   string
+	at_select     string
+	at_unified    string
+	acc_insert    string
 }
 
-func NewYandexDBCluster(ydbContext context.Context, dbURL string) (*YandexDBCluster, error) {
-	llog.Infof("Establishing connection to YDB on %s", dbURL)
+func envExists(key string) bool {
+	if value, ok := os.LookupEnv(key); ok {
+		return len(value) > 0
+	}
+	return false
+}
+
+func envConfigured() bool {
+	return (envExists("YDB_SERVICE_ACCOUNT_KEY_FILE_CREDENTIALS") ||
+		envExists("YDB_METADATA_CREDENTIALS") ||
+		envExists("YDB_ACCESS_TOKEN_CREDENTIALS"))
+}
+
+func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) (*YandexDBCluster, error) {
+	llog.Infof("Establishing connection to YDB on %s with poolSize %d", dbURL, poolSize)
 
 	var (
 		database ydb.Connection
 		err      error
 	)
 
-	if database, err = ydb.Open(ydbContext, dbURL); err != nil {
+	if envConfigured() {
+		llog.Infoln("NOTE: YDB connection credentials are configured through the environment")
+		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithUserAgent(stroppyAgent),
+			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
+			ydb.WithDiscoveryInterval(defaultTimeout),
+			environ.WithEnvironCredentials(ydbContext),
+		)
+	} else {
+		database, err = ydb.Open(ydbContext, dbURL,
+			ydb.WithUserAgent(stroppyAgent),
+			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
+			ydb.WithDiscoveryInterval(defaultTimeout),
+		)
+	}
+
+	if err != nil {
 		return nil, merry.Prepend(err, "Error then creating YDB connection holder")
 	}
 
-	return &YandexDBCluster{ydbConnection: database}, nil
+	// Build SQL text just once
+	tablePath := path.Join(stroppyDir, "transfer")
+	transferStmnt := insertEscapedPath(insertYdbTransfer, tablePath)
+	tablePath = path.Join(stroppyDir, "account")
+	selectStmnt := insertEscapedPath(srcAndDstYdbSelect, tablePath, tablePath)
+	unifiedStmnt := insertEscapedPath(unifiedTransfer, tablePath, tablePath, tablePath)
+	insertAccStmnt := fmt.Sprintf("DECLARE $bic AS String; "+
+		"DECLARE $ban AS String; DECLARE $balance AS Int64; "+
+		"UPSERT INTO `%s` (bic, ban, balance) VALUES ($bic, $ban, $balance)",
+		tablePath,
+	)
+
+	return &YandexDBCluster{
+		ydbConnection: database,
+		at_transfer:   transferStmnt,
+		at_select:     selectStmnt,
+		at_unified:    unifiedStmnt,
+		acc_insert:    insertAccStmnt,
+	}, nil
 }
 
 func (*YandexDBCluster) GetClusterType() DBClusterType {
@@ -55,11 +112,8 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 		clusterSettins Settings
 	)
 
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "settings")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second,
-	)
+	tableFullPath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "settings")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 
 	defer ctxCloseFn()
 
@@ -69,12 +123,12 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 			var queryResult result.StreamResult
 			if queryResult, err = ydbSession.StreamReadTable(
 				ydbContext,
-				tablePath,
+				tableFullPath,
 			); err != nil {
 				return merry.Prepend(err, "failed to fetch rows")
 			}
 
-			llog.Infoln("Settings successfully fetched from ydb")
+			llog.Traceln("Settings successfully fetched from ydb")
 
 			defer func() {
 				_ = queryResult.Close()
@@ -128,175 +182,223 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 	transfer *model.Transfer, //nolint
 	clientID uuid.UUID,
 ) error {
-	var (
-		err         error
-		transaction table.Transaction
-		ydbSession  table.Session
-		queryResult result.Result
-	)
-
-	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
-	rwTX := table.TxControl(table.BeginTx(table.WithSerializableReadWrite()))
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "transfer")
-
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
-	if ydbSession, err = ydbCluster.ydbConnection.Table().CreateSession(ydbContext); err != nil {
-		return merry.Prepend(err, "failed to create session")
-	}
-
-	// Prepare transfer insert
-	var (
-		transferStmnt table.Statement
-		selectStmnt   table.Statement
-		unifiedStmnt  table.Statement
-	)
-
-	if transferStmnt, err = ydbSession.Prepare(
+	return ydbCluster.ydbConnection.Table().DoTx(
 		ydbContext,
-		insertEscapedPath(insertYdbTransfer, tablePath),
-	); err != nil {
-		return merry.Prepend(err, "failed to prepare insert to transfer table")
-	}
-
-	tablePath = path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
-
-	if selectStmnt, err = ydbSession.Prepare(
-		ydbContext,
-		insertEscapedPath(srcAndDstYdbSelect, tablePath, tablePath),
-	); err != nil {
-		return merry.Prepend(err, "failed to prepare select accounts")
-	}
-
-	if unifiedStmnt, err = ydbSession.Prepare(
-		ydbContext,
-		insertEscapedPath(unifiedTransfer, tablePath, tablePath, tablePath),
-	); err != nil {
-		return merry.Prepend(err, "failed to prepare unified query")
-	}
-
-	if transaction, queryResult, err = selectStmnt.Execute(
-		ydbContext,
-		rwTX,
-		table.NewQueryParameters(table.ValueParam(
-			"params", types.StructValue(
-				types.StructFieldValue(
-					"src_bic",
-					types.StringValue([]byte(transfer.Acs[0].Bic)),
-				),
-				types.StructFieldValue(
-					"src_ban",
-					types.StringValue([]byte(transfer.Acs[0].Ban)),
-				),
-				types.StructFieldValue(
-					"dst_bic",
-					types.StringValue([]byte(transfer.Acs[1].Bic)),
-				),
-				types.StructFieldValue(
-					"dst_ban",
-					types.StringValue([]byte(transfer.Acs[1].Ban)),
-				),
-			),
-		)),
-	); err != nil {
-		return merry.Prepend(err, "failed to execute prepared select")
-	}
-
-	defer func() {
-		_ = queryResult.Close()
-	}()
-
-	for queryResult.NextResultSet(ydbContext) {
-		if queryResult.CurrentResultSet().RowCount() != 2 { //nolint // 2 is dst ans src rows count
-			llog.Tracef(
-				"missing transfer: src_bic: %s, src_ban: %s dst_bic: %s, dst_ban: %s",
-				transfer.Acs[0].Bic, transfer.Acs[0].Ban,
-				transfer.Acs[1].Bic, transfer.Acs[1].Ban,
+		func(ctx context.Context, tx table.TransactionActor) (err error) {
+			// Select from account table
+			var qr result.Result
+			qr, err = tx.Execute(
+				ctx, ydbCluster.at_select,
+				table.NewQueryParameters(table.ValueParam(
+					"params", types.StructValue(
+						types.StructFieldValue(
+							"src_bic",
+							types.StringValue([]byte(transfer.Acs[0].Bic)),
+						),
+						types.StructFieldValue(
+							"src_ban",
+							types.StringValue([]byte(transfer.Acs[0].Ban)),
+						),
+						types.StructFieldValue(
+							"dst_bic",
+							types.StringValue([]byte(transfer.Acs[1].Bic)),
+						),
+						types.StructFieldValue(
+							"dst_ban",
+							types.StringValue([]byte(transfer.Acs[1].Ban)),
+						),
+					),
+				)),
+				options.WithKeepInCache(true),
 			)
+			if err != nil {
+				return merry.Prepend(err, "failed to select from accounts table")
+			}
+			defer func() {
+				_ = qr.Close()
+			}()
 
-			return ErrNoRows
-		}
-	}
+			for qr.NextResultSet(ctx) {
+				if qr.CurrentResultSet().RowCount() != 2 { //nolint // 2 is dst ans src rows count
+					llog.Tracef(
+						"missing transfer: src_bic: %s, src_ban: %s dst_bic: %s, dst_ban: %s",
+						transfer.Acs[0].Bic, transfer.Acs[0].Ban,
+						transfer.Acs[1].Bic, transfer.Acs[1].Ban,
+					)
+					return ErrNoRows
+				}
+			}
+			if qr.Err() != nil {
+				return merry.Prepend(qr.Err(), "failed to work with select result")
+			}
 
-	if queryResult.Err() != nil {
-		return merry.Prepend(queryResult.Err(), "failed to work with select result")
-	}
+			// Insert the new row to the transfer table
+			_, err = tx.Execute(
+				ctx, ydbCluster.at_transfer,
+				table.NewQueryParameters(table.ValueParam(
+					"params", types.StructValue(
+						types.StructFieldValue(
+							"transfer_id",
+							types.StringValue([]byte(transfer.Id.String())),
+						),
+						types.StructFieldValue(
+							"src_bic",
+							types.StringValue([]byte(transfer.Acs[0].Bic)),
+						),
+						types.StructFieldValue(
+							"src_ban",
+							types.StringValue([]byte(transfer.Acs[0].Ban)),
+						),
+						types.StructFieldValue(
+							"dst_bic",
+							types.StringValue([]byte(transfer.Acs[1].Bic)),
+						),
+						types.StructFieldValue(
+							"dst_ban",
+							types.StringValue([]byte(transfer.Acs[1].Ban)),
+						),
+						types.StructFieldValue(
+							"amount",
+							types.Int64Value(transfer.Amount.UnscaledBig().Int64()),
+						),
+						types.StructFieldValue(
+							"state",
+							types.StringValue([]byte("complete")),
+						),
+					))),
+				options.WithKeepInCache(true),
+			)
+			if err != nil {
+				return merry.Prepend(err, "failed to insert into transfer table")
+			}
 
-	if _, err = transaction.ExecuteStatement(
-		ydbContext,
-		transferStmnt,
-		table.NewQueryParameters(table.ValueParam(
-			"params", types.StructValue(
-				types.StructFieldValue(
-					"transfer_id",
-					types.StringValue([]byte(transfer.Id.String())),
-				),
-				types.StructFieldValue(
-					"src_bic",
-					types.StringValue([]byte(transfer.Acs[0].Bic)),
-				),
-				types.StructFieldValue(
-					"src_ban",
-					types.StringValue([]byte(transfer.Acs[0].Ban)),
-				),
-				types.StructFieldValue(
-					"dst_bic",
-					types.StringValue([]byte(transfer.Acs[1].Bic)),
-				),
-				types.StructFieldValue(
-					"dst_ban",
-					types.StringValue([]byte(transfer.Acs[1].Ban)),
-				),
-				types.StructFieldValue(
-					"amount",
-					types.Int64Value(transfer.Amount.UnscaledBig().Int64()),
-				),
-				types.StructFieldValue(
-					"state",
-					types.StringValue([]byte("complete")),
-				),
-			),
-		)),
-	); err != nil {
-		return merry.Prepend(err, "failed to execute prepared insert into transfer table")
-	}
+			// Update two balances in the account table.
+			_, err = tx.Execute(
+				ctx, ydbCluster.at_unified,
+				table.NewQueryParameters(
+					table.ValueParam("params", types.StructValue(
+						types.StructFieldValue("src_bic", types.StringValue([]byte(transfer.Acs[0].Bic))),
+						types.StructFieldValue("src_ban", types.StringValue([]byte(transfer.Acs[0].Ban))),
+						types.StructFieldValue("dst_bic", types.StringValue([]byte(transfer.Acs[1].Bic))),
+						types.StructFieldValue("dst_ban", types.StringValue([]byte(transfer.Acs[1].Ban))),
+						types.StructFieldValue(
+							"amount",
+							types.Int64Value(transfer.Amount.UnscaledBig().Int64())),
+					))),
+				options.WithKeepInCache(true),
+			)
+			if err != nil {
+				return merry.Prepend(err, "failed to execute unified transfer")
+			}
 
-	if _, err = transaction.ExecuteStatement(
-		ydbContext,
-		unifiedStmnt,
-		table.NewQueryParameters(
-			table.ValueParam("params", types.StructValue(
-				types.StructFieldValue("src_bic", types.StringValue([]byte(transfer.Acs[0].Bic))),
-				types.StructFieldValue("src_ban", types.StringValue([]byte(transfer.Acs[0].Ban))),
-				types.StructFieldValue("dst_bic", types.StringValue([]byte(transfer.Acs[1].Bic))),
-				types.StructFieldValue("dst_ban", types.StringValue([]byte(transfer.Acs[1].Ban))),
-				types.StructFieldValue(
-					"amount",
-					types.Int64Value(transfer.Amount.UnscaledBig().Int64())),
-			),
-			),
-		),
-	); err != nil {
-		return merry.Prepend(err, "failed to execute unified transfer")
-	}
-
-	if _, err = transaction.CommitTx(context.Background()); err != nil {
-		return merry.Prepend(err, "failed to commit changes")
-	}
-
-	return nil
+			return nil
+		},
+		// Mark the transaction idempotent to allow retries.
+		table.WithIdempotent(),
+	)
 }
 
 func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
-	panic("unimplemented!")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	tablePath := path.Join(stroppyDir, "account")
+	selectStmnt := fmt.Sprintf("SELECT bic, ban, balance FROM `%s`", tablePath)
+
+	var accs []model.Account
+
+	err := ydbCluster.ydbConnection.Table().Do(
+		ydbContext,
+		func(ctx context.Context, sess table.Session) (err error) {
+			rows, err := sess.StreamExecuteScanQuery(ctx, selectStmnt, nil)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+			for rows.NextResultSet(ydbContext) {
+				for rows.NextRow() {
+					var Balance int64
+					var acc model.Account
+					if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
+						return merry.Prepend(err, "failed to scan account for FetchAccounts")
+					}
+					dec := new(inf.Dec)
+					dec.SetUnscaled(Balance)
+					acc.Balance = dec
+					accs = append(accs, acc)
+				}
+			}
+			return nil
+		},
+	)
+	if err != nil {
+		return nil, merry.Prepend(err, "failed to fetch accounts")
+	}
+
+	return accs, nil
 }
 
-//nolint:gocritic // two conflicting linters
 func (ydbCluster *YandexDBCluster) FetchBalance(
 	bic string,
 	ban string,
 ) (*inf.Dec, *inf.Dec, error) {
-	panic("unimplemented!")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	tablePath := path.Join(stroppyDir, "account")
+	selectStmnt := fmt.Sprintf("DECLARE $bic AS String; DECLARE $ban AS String; "+
+		"SELECT balance, CAST(0 AS Int64) FROM `%s` WHERE bic = $bic AND ban = $ban", tablePath)
+
+	var (
+		err           error
+		rows          result.Result
+		balance       inf.Dec
+		pendingAmount inf.Dec
+	)
+
+	found := false
+	if err = ydbCluster.ydbConnection.Table().Do(
+		ydbContext,
+		func(ydbContext context.Context, ydbSession table.Session) error {
+			if _, rows, err = ydbSession.Execute(
+				ydbContext, table.OnlineReadOnlyTxControl(),
+				selectStmnt,
+				table.NewQueryParameters(
+					table.ValueParam("bic", types.BytesValueFromString(bic)),
+					table.ValueParam("ban", types.BytesValueFromString(ban)),
+				),
+				options.WithKeepInCache(true),
+			); err != nil {
+				return err
+			}
+			defer func() {
+				_ = rows.Close()
+			}()
+
+			if rows.NextResultSet(ydbContext) {
+				if rows.NextRow() {
+					err = rows.Scan(&balance, &pendingAmount)
+					if err != nil {
+						return err
+					}
+					found = true
+				}
+			}
+			return nil
+		},
+	); err != nil {
+		return nil, nil, err
+	}
+
+	if !found {
+		return nil, nil, merry.Errorf("No amount for bic %s and ban %s", bic, ban)
+	}
+	return &balance, &pendingAmount, nil
 }
 
 func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
@@ -306,33 +408,21 @@ func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
 		amount      int64
 	)
 
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "checksum")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second,
-	)
-
+	tablePath := path.Join(stroppyDir, "checksum")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
-
-	readTx := table.TxControl(
-		table.BeginTx(
-			table.WithOnlineReadOnly(),
-		),
-		table.CommitTx(),
-	)
 
 	if err = ydbCluster.ydbConnection.Table().Do(
 		ydbContext,
 		func(ydbContext context.Context, ydbSession table.Session) error {
 			if _, queryResult, err = ydbSession.Execute(
-				ydbContext,
-				readTx,
+				ydbContext, table.OnlineReadOnlyTxControl(),
 				fmt.Sprintf("SELECT amount FROM `%s` WHERE name = %q;", tablePath, "total"),
 				nil,
+				options.WithKeepInCache(true),
 			); err != nil {
 				return merry.Prepend(err, "failed to execute select query")
 			}
-
 			return nil
 		},
 	); err != nil {
@@ -378,29 +468,18 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 		totalBalance int64
 	)
 
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second*10, //nolint
-	)
-
+	tablePath := path.Join(stroppyDir, "account")
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
-
-	readTx := table.TxControl(
-		table.BeginTx(
-			table.WithOnlineReadOnly(),
-		),
-		table.CommitTx(),
-	)
 
 	if err = ydbCluster.ydbConnection.Table().Do(
 		ydbContext,
 		func(ydbContext context.Context, ydbSession table.Session) error {
 			if _, queryResult, err = ydbSession.Execute(
-				ydbContext,
-				readTx,
+				ydbContext, table.OnlineReadOnlyTxControl(),
 				fmt.Sprintf("SELECT SUM(balance) AS total FROM `%s`;", tablePath),
 				nil,
+				options.WithKeepInCache(true),
 			); err != nil {
 				return merry.Prepend(err, "failed to execute select query")
 			}
@@ -442,26 +521,16 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 
 func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) error {
 	var err error
+	tablePath := path.Join(stroppyDir, "checksum")
 
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "checksum")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second,
-	)
-
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
-
-	writeTX := table.TxControl(
-		table.BeginTx(table.WithSerializableReadWrite()),
-		table.CommitTx(),
-	)
 
 	if err = ydbCluster.ydbConnection.Table().Do(
 		ydbContext,
 		func(ydbContext context.Context, ydbSession table.Session) error {
 			if _, _, err = ydbSession.Execute(
-				ydbContext,
-				writeTX,
+				ydbContext, table.DefaultTxControl(),
 				fmt.Sprintf("DECLARE $name AS String;"+
 					"DECLARE $amount AS Int64;"+
 					"UPSERT INTO `%s` (name, amount) "+
@@ -472,16 +541,17 @@ func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) error {
 					table.ValueParam("name", types.StringValue([]byte("total"))),
 					table.ValueParam("amount", types.Int64Value(total.UnscaledBig().Int64())),
 				),
+				options.WithKeepInCache(true),
 			); err != nil {
 				return merry.Prepend(err, "failed to execute upsert")
 			}
 
 			return nil
 		},
+		table.WithIdempotent(),
 	); err != nil {
-		return merry.Prepend(err, "Error then inserting data in table")
+		return merry.Prepend(err, "Error when inserting data into checksum table")
 	}
-
 	return nil
 }
 
@@ -490,11 +560,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 
 	llog.Infof("Creating the folders and tables...")
 
-	ydbContext, cancel := context.WithTimeout(
-		context.Background(),
-		time.Second*30, //nolint
-	)
-
+	ydbContext, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	prefix := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir)
@@ -552,7 +618,7 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
 	return nil
 }
 
-//nolint // functions is not same
+// nolint // functions is not same
 func createSettingsTable(ydbContext context.Context, ydbClient table.Client, prefix string) error {
 	var err error
 
@@ -593,6 +659,12 @@ func createAccountTable(ydbContext context.Context, ydbClient table.Client, pref
 				options.WithColumn("ban", types.Optional(types.TypeString)),
 				options.WithColumn("balance", types.Optional(types.TypeInt64)),
 				options.WithPrimaryKeyColumn("bic", "ban"),
+				options.WithPartitioningSettings(
+					options.WithPartitioningByLoad(options.FeatureEnabled),
+					options.WithPartitioningBySize(options.FeatureEnabled),
+					options.WithMinPartitionsCount(50),
+					options.WithPartitionSizeMb(256),
+				),
 			); err != nil {
 				return merry.Prepend(err, "Error then calling function for creating table")
 			}
@@ -629,6 +701,12 @@ func createTransferTable(ydbContext context.Context, ydbClient table.Client, pre
 				options.WithColumn("client_id", types.Optional(types.TypeString)),
 				options.WithColumn("client_timestamp", types.Optional(types.TypeTimestamp)),
 				options.WithPrimaryKeyColumn("transfer_id"),
+				options.WithPartitioningSettings(
+					options.WithPartitioningByLoad(options.FeatureEnabled),
+					options.WithPartitioningBySize(options.FeatureEnabled),
+					options.WithMinPartitionsCount(50),
+					options.WithPartitionSizeMb(256),
+				),
 			); err != nil {
 				return merry.Prepend(err, "Error then calling function for creating table")
 			}
@@ -644,7 +722,7 @@ func createTransferTable(ydbContext context.Context, ydbClient table.Client, pre
 	return nil
 }
 
-//nolint // functions createChecksumTable and createSettingsTable is not same
+// nolint // functions createChecksumTable and createSettingsTable is not same
 func createChecksumTable(ydbContext context.Context, ydbClient table.Client, prefix string) error {
 	var err error
 
@@ -740,17 +818,11 @@ func upsertSettings(
 ) error {
 	var err error
 
-	writeTX := table.TxControl(
-		table.BeginTx(table.WithSerializableReadWrite()),
-		table.CommitTx(),
-	)
-
 	if err = ydbTableClient.Do(
 		ydbContext,
 		func(ydbContext context.Context, ydbSession table.Session) error {
 			if _, _, err = ydbSession.Execute(
-				ydbContext,
-				writeTX,
+				ydbContext, table.DefaultTxControl(),
 				fmt.Sprintf("DECLARE $key AS List<String>;"+
 					"DECLARE $value AS List<String>;"+
 					"UPSERT INTO `%s` (key, value) "+
@@ -767,12 +839,14 @@ func upsertSettings(
 						types.StringValue([]byte(seed)),
 					)),
 				),
+				options.WithKeepInCache(true),
 			); err != nil {
 				return merry.Prepend(err, "failed to execute upsert")
 			}
 
 			return nil
 		},
+		table.WithIdempotent(),
 	); err != nil {
 		return merry.Prepend(err, "Error then inserting data in table")
 	}
@@ -785,42 +859,27 @@ func upsertSettings(
 func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) error {
 	var err error
 
-	writeTX := table.TxControl(
-		table.BeginTx(table.WithSerializableReadWrite()),
-		table.CommitTx(),
-	)
-
-	tablePath := path.Join(ydbCluster.ydbConnection.Name(), stroppyDir, "account")
-	ydbContext, ctxCloseFn := context.WithTimeout(
-		context.Background(),
-		time.Second,
-	)
-
+	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	if err = ydbCluster.ydbConnection.Table().Do(
 		ydbContext,
 		func(ydbContext context.Context, ydbSession table.Session) error {
 			if _, _, err = ydbSession.Execute(
-				ydbContext,
-				writeTX,
-				fmt.Sprintf("DECLARE $bic AS String;"+
-					"DECLARE $ban AS String;"+
-					"DECLARE $balance AS Int64;"+
-					"UPSERT INTO `%s` (bic, ban, balance) VALUES ($bic, $ban, $balance)",
-					tablePath,
-				),
+				ydbContext, table.DefaultTxControl(),
+				ydbCluster.acc_insert,
 				table.NewQueryParameters(
 					table.ValueParam("bic", types.StringValue([]byte(acc.Bic))),
 					table.ValueParam("ban", types.StringValue([]byte(acc.Ban))),
 					table.ValueParam("balance", types.Int64Value(acc.Balance.UnscaledBig().Int64())),
 				),
+				options.WithKeepInCache(true),
 			); err != nil {
 				return merry.Prepend(err, "failed to execute upsert")
 			}
-
 			return nil
 		},
+		table.WithIdempotent(),
 	); err != nil {
 		return merry.Prepend(err, "Error then inserting data in table")
 	}
