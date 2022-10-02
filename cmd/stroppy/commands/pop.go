@@ -14,6 +14,7 @@ import (
 	"gitlab.com/picodata/stroppy/internal/deployment"
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/state"
+	"gitlab.com/picodata/stroppy/pkg/statistics"
 	"gopkg.in/inf.v0"
 )
 
@@ -22,13 +23,15 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		Use:     "pop",
 		Aliases: []string{"populate"},
 		Short:   "Create and populate the accounts database",
-		Example: "./stroppy pop -c 100000000",
+		Example: "./stroppy pop -n 100000000",
 
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return initLogFacility(settings)
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
+			statistics.StatsSetTotal(settings.DatabaseSettings.Count)
+
 			if settings.EnableProfile {
 				go func() {
 					llog.Infoln(http.ListenAndServe("localhost:6060", nil))
