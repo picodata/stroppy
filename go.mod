@@ -25,6 +25,8 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/tarantool/go-tarantool v0.0.0-20220113162241-9c9a68e09870
 	github.com/tidwall/gjson v1.8.1
+	github.com/ydb-platform/ydb-go-genproto v0.0.0-20220922065549-66df47a830ba
+	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.1.2
 	github.com/ydb-platform/ydb-go-sdk/v3 v3.38.2
 	github.com/ydb-platform/ydb-kubernetes-operator v0.0.0-20220913070254-59c84ccfc365
 	github.com/zalando/postgres-operator v1.6.3
@@ -84,6 +86,7 @@ require (
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt v3.2.2+incompatible // indirect
 	github.com/golang-jwt/jwt/v4 v4.4.1 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.2 // indirect
@@ -158,7 +161,9 @@ require (
 	github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 // indirect
 	github.com/xeipuuv/gojsonschema v1.2.0 // indirect
 	github.com/xlab/treeprint v1.1.0 // indirect
-	github.com/ydb-platform/ydb-go-genproto v0.0.0-20220922065549-66df47a830ba // indirect
+	github.com/yandex-cloud/go-genproto v0.0.0-20211115083454-9ca41db5ed9e // indirect
+	github.com/ydb-platform/ydb-go-yc v0.8.3 // indirect
+	github.com/ydb-platform/ydb-go-yc-metadata v0.5.2 // indirect
 	github.com/youmark/pkcs8 v0.0.0-20181117223130-1be2e3e5546d // indirect
 	go.starlark.net v0.0.0-20200306205701-8dd3e2ee1dd5 // indirect
 	golang.org/x/net v0.0.0-20220722155237-a158d28d115b // indirect
