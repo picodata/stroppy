@@ -5,7 +5,6 @@
 package payload
 
 import (
-	"errors"
 	"fmt"
 	"runtime"
 	"strings"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/ansel1/merry"
 	"github.com/apple/foundationdb/bindings/go/src/fdb"
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 	"gitlab.com/picodata/stroppy/internal/fixed_random_source"
 	"gitlab.com/picodata/stroppy/internal/model"
@@ -43,13 +43,12 @@ type PopStats struct {
 }
 
 func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refactor
-	var err error
-
 	stats := PopStats{}
 
 	llog.Tracef("%#v %#v", p.config.Count, p.config.Seed) // TODO: remove
 
-	if err = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
+	err := p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed))
+	if err != nil {
 		return merry.Prepend(err, "cluster bootstrap failed")
 	}
 
@@ -69,19 +68,28 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 			cookie := statistics.StatsRequestStart()
 			bic, ban := rand.NewBicAndBan()
 			balance := rand.NewStartBalance()
-			acc := model.Account{
+			acc := model.Account{ //nolint
 				Bic:     bic,
 				Ban:     ban,
 				Balance: balance,
 				Found:   false,
 			}
-
-			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
+			// Retry loop
 			for {
-				if err = p.Cluster.InsertAccount(acc); err != nil {
-					if errors.Is(err, cluster.ErrDuplicateKey) {
+				insertErr := p.Cluster.InsertAccount(acc)
+				if insertErr != nil {
+					if errors.Is(insertErr, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
-						break
+						// Duplicate account means we need to re-generate the values and retry
+						bic, ban := rand.NewBicAndBan()
+						acc = model.Account{ //nolint
+							Bic:     bic,
+							Ban:     ban,
+							Balance: balance,
+							Found:   false,
+						}
+
+						continue
 					}
 					atomic.AddUint64(&stats.errors, 1)
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
@@ -91,36 +99,41 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 					// description of mongo.error with code 133 - FailedToSatisfyReadPreference (Could not find host matching read preference { mode: "primary" } for set)
 					// description of mongo.error with code 64 - waiting for replication timed out
 					//  description of mongo.error with code 11602 - InterruptedDueToReplStateChange
-					if errors.Is(err, cluster.ErrTimeoutExceeded) || errors.Is(err, cluster.ErrInternalServerError) ||
-						errors.Is(err, fdb.Error{
+					if errors.Is(insertErr, cluster.ErrTimeoutExceeded) ||
+						errors.Is(insertErr, cluster.ErrInternalServerError) ||
+						errors.Is(insertErr, fdb.Error{
 							Code: 1037,
-						}) || errors.Is(err, fdb.Error{
-						Code: 1009,
-					}) ||
-						errors.Is(err, mongo.CommandError{ //nolint
+						}) ||
+						errors.Is(insertErr, fdb.Error{
+							Code: 1009, //nolint
+						}) ||
+						errors.Is(insertErr, mongo.CommandError{ //nolint
 							Code: 133, //nolint
 						}) ||
-						errors.Is(err, cluster.ErrTxRollback) ||
-						mongo.IsNetworkError(err) ||
+						errors.Is(insertErr, cluster.ErrTxRollback) ||
+						mongo.IsNetworkError(insertErr) ||
 						// временная мера до стабилизации mongo
-						mongo.IsTimeout(err) ||
-						strings.Contains(err.Error(), "connection ") ||
-						strings.Contains(err.Error(), "socket ") ||
-						errors.Is(err, mongo.WriteConcernError{Code: 64}) ||
-						errors.Is(err, mongo.WriteConcernError{Code: 11602}) ||
-						errors.Is(err, mongo.WriteError{}) {
-						llog.Errorf("Retrying after request error: %v", err)
+						mongo.IsTimeout(insertErr) ||
+						strings.Contains(insertErr.Error(), "connection ") ||
+						strings.Contains(insertErr.Error(), "socket ") ||
+						errors.Is(insertErr, mongo.WriteConcernError{Code: 64}) || //nolint
+						errors.Is(insertErr, mongo.WriteConcernError{Code: 11602}) || //nolint
+						errors.Is(insertErr, mongo.WriteError{}) { //nolint
+						llog.Errorf("Retrying after request error: %v", insertErr)
 						// workaround to finish populate test when account insert gets retryable error
 						time.Sleep(time.Millisecond)
 						continue
 					}
-					llog.Fatalf("Fatal error: %+v", err)
+
+					llog.Fatalf("Fatal error: %+v", insertErr)
 				} else {
-					i++
-					statistics.StatsRequestEnd(cookie)
 					break
 				}
 			}
+			// Switch to next account generation
+			i++
+
+			statistics.StatsRequestEnd(cookie)
 		}
 		llog.Tracef("Worker %d done %d accounts", id, nAccounts)
 	}
@@ -136,7 +149,7 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 
 	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
 	if err = p.chaos.ExecuteCommand(chaosCommand, shellState); err != nil {
-		llog.Errorf("failed to execute chaos command: %v", err)
+		return errors.Wrap(err, "failed to execute chaos command")
 	}
 
 	for i := 0; i < p.config.Workers; i++ {
