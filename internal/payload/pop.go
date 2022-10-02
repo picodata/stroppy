@@ -43,17 +43,19 @@ type PopStats struct {
 }
 
 func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refactor
-	var err error
+	// It is important not to use this as "err" in the worker,
+	// as that easily leads to race conditions.
+	var err1 error
 
 	stats := PopStats{}
 
-	if err = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
-		return merry.Prepend(err, "cluster bootstrap failed")
+	if err1 = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err1 != nil {
+		return merry.Prepend(err1, "cluster bootstrap failed")
 	}
 
 	var clusterSettings cluster.Settings
-	if clusterSettings, err = p.Cluster.FetchSettings(); err != nil {
-		return merry.Prepend(err, "cluster settings fetch failed")
+	if clusterSettings, err1 = p.Cluster.FetchSettings(); err1 != nil {
+		return merry.Prepend(err1, "cluster settings fetch failed")
 	}
 
 	worker := func(id, nAccounts int, wg *sync.WaitGroup) {
@@ -73,13 +75,21 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 				Balance: balance,
 				Found:   false,
 			}
-
-			llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
+			// Retry loop
 			for {
-				if err = p.Cluster.InsertAccount(acc); err != nil {
+				llog.Tracef("Inserting account %v:%v - %v", bic, ban, balance)
+				if err := p.Cluster.InsertAccount(acc); err != nil {
 					if errors.Is(err, cluster.ErrDuplicateKey) {
 						atomic.AddUint64(&stats.duplicates, 1)
-						break
+						// Duplicate account means we need to re-generate the values and retry
+						bic, ban := rand.NewBicAndBan()
+						acc = model.Account{
+							Bic:     bic,
+							Ban:     ban,
+							Balance: balance,
+							Found:   false,
+						}
+						continue
 					}
 					atomic.AddUint64(&stats.errors, 1)
 					// description of fdb.error with code 1037 -  "Storage process does not have recent mutations"
@@ -113,11 +123,12 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 					}
 					llog.Fatalf("Fatal error: %+v", err)
 				} else {
-					i++
-					statistics.StatsRequestEnd(cookie)
 					break
 				}
 			}
+			// Switch to next account generation
+			i++
+			statistics.StatsRequestEnd(cookie)
 		}
 		llog.Tracef("Worker %d done %d accounts", id, nAccounts)
 	}
@@ -132,8 +143,8 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 	remainder := p.config.Count - accountsPerWorker*p.config.Workers
 
 	chaosCommand := fmt.Sprintf("%s-%s", p.config.DBType, p.chaosParameter)
-	if err = p.chaos.ExecuteCommand(chaosCommand, shellState); err != nil {
-		llog.Errorf("failed to execute chaos command: %v", err)
+	if err1 = p.chaos.ExecuteCommand(chaosCommand, shellState); err1 != nil {
+		llog.Errorf("failed to execute chaos command: %v", err1)
 	}
 
 	for i := 0; i < p.config.Workers; i++ {
