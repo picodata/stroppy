@@ -60,6 +60,10 @@ linters-settings:
     # If it's higher than 0.0 (float) the check is enabled
     # Default: 0.0
     package-average: 0.3
+  varnamelen:
+    ignore-names:
+      - err
+      - ok
 
 issues:
   new-from-rev: origin/develop

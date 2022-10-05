@@ -79,9 +79,9 @@ loop:
 				llog.Infof("%s, Latency min/99%%/max/med: %.3fs/%.3fs/%.3fs/%.3fs",
 					progress,
 					s.periodic.latency_min.Seconds(),
-					s.periodic.tdigest.Quantile(0.99),
+					s.periodic.tdigest.Quantile(0.99), //nolint
 					s.periodic.latency_max.Seconds(),
-					s.periodic.tdigest.Quantile(0.50),
+					s.periodic.tdigest.Quantile(0.55), //nolint
 				)
 				s.periodic.Reset()
 			}
