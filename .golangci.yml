@@ -49,8 +49,9 @@ linters-settings:
       - ".WithMessage("
       - ".WithMessagef("
       - ".WithStack("
-      - ".Prepend("
-      - ".Append("
+      - "merry.Prepend("
+      - "merry.Append("
+      - "merry.New("
   cyclop:
     # The maximal code complexity to report.
     # Default: 10
