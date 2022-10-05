@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/engine/kubeengine"
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/state"
@@ -18,11 +19,16 @@ import (
 	helmclient "github.com/mittwald/go-helm-client"
 	llog "github.com/sirupsen/logrus"
 	"github.com/tidwall/gjson"
+	ydbApi "github.com/ydb-platform/ydb-kubernetes-operator/api/v1alpha1"
 	goYaml "gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/release"
 	"helm.sh/helm/v3/pkg/repo"
+	v1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	config "k8s.io/client-go/applyconfigurations/networking/v1"
 	k8sClient "k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 	k8sYaml "sigs.k8s.io/yaml"
 )
 
@@ -70,24 +76,16 @@ func (yc *yandexCluster) Deploy(kube *kubernetes.Kubernetes, shellState *state.S
 		return merry.Prepend(err, "Error then deploying ydb operator")
 	}
 
-	if err = yc.deployStorage(shellState); err != nil {
+	if err = deployStorage(yc.commonCluster.k, shellState); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
-	}
-
-	if err = waitObjectReady(
-		path.Join(
-			shellState.Settings.WorkingDirectory,
-			databasesDir,
-			yandexDirectory,
-			"stroppy-storage.yml",
-		),
-		"storage",
-	); err != nil {
-		return merry.Prepend(err, "Error while waiting for YDB storage")
 	}
 
 	if err = yc.deployDatabase(shellState); err != nil {
 		return merry.Prepend(err, "Error then deploying storage")
+	}
+
+	if err = deployStatusIngress(yc.commonCluster.k, shellState); err != nil {
+		return merry.Prepend(err, "failed to deploy status ingress")
 	}
 
 	if err = waitObjectReady(
@@ -161,7 +159,7 @@ func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error {
 		"manifests",
 		"databases",
 		"yandexdb",
-		"opeator-values-tpl.yml",
+		"ydb-opeator-values-tpl.yml",
 	)); err != nil {
 		return merry.Prepend(err, "failed to read ydb operator values yaml")
 	}
@@ -186,86 +184,6 @@ func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error {
 	llog.Infof("Release '%s' with YDB operator successfully deployed", rel.Name)
 
 	return nil
-}
-
-// Deploy YDB storage
-// Parse manifest and deploy yandex db storage via kubectl.
-func (yc *yandexCluster) deployStorage(shellState *state.State) error {
-	var (
-		err     error
-		bytes   []byte
-		storage map[string]interface{}
-	)
-
-	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
-
-	if bytes, err = os.ReadFile(path.Join(mpath, "storage.yml")); err != nil {
-		return merry.Prepend(err, "Error then reading file")
-	}
-
-	llog.Tracef("%v bytes read from storage.yml\n", len(bytes))
-
-	if err = k8sYaml.Unmarshal(bytes, &storage); err != nil {
-		return merry.Prepend(err, "failed to deserizalize storage manifest")
-	}
-
-	metadata, statusOk := storage["metadata"].(map[string]interface{})
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	metadata["namespace"] = stroppyNamespaceName
-
-	spec, statusOk := storage["spec"].(map[string]interface{})
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	spec["dataStore"] = []interface{}{
-		map[string]interface{}{
-			"volumeMode":  "Filesystem",
-			"accessModes": []interface{}{"ReadWriteOnce"},
-			"resources": map[string]interface{}{
-				"requests": map[string]interface{}{
-					"storage": fmt.Sprintf(
-						"%dGi",
-						shellState.NodesInfo.GetFirstWorker().Resources.Disk-5, //nolint
-					),
-				},
-			},
-		},
-	}
-
-	// TODO: get it from terraform.tfstate
-	// https://github.com/picodata/stroppy/issues/94
-	spec["nodes"] = 8
-	spec["domain"] = "root"
-	spec["erasure"] = erasureSpecies // TODO to constant
-
-	configuration, statusOk := spec["configuration"].(string)
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	if bytes, err = paramStorageConfig(configuration); err != nil {
-		return merry.Prepend(err, "Error then parameterizing storage configuration")
-	}
-
-	spec["configuration"] = string(bytes)
-
-	if bytes, err = k8sYaml.Marshal(storage); err != nil {
-		return merry.Prepend(err, "Error then serializing storage")
-	}
-
-	if err = os.WriteFile(
-		path.Join(mpath, "stroppy-storage.yml"),
-		bytes,
-		fs.FileMode(roAll),
-	); err != nil {
-		return merry.Prepend(err, "Error then writing storage.yml")
-	}
-
-	return applyManifest(path.Join(mpath, "stroppy-storage.yml"))
 }
 
 // Deploy YDB database
@@ -411,207 +329,6 @@ func waitObjectReady(fpath, name string) error {
 	return nil
 }
 
-// Generate parameters for `storage` CRD.
-func paramStorageConfig(storage string) ([]byte, error) {
-	var (
-		confMap map[string]interface{}
-		bytes   []byte
-		err     error
-	)
-
-	if err = goYaml.Unmarshal(
-		[]byte(storage),
-		&confMap,
-	); err != nil {
-		return nil, merry.Prepend(err, "failed to deserialize ydb configuration")
-	}
-
-	// TODO: replace to config based on resources from terraform.tfstate
-	// https://github.com/picodata/stroppy/issues/94
-	hostConfigs, ok := confMap["host_configs"].([]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	hostConfigsFirst, ok := hostConfigs[0].(map[string]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	drive, ok := hostConfigsFirst["drive"].([]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	drive[0] = map[string]interface{}{
-		"path": "/dev/kikimr_ssd_00",
-		"type": "SSD",
-	}
-
-	// TODO: replace to config based on resources from terraform.tfstate
-	// https://github.com/picodata/stroppy/issues/94
-	domainsConfig, ok := confMap["domains_config"].(map[string]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	stateStorage, ok := domainsConfig["state_storage"].([]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	stateStorage[0] = map[string]interface{}{
-		"ring": map[string]interface{}{
-			"node": []interface{}{
-				1, 2, 3, 4, 5, 6, 7, 8,
-			},
-			"nto_select": 5, //nolint // nto_select is parameter for nto
-		},
-		"ssid": 1,
-	}
-
-	// TODO: replace to config based on resources from terraform.tfstate
-	// https://github.com/picodata/stroppy/issues/94
-	blobStorageConfig, ok := confMap["blob_storage_config"].(map[string]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	serviceSet, ok := blobStorageConfig["service_set"].(map[string]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	serviceSet["availability_domains"] = 1
-
-	failDomains := map[string]interface{}{
-		"fail_domains": []interface{}{
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        1,
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        2, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        3, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        4, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        5, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        6, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        7, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-			map[string]interface{}{
-				"vdisk_locations": []interface{}{
-					map[string]interface{}{
-						"node_id":        8, //nolint
-						"path":           "/dev/kikimr_ssd_00",
-						"pdisk_category": "SSD",
-					},
-				},
-			},
-		},
-	}
-
-	serviceSet["groups"] = []interface{}{
-		map[string]interface{}{
-			"group_id":         0,
-			"group_generation": 1,
-			"erasure_species":  erasureSpecies,
-			"rings": []interface{}{
-				failDomains,
-			},
-		},
-	}
-
-	// TODO: replace to config based on resources from terraform.tfstate
-	// https://github.com/picodata/stroppy/issues/94
-	chProfileConfig, ok := confMap["channel_profile_config"].(map[string]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	profile, ok := chProfileConfig["profile"].([]interface{})
-	if !ok {
-		return nil, merry.Prepend(err, castingError)
-	}
-
-	profile[0] = map[string]interface{}{
-		"channel": []interface{}{
-			map[string]interface{}{
-				"erasure_species":   erasureSpecies,
-				"pdisk_category":    1,
-				"storage_pool_kind": "ssd",
-			},
-			map[string]interface{}{
-				"erasure_species":   erasureSpecies,
-				"pdisk_category":    1,
-				"storage_pool_kind": "ssd",
-			},
-			map[string]interface{}{
-				"erasure_species":   erasureSpecies,
-				"pdisk_category":    1,
-				"storage_pool_kind": "ssd",
-			},
-		},
-		"profile_id": 0,
-	}
-
-	if bytes, err = goYaml.Marshal(confMap); err != nil {
-		return []byte{}, merry.Prepend(err, "Error then serializing storage configuration")
-	}
-
-	return bytes, nil
-}
-
 // Connect to freshly deployed cluster.
 func (yc *yandexCluster) Connect() (interface{}, error) {
 	var (
@@ -651,8 +368,10 @@ func deployStatusIngress(kube *kubernetes.Kubernetes, shellState *state.State) e
 			shellState.Settings.WorkingDirectory,
 			"third_party",
 			"extra",
+			"manifests",
 			"databases",
 			"yandexdb",
+			"ydb-status-ingress.yml",
 		),
 		&statusIngress,
 	); err != nil {
@@ -681,4 +400,274 @@ func deployStatusIngress(kube *kubernetes.Kubernetes, shellState *state.State) e
 	}
 
 	return nil
+}
+
+// Deploy YDB storage
+// Parse manifest and deploy yandex db storage via kubectl.
+func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error { //nolint
+	var (
+		err             error
+		ydbStorage      ydbApi.Storage
+		restConfig      *rest.Config
+		ydbRestClient   kubeengine.YDBV1Alpha1Interface
+		storageQuantity resource.Quantity
+	)
+
+	if err = kube.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party",
+			"extra",
+			"manifests",
+			"databases",
+			"yandexdb",
+			"storage.yml",
+		),
+		&ydbStorage,
+	); err != nil {
+		return merry.Prepend(err, "failed to deserialize ydb storage manifest")
+	}
+
+	persistentVolumeFilesystem := v1.PersistentVolumeFilesystem
+
+	if err = k8sYaml.Unmarshal([]byte(
+		fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.Disk-5)), //nolint
+		&storageQuantity,
+	); err != nil {
+		return merry.Prepend(err, "failed to deserialize storageQuantity")
+	}
+
+	ydbStorage.Spec.DataStore = []v1.PersistentVolumeClaimSpec{{
+		AccessModes: []v1.PersistentVolumeAccessMode{
+			v1.PersistentVolumeAccessMode("ReadWriteOnce"),
+		},
+		Resources: v1.ResourceRequirements{ //nolint
+			Requests: v1.ResourceList{"storage": storageQuantity},
+		},
+		VolumeMode: &persistentVolumeFilesystem,
+	}}
+
+	ydbStorage.Spec.Nodes = int32(shellState.NodesInfo.WorkersCnt)
+	ydbStorage.Spec.Domain = "root"
+
+	switch shellState.NodesInfo.WorkersCnt {
+	case 8: //nolint
+		ydbStorage.Spec.Erasure = ydbApi.ErasureBlock42
+	case 9: //nolint
+		ydbStorage.Spec.Erasure = ydbApi.ErasureMirror3DC
+	default:
+		ydbStorage.Spec.Erasure = ydbApi.None
+	}
+
+	if ydbStorage.Spec.Configuration, err = parametrizeStorageConfig(
+		ydbStorage.Spec.Configuration,
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to parameterize storage configuration")
+	}
+
+	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {
+		return merry.Prepend(err, "failed to get kube config")
+	}
+
+	if ydbRestClient, err = kubeengine.NewForConfig(restConfig); err != nil {
+		return merry.Prepend(err, "failed to create rest client")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	if _, err = ydbRestClient.Storage("stroppy").Apply(
+		kubeContext,
+		&ydbStorage,
+		&metav1.ApplyOptions{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       ydbStorage.Kind,
+				APIVersion: ydbStorage.APIVersion,
+			},
+			DryRun:       []string{},
+			Force:        true,
+			FieldManager: "Merge",
+		}, //nolint
+	); err != nil {
+		return merry.Prepend(err, "failed to apply storage manifers")
+	}
+
+	llog.Infof("Storage %s deploy status: success", ydbStorage.Name)
+
+	return nil
+}
+
+// Generate parameters for `storage` CRD.
+func parametrizeStorageConfig(storage string, shellState *state.State) (string, error) { //nolint
+	var (
+		err     error
+		confMap map[string]interface{}
+	)
+
+	if err = goYaml.Unmarshal(
+		[]byte(storage),
+		&confMap,
+	); err != nil {
+		return "", merry.Prepend(err, "failed to deserialize ydb configuration")
+	}
+
+	domainsConfig, statusOk := confMap["domains_config"].(map[string]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	stateStorage, statusOk := domainsConfig["state_storage"].([]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	blobStorageConfig, statusOk := confMap["blob_storage_config"].(map[string]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	serviceSet, statusOk := blobStorageConfig["service_set"].(map[string]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	serviceSet["availability_domains"] = 1
+
+	failDomainsFunc := func(count int) []map[string]interface{} {
+		failDomains := []map[string]interface{}{}
+
+		for index := 1; index < count+1; index++ {
+			failDomains = append(
+				failDomains,
+				map[string]interface{}{
+					"vdisk_locations": []interface{}{
+						map[string]interface{}{
+							"node_id":        index,
+							"path":           "/dev/kikimr_ssd_00",
+							"pdisk_category": "SSD",
+						},
+					},
+				},
+			)
+		}
+
+		return failDomains
+	}
+
+	chProfileConfig, statusOk := confMap["channel_profile_config"].(map[string]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	profile, statusOk := chProfileConfig["profile"].([]interface{})
+	if !statusOk {
+		return "", merry.Prepend(err, castingError)
+	}
+
+	channelProfileFunc := func(erasureSpecies string) map[string]interface{} {
+		return map[string]interface{}{
+			"channel": []interface{}{
+				map[string]interface{}{
+					"erasure_species":   erasureSpecies,
+					"pdisk_category":    1,
+					"storage_pool_kind": "ssd",
+				},
+				map[string]interface{}{
+					"erasure_species":   erasureSpecies,
+					"pdisk_category":    1,
+					"storage_pool_kind": "ssd",
+				},
+				map[string]interface{}{
+					"erasure_species":   erasureSpecies,
+					"pdisk_category":    1,
+					"storage_pool_kind": "ssd",
+				},
+			},
+			"profile_id": 0,
+		}
+	}
+
+	switch len(shellState.NodesInfo.NodesParams) {
+	case 8: //nolint
+		stateStorage[0] = map[string]interface{}{
+			"ring": map[string]interface{}{
+				"node": []interface{}{
+					1, 2, 3, 4, 5, 6, 7, 8,
+				},
+				"nto_select": 5, //nolint // nto_select is parameter for nto
+			},
+			"ssid": 1,
+		}
+
+		serviceSet["groups"] = []interface{}{
+			map[string]interface{}{
+				"group_id":         0,
+				"group_generation": 1,
+				"erasure_species":  erasureSpecies,
+				"rings": []map[string]interface{}{
+					{
+						"fail_domains": failDomainsFunc(8), //nolint
+					},
+				},
+			},
+		}
+
+		profile[0] = channelProfileFunc(string(ydbApi.ErasureBlock42))
+	case 9: //nolint
+		stateStorage[0] = map[string]interface{}{
+			"ring": map[string]interface{}{
+				"node": []interface{}{
+					1, 2, 3, 4, 5, 6, 7, 8, 9,
+				},
+				"nto_select": 5, //nolint // nto_select is parameter for nto
+			},
+			"ssid": 1,
+		}
+
+		serviceSet["groups"] = []interface{}{
+			map[string]interface{}{
+				"group_id":         0,
+				"group_generation": 1,
+				"erasure_species":  erasureSpecies,
+				"rings": []map[string]interface{}{
+					{
+						"fail_domains": failDomainsFunc(9), //nolint
+					},
+				},
+			},
+		}
+
+		profile[0] = channelProfileFunc(string(ydbApi.ErasureMirror3DC))
+	default:
+		stateStorage[0] = map[string]interface{}{
+			"ring": map[string]interface{}{
+				"node":       []interface{}{1},
+				"nto_select": 1, //nolint // nto_select is parameter for nto
+			},
+			"ssid": 1,
+		}
+
+		serviceSet["groups"] = []interface{}{
+			map[string]interface{}{
+				"group_id":         0,
+				"group_generation": 1,
+				"erasure_species":  erasureSpecies,
+				"rings": []map[string]interface{}{
+					{
+						"fail_domains": failDomainsFunc(1),
+					},
+				},
+			},
+		}
+		profile[0] = channelProfileFunc(string(ydbApi.None))
+	}
+
+	var data []byte
+
+	if data, err = goYaml.Marshal(confMap); err != nil {
+		return "", merry.Prepend(err, "Error then serializing storage configuration")
+	}
+
+	return string(data), nil
 }
