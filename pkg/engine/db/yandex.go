@@ -3,10 +3,9 @@ package db
 import (
 	"context"
 	"fmt"
-	"io/fs"
 	"os"
-	"os/exec"
 	"path"
+	"strconv"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -18,7 +17,6 @@ import (
 	"github.com/ansel1/merry"
 	helmclient "github.com/mittwald/go-helm-client"
 	llog "github.com/sirupsen/logrus"
-	"github.com/tidwall/gjson"
 	ydbApi "github.com/ydb-platform/ydb-kubernetes-operator/api/v1alpha1"
 	goYaml "gopkg.in/yaml.v3"
 	"helm.sh/helm/v3/pkg/release"
@@ -80,28 +78,12 @@ func (yc *yandexCluster) Deploy(kube *kubernetes.Kubernetes, shellState *state.S
 		return merry.Prepend(err, "Error then deploying storage")
 	}
 
-	if err = yc.deployDatabase(shellState); err != nil {
-		return merry.Prepend(err, "Error then deploying storage")
+	if err = deployDatabase(yc.commonCluster.k, shellState); err != nil {
+		return merry.Prepend(err, "Error then deploying database")
 	}
 
 	if err = deployStatusIngress(yc.commonCluster.k, shellState); err != nil {
 		return merry.Prepend(err, "failed to deploy status ingress")
-	}
-
-	if err = waitObjectReady(
-		path.Join(
-			shellState.Settings.WorkingDirectory,
-			databasesDir,
-			yandexDirectory,
-			"stroppy-database.yml",
-		),
-		"database",
-	); err != nil {
-		return merry.Prepend(err, "Error while waiting for YDB database")
-	}
-
-	if err = deployStatusIngress(kube, shellState); err != nil {
-		return merry.Prepend(err, "failed to deploy ydb status ingress ingress")
 	}
 
 	return err
@@ -186,149 +168,6 @@ func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error {
 	return nil
 }
 
-// Deploy YDB database
-// Parse manifest and deploy yandex db database via kubectl.
-func (yc *yandexCluster) deployDatabase(shellState *state.State) error {
-	var (
-		err     error
-		bytes   []byte
-		storage map[string]interface{}
-	)
-
-	mpath := path.Join(shellState.Settings.WorkingDirectory, databasesDir, yandexDirectory)
-
-	bytes, err = os.ReadFile(path.Join(mpath, "database.yml"))
-	if err != nil {
-		return merry.Prepend(err, "Error then reading database.yml")
-	}
-
-	llog.Tracef("%v bytes read from database.yml\n", len(bytes))
-
-	if err = k8sYaml.Unmarshal(bytes, &storage); err != nil {
-		return merry.Prepend(err, "Error then deserializing database manifest")
-	}
-
-	metadata, statusOk := storage["metadata"].(map[string]interface{})
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	metadata["namespace"] = stroppyNamespaceName
-
-	// TODO: get it from terraform.tfstate
-	spec, statusOk := storage["spec"].(map[string]interface{})
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	// TODO: replace based on tfstate resources
-	// https://github.com/picodata/stroppy/issues/94
-	spec["nodes"] = 1
-
-	resources, statusOk := spec["resources"].(map[string]interface{})
-	if !statusOk {
-		return merry.Prepend(err, castingError)
-	}
-
-	resources["storageUnits"] = []interface{}{
-		map[string]interface{}{
-			// TODO: replace to formula based on host resources
-			// https://github.com/picodata/stroppy/issues/94
-			// resources can fe fetched from terraform.tfstate
-			"count":    1,
-			"unitKind": "ssd",
-		},
-	}
-
-	containerResources, ok := resources["containerResources"].(map[string]interface{})
-	if !ok {
-		return merry.Prepend(err, castingError)
-	}
-
-	containerResources["limits"] = map[string]interface{}{
-		// TODO: replace to formula based on host resources
-		// https://github.com/picodata/stroppy/issues/94
-		// resources can fe fetched from terraform.tfstate
-		"cpu": "100m",
-	}
-
-	if bytes, err = k8sYaml.Marshal(storage); err != nil {
-		return merry.Prepend(err, "Error then serializing database.yml")
-	}
-
-	if err = os.WriteFile(
-		path.Join(mpath, "stroppy-database.yml"),
-		bytes,
-		fs.FileMode(roAll),
-	); err != nil {
-		return merry.Prepend(err, "Error then writing stroppy-database.yml")
-	}
-
-	return applyManifest(path.Join(mpath, "stroppy-database.yml"))
-}
-
-// Run kubectl and apply manifest.
-func applyManifest(manifestName string) error {
-	var (
-		stdout []byte
-		err    error
-	)
-
-	// TODO: Replace with k8s api bindings
-	// https://github.com/picodata/stroppy/issues/100
-	cmd := exec.Command("kubectl", "apply", "-f", manifestName, "--output", "json")
-	if stdout, err = cmd.Output(); err != nil {
-		llog.Tracef("kubectl stdout:\n%v", stdout)
-
-		return merry.Prepend(
-			err,
-			fmt.Sprintf("Error then applying %s manifest", manifestName),
-		)
-	}
-
-	llog.Debugf("Manifest %s succesefully applied", manifestName)
-
-	return nil
-}
-
-// Run `n` times `kubectl get -f path` until the `Ready` status is received.
-func waitObjectReady(fpath, name string) error {
-	var (
-		err    error
-		output []byte
-	)
-
-	for index := 0; index <= timeout; index += step {
-		// TODO: https://github.com/picodata/stroppy/issues/99
-		cmd := exec.Command("kubectl", "get", "-f", fpath, "--output", "json")
-		if output, err = cmd.Output(); err != nil {
-			llog.Warnf("Error then executing 'kubectl get': %s", err)
-		}
-
-		status := gjson.Get(string(output), "status.state").String()
-
-		if status == "Ready" {
-			llog.Infof("%s deployed successfully", name)
-
-			break
-		}
-
-		if index == timeout {
-			return merry.Prepend(err, "Timeout exceeded objects still in not 'Ready' state")
-		}
-
-		llog.Debugf(
-			"Object %s in '%s' state, waiting %v seconds... \n",
-			name,
-			status,
-			timeout-index,
-		)
-		time.Sleep(time.Duration(step) * time.Second)
-	}
-
-	return nil
-}
-
 // Connect to freshly deployed cluster.
 func (yc *yandexCluster) Connect() (interface{}, error) {
 	var (
@@ -339,12 +178,11 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	if yc.commonCluster.DBUrl == "" {
 		yc.commonCluster.DBUrl = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
 
-		llog.Infoln("Changed DBURL on", yc.commonCluster.DBUrl)
+		llog.Infoln("Changed DBURL to", yc.commonCluster.DBUrl)
 	}
 
-	ydbContext, cancel := context.WithCancel(context.Background())
-
-	defer cancel()
+	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
+	defer ctxCloseFn()
 
 	if connection, err = cluster.NewYandexDBCluster(
 		ydbContext,
@@ -378,7 +216,7 @@ func deployStatusIngress(kube *kubernetes.Kubernetes, shellState *state.State) e
 		return merry.Prepend(err, "failed to cast manifest into ingress")
 	}
 
-	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	kubeContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second*5) //nolint
 	defer ctxCloseFn()
 
 	objectApplyFunc := func(clientSet *k8sClient.Clientset) error {
@@ -409,7 +247,7 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 		err             error
 		ydbStorage      ydbApi.Storage
 		restConfig      *rest.Config
-		ydbRestClient   kubeengine.YDBV1Alpha1Interface
+		ydbRestClient   *kubeengine.YDBV1Alpha1Client
 		storageQuantity resource.Quantity
 	)
 
@@ -427,6 +265,8 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 	); err != nil {
 		return merry.Prepend(err, "failed to deserialize ydb storage manifest")
 	}
+
+	ydbStorage.Namespace = stroppyNamespaceName
 
 	persistentVolumeFilesystem := v1.PersistentVolumeFilesystem
 
@@ -474,10 +314,10 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 		return merry.Prepend(err, "failed to create rest client")
 	}
 
-	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	kubeContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second*5) //nolint
 	defer ctxCloseFn()
 
-	if _, err = ydbRestClient.Storage("stroppy").Apply(
+	if _, err = ydbRestClient.YDBV1Alpha1().Storages("stroppy").Apply(
 		kubeContext,
 		&ydbStorage,
 		&metav1.ApplyOptions{
@@ -670,4 +510,88 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 	}
 
 	return string(data), nil
+}
+
+// Deploy YDB database
+// Parse manifest and deploy yandex db database via RESTapi.
+func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error {
+	var (
+		err               error
+		ydbDatabase       ydbApi.Database
+		restConfig        *rest.Config
+		ydbRestClient     *kubeengine.YDBV1Alpha1Client
+		databaseCPULimits resource.Quantity
+	)
+
+	if err = kube.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party",
+			"extra",
+			"manifests",
+			"databases",
+			"yandexdb",
+			"database.yml",
+		),
+		&ydbDatabase,
+	); err != nil {
+		return merry.Prepend(err, "failed to deserialize ydb database manifest")
+	}
+
+	ydbDatabase.Namespace = stroppyNamespaceName
+
+	switch len(shellState.NodesInfo.NodesParams) {
+	case 8, 9: //nolint
+		ydbDatabase.Spec.Nodes = 6 //nolint
+	default:
+		ydbDatabase.Spec.Nodes = 1 //nolint
+	}
+
+	var cpu string
+
+	switch {
+	case shellState.NodesInfo.GetFirstWorker().Resources.CPU == 1|2|3:
+		cpu = "100m"
+	default:
+		cpu = strconv.Itoa(int(shellState.NodesInfo.GetFirstWorker().Resources.CPU / 2)) //nolint
+	}
+
+	if err = k8sYaml.Unmarshal([]byte(cpu), databaseCPULimits); err != nil {
+		return merry.Prepend(err, "failed to deserialize storageQuantity")
+	}
+
+	ydbDatabase.Spec.Resources.ContainerResources.Limits = v1.ResourceList{
+		v1.ResourceCPU: databaseCPULimits,
+	}
+
+	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {
+		return merry.Prepend(err, "failed to get kube config")
+	}
+
+	if ydbRestClient, err = kubeengine.NewForConfig(restConfig); err != nil {
+		return merry.Prepend(err, "failed to create rest client")
+	}
+
+	kubeContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second*5) //nolint
+	defer ctxCloseFn()
+
+	if _, err = ydbRestClient.YDBV1Alpha1().Databases(stroppyNamespaceName).Apply(
+		kubeContext,
+		&ydbDatabase,
+		&metav1.ApplyOptions{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       ydbDatabase.Kind,
+				APIVersion: ydbDatabase.APIVersion,
+			},
+			DryRun:       []string{},
+			Force:        true,
+			FieldManager: "Merge",
+		},
+	); err != nil {
+		return merry.Prepend(err, "failed to apply storage manifers")
+	}
+
+	llog.Infof("Database %s deploy status: success", ydbDatabase.Name)
+
+	return nil
 }

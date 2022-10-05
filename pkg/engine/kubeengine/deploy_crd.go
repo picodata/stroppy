@@ -20,15 +20,15 @@ const (
 )
 
 type YDBV1Alpha1Interface interface {
-	Storage(namespace string) StorageInterface
-	// Database(namespace string) DatabaseInterface
+	Storages(namespace string) StorageInterface
+	Databases(namespace string) DatabaseInterface
 }
 
 type YDBV1Alpha1Client struct {
 	client *rest.RESTClient
 }
 
-func NewForConfig(cfg *rest.Config) (YDBV1Alpha1Interface, error) {
+func NewForConfig(cfg *rest.Config) (*YDBV1Alpha1Client, error) {
 	var (
 		err       error
 		ydbClient *rest.RESTClient
@@ -49,6 +49,10 @@ func NewForConfig(cfg *rest.Config) (YDBV1Alpha1Interface, error) {
 	}
 
 	return &YDBV1Alpha1Client{client: ydbClient}, nil
+}
+
+func (ydbClient *YDBV1Alpha1Client) YDBV1Alpha1() YDBV1Alpha1Interface {
+	return ydbClient
 }
 
 type StorageInterface interface {
@@ -73,7 +77,7 @@ type StorageClient struct {
 	ns     string
 }
 
-func (ydbClient *YDBV1Alpha1Client) Storage(namespace string) StorageInterface {
+func (ydbClient *YDBV1Alpha1Client) Storages(namespace string) StorageInterface {
 	return &StorageClient{
 		client: ydbClient.client,
 		ns:     namespace,
@@ -212,7 +216,7 @@ func (storageClient *StorageClient) Delete(
 }
 
 // Patch applies the patch and returns the patched storage.
-func (storageClient *StorageClient) Patch(
+func (storageClient *StorageClient) Patch( //nolint:dupl // api realization
 	ctx context.Context,
 	name string,
 	patchType types.PatchType,
@@ -277,6 +281,237 @@ func (storageClient *StorageClient) Apply(
 		Do(ctx).
 		Into(result); err != nil {
 		return nil, errors.Wrap(err, "failed to patch storage via rest")
+	}
+
+	return result, nil
+}
+
+type DatabaseInterface interface {
+	Get(context.Context, string, *metav1.GetOptions) (*ydbApi.Database, error)
+	List(context.Context, *metav1.ListOptions) (*ydbApi.DatabaseList, error)
+	Watch(context.Context, *metav1.ListOptions) (watch.Interface, error)
+	Create(context.Context, *ydbApi.Database, *metav1.CreateOptions) (*ydbApi.Database, error)
+	Delete(context.Context, string, *metav1.DeleteOptions) error
+	Patch(
+		context.Context,
+		string,
+		types.PatchType,
+		[]byte,
+		*metav1.PatchOptions,
+		...string,
+	) (*ydbApi.Database, error)
+	Apply(context.Context, *ydbApi.Database, *metav1.ApplyOptions) (*ydbApi.Database, error)
+}
+
+type DatabaseClient struct {
+	client rest.Interface
+	ns     string
+}
+
+func (ydbClient *YDBV1Alpha1Client) Databases(namespace string) DatabaseInterface {
+	return &DatabaseClient{
+		client: ydbClient.client,
+		ns:     namespace,
+	}
+}
+
+var (
+	errDatabaseMustNotBeNull     = errors.New("storage provided to Apply must not be nil")
+	errDatabaseNameMustNotBeNull = errors.New("storage.Name must be provided to Apply")
+)
+
+// Get takes name of the database, and returns the corresponding database object,
+// and an error if there is any.
+func (databaseClient *DatabaseClient) Get(
+	ctx context.Context,
+	name string,
+	options *metav1.GetOptions,
+) (*ydbApi.Database, error) {
+	var err error
+	result := &ydbApi.Database{} //nolint
+
+	if err = databaseClient.client.Get().
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		Name(name).
+		VersionedParams(options, scheme.ParameterCodec).
+		Do(ctx).
+		Into(result); err != nil {
+		return nil, errors.Wrap(err, "failed to get database")
+	}
+
+	return result, nil
+}
+
+// List takes label and field selectors,
+// and returns the list of Databases that match those selectors.
+func (databaseClient *DatabaseClient) List(
+	ctx context.Context,
+	opts *metav1.ListOptions,
+) (*ydbApi.DatabaseList, error) {
+	var (
+		err     error
+		timeout time.Duration
+	)
+
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
+
+	result := &ydbApi.DatabaseList{} //nolint
+
+	if err = databaseClient.client.Get().
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		VersionedParams(opts, scheme.ParameterCodec).
+		Timeout(timeout).
+		Do(ctx).
+		Into(result); err != nil {
+		return nil, errors.Wrap(err, "failed to get list of databases")
+	}
+
+	return result, nil
+}
+
+// Watch returns a watch.Interface that watches the requested Databases.
+func (databaseClient *DatabaseClient) Watch(
+	ctx context.Context,
+	opts *metav1.ListOptions,
+) (watch.Interface, error) {
+	var (
+		err            error
+		timeout        time.Duration
+		watchInterface watch.Interface
+	)
+
+	if opts.TimeoutSeconds != nil {
+		timeout = time.Duration(*opts.TimeoutSeconds) * time.Second
+	}
+
+	opts.Watch = true
+
+	if watchInterface, err = databaseClient.client.Get().
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		VersionedParams(opts, scheme.ParameterCodec).
+		Timeout(timeout).
+		Watch(ctx); err != nil {
+		return nil, errors.Wrap(err, "failed to get watch interface for database")
+	}
+
+	return watchInterface, nil
+}
+
+// Create takes the representation of a database and creates it.
+// Returns the server's representation of the database, and an error, if there is any.
+func (databaseClient *DatabaseClient) Create(
+	ctx context.Context,
+	database *ydbApi.Database,
+	opts *metav1.CreateOptions,
+) (*ydbApi.Database, error) {
+	var err error
+
+	result := &ydbApi.Database{} //nolint
+	if err = databaseClient.client.Post().
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		VersionedParams(opts, scheme.ParameterCodec).
+		Body(database).
+		Do(ctx).
+		Into(result); err != nil {
+		return nil, errors.Wrap(err, "failed to create database")
+	}
+
+	return result, nil
+}
+
+// Delete takes name of the database and deletes it. Returns an error if one occurs.
+func (databaseClient *DatabaseClient) Delete(
+	ctx context.Context,
+	name string,
+	opts *metav1.DeleteOptions,
+) error {
+	var err error
+
+	if err = databaseClient.client.Delete().
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		Name(name).
+		Body(&opts).
+		Do(ctx).
+		Error(); err != nil {
+		return errors.Wrap(err, "failed to delete database")
+	}
+
+	return nil
+}
+
+// Patch applies the patch and returns the patched database.
+func (databaseClient *DatabaseClient) Patch( //nolint:dupl // api realization
+	ctx context.Context,
+	name string,
+	patchType types.PatchType,
+	data []byte,
+	opts *metav1.PatchOptions,
+	subresources ...string,
+) (*ydbApi.Database, error) {
+	var (
+		err    error
+		result *ydbApi.Database
+	)
+
+	if err = databaseClient.client.Patch(patchType).
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		Name(name).
+		SubResource(subresources...).
+		VersionedParams(opts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result); err != nil {
+		return nil, errors.Wrap(err, "failed to patch database via rest")
+	}
+
+	return result, nil
+}
+
+// Apply takes the given apply declarative configuration,
+// applies it and returns the applied ydb database.
+func (databaseClient *DatabaseClient) Apply(
+	ctx context.Context,
+	database *ydbApi.Database,
+	opts *metav1.ApplyOptions,
+) (*ydbApi.Database, error) {
+	var (
+		err  error
+		data []byte
+	)
+
+	if database == nil {
+		return nil, errDatabaseMustNotBeNull
+	}
+
+	patchOpts := opts.ToPatchOptions()
+
+	if data, err = json.Marshal(database); err != nil {
+		return nil, errors.Wrap(err, "failed to serialize database into json")
+	}
+
+	if database.Name == "" {
+		return nil, errDatabaseNameMustNotBeNull
+	}
+
+	result := &ydbApi.Database{} //nolint
+
+	if err = databaseClient.client.Patch(types.ApplyPatchType).
+		Namespace(databaseClient.ns).
+		Resource(databasePluralName).
+		Name(database.Name).
+		VersionedParams(&patchOpts, scheme.ParameterCodec).
+		Body(data).
+		Do(ctx).
+		Into(result); err != nil {
+		return nil, errors.Wrap(err, "failed to patch database via rest")
 	}
 
 	return result, nil

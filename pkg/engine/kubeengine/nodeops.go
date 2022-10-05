@@ -28,7 +28,7 @@ const (
 	NodeNameDBMS       = "dbms-worker"
 )
 
-const True = "true"
+const trueVal = "true"
 
 func (e *Engine) waitPodCreation(clientSet *kubernetes.Clientset,
 	creationWait bool, waitTime time.Duration, podName, namespace string,
@@ -184,19 +184,19 @@ func (e *Engine) AddNodeLabels(shellState *state.State) error { //nolint
 		switch {
 		case node.Name == "master-1":
 			if shellState.Settings.DeploymentSettings.AllWorkers {
-				newLabels[NodeNameDBMS] = True
+				newLabels[NodeNameDBMS] = trueVal
 			}
 
-			newLabels[NodeNameMonitoring] = True
-			newLabels[NodeNameMaster] = True
+			newLabels[NodeNameMonitoring] = trueVal
+			newLabels[NodeNameMaster] = trueVal
 		case strings.Contains(node.Name, "master"):
 			if shellState.Settings.DeploymentSettings.AllWorkers {
-				newLabels[NodeNameDBMS] = True
+				newLabels[NodeNameDBMS] = trueVal
 			}
 
-			newLabels[NodeNameMaster] = True
+			newLabels[NodeNameMaster] = trueVal
 		case strings.Contains(node.Name, "worker"):
-			newLabels[NodeNameDBMS] = True
+			newLabels[NodeNameDBMS] = trueVal
 		}
 
 		for key, value := range newLabels {
