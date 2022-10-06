@@ -357,13 +357,17 @@ func (k *Kubernetes) deployStorageClassAndPV(shellState *state.State) error {
 	}
 
 	for name, node := range shellState.NodesInfo.NodesParams {
+		if strings.Contains(name, "master") {
+			continue
+		}
+
 		if err = k.deployPV(
 			fmt.Sprintf("local-pv-database-%d", node.Index),
 			"default",
 			path.Join(manifestDir, "local-pv.yml"),
 			kubeengine.NodeNameDBMS,
-			path.Join("/data", "volumes", "local-pv-database"),
-			fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.Disk-5), //nolint
+			"/dev/disk/by-id/virtio-database",
+			fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.SecondaryDisk), //nolint
 			shellState,
 		); err != nil {
 			return merry.Prepend(err, fmt.Sprintf("failed to deploy PV %s-%d", name, node.Index))

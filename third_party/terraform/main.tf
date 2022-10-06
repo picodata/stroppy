@@ -66,7 +66,15 @@ resource "yandex_compute_instance_group" "masters" {
           mode = "READ_WRITE"
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
-            size     = var.masters_disk
+            size     = var.masters_boot_disk
+            type     = "network-ssd"
+          }
+        }
+        secondary_disk {
+          mode = "READ_WRITE"
+          device_name = "database"
+          initialize_params {
+            size     = var.masters_secondary_disk
             type     = "network-ssd-nonreplicated"
           }
         }
@@ -112,7 +120,15 @@ resource "yandex_compute_instance_group" "workers" {
           mode = "READ_WRITE"
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
-            size     = var.workers_disk
+            size     = var.workers_boot_disk
+            type     = "network-ssd"
+          }
+        }
+        secondary_disk {
+          mode = "READ_WRITE"
+          device_name = "database"
+          initialize_params {
+            size     = var.workers_secondary_disk
             type     = "network-ssd-nonreplicated"
           }
         }

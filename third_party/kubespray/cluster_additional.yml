@@ -1,12 +1,19 @@
 - name: Addtional actions for kubernetes cluster
   hosts: k8s_cluster
   tasks:
-    - name: Create directories
-      ansible.builtin.file:
-        path: /data/volumes/local-pv-database
-        state: directory
-        recurse: yes
-        mode: "777"
+    - name: Blank filesystem signature on /dev/disk/by-id/{{ kube_disk_device_name }}
+      community.general.filesystem:
+        dev: "/dev/disk/by-id/{{ kube_disk_device_name }}"
+        fstype: ext4
+        force: true
+        state: present
+
+    - name: Mount network disks on /mnt/network-ssd-nonreplicated
+      ansible.posix.mount:
+        path: /mnt/network-ssd-nonreplicated
+        src: "/dev/disk/by-id/{{ kube_disk_device_name }}"
+        fstype: ext4
+        state: present
 
     - name: Add entry for prometheus server
       ansible.builtin.lineinfile:

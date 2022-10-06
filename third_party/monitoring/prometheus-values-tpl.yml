@@ -25,7 +25,7 @@ server:
     enabled: true
     ingressClassName: nginx
     hosts:
-      - prometheus.stroppy.io
+      - prometheus.cluster.picodata.io
     path: /
 
   affinity: {}

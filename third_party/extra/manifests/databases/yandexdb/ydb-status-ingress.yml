@@ -7,7 +7,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-  - host: stroppy-ydb-storage.picodata.io
+  - host: storage.cluster.picodata.io
     http:
       paths:
       - path: /

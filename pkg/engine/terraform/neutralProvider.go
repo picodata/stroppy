@@ -47,8 +47,8 @@ func (np *neutralProvider) GetSubnet() string {
 	return ""
 }
 
-func (np *neutralProvider) GetNodes() map[string]*provider.Node {
-	return make(map[string]*provider.Node)
+func (np *neutralProvider) GetNodesInfo() map[string]*provider.NodeParams {
+	return make(map[string]*provider.NodeParams)
 }
 
 func (np *neutralProvider) GetInternalSubnet() (string, error) {
