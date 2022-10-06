@@ -49,7 +49,13 @@ variable "masters_memory" {
     default = 40
 }
 
-variable "masters_disk" {
+variable "masters_boot_disk" {
+    type = number
+    description = "Yandex Cloud disk size gigabytes per master"
+    default = 20
+}
+
+variable "masters_secondary_disk" {
     type = number
     description = "Yandex Cloud disk size gigabytes per master"
     default = 465
@@ -74,9 +80,14 @@ variable "workers_memory" {
     default = 40
 }
 
-variable "workers_disk" {
+variable "workers_boot_disk" {
+    type = number
+    description = "Yandex Cloud disk size in GB per worker"
+    default = 20
+}
+
+variable "workers_secondary_disk" {
     type = number
     description = "Yandex Cloud disk size in GB per worker"
     default = 465
 }
-

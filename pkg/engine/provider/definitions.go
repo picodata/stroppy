@@ -4,7 +4,9 @@
 
 package provider
 
-import "errors"
+import (
+	"errors"
+)
 
 const (
 	Oracle  = "oracle"
@@ -23,7 +25,7 @@ type Provider interface {
 	AddNetworkDisks(int) error
 	GetInstancesAddresses() *InstanceAddresses
 	GetSubnet() string
-	GetNodes() map[string]*Node
+	GetNodesInfo() map[string]*NodeParams
 	CheckSSHPrivateKey(string) error
 	CheckSSHPublicKey(string) error
 	RemoveProviderSpecificFiles()
@@ -77,11 +79,19 @@ func (insAddr *InstanceAddresses) GetFirstMaster() AddrPair {
 	}
 }
 
-func (insAddr *InstanceAddresses) MastersCnt() int {
+func (insAddr *InstanceAddresses) MastersCnt(allMasters bool) int {
+	if allMasters {
+		return len(insAddr.Workers) + len(insAddr.Masters)
+	}
+
 	return len(insAddr.Masters)
 }
 
-func (insAddr *InstanceAddresses) WorkersCnt() int {
+func (insAddr *InstanceAddresses) WorkersCnt(allWorkers bool) int {
+	if allWorkers {
+		return len(insAddr.Workers) + len(insAddr.Masters)
+	}
+
 	return len(insAddr.Workers)
 }
 
@@ -97,14 +107,15 @@ type AddrPair struct {
 	External string
 }
 
-type Node struct {
+type NodeParams struct {
 	Index     int
 	Fqdn      string
 	Resources Resources
 }
 
 type Resources struct {
-	CPU    uint64
-	Memory uint64
-	Disk   uint64
+	CPU           uint64
+	Memory        uint64
+	BootDisk      uint64
+	SecondaryDisk uint64
 }

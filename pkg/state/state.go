@@ -24,7 +24,7 @@ type NodesInfo struct {
 	MastersCnt  int
 	WorkersCnt  int
 	IPs         IPs
-	NodesParams map[string]*provider.Node
+	NodesParams map[string]*provider.NodeParams
 }
 
 type IPs struct {
@@ -32,13 +32,13 @@ type IPs struct {
 	FirstWokerIP  provider.AddrPair
 }
 
-func (nodesInfo *NodesInfo) GetFirstMaster() *provider.Node {
+func (nodesInfo *NodesInfo) GetFirstMaster() *provider.NodeParams {
 	node := nodesInfo.NodesParams["master-1"]
 
 	return node
 }
 
-func (nodesInfo *NodesInfo) GetFirstWorker() *provider.Node {
+func (nodesInfo *NodesInfo) GetFirstWorker() *provider.NodeParams {
 	node := nodesInfo.NodesParams["worker-1"]
 
 	return node

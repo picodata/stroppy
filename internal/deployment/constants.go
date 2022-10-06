@@ -10,8 +10,10 @@ const (
 
 	interactiveUsageHelpTemplate = `
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
-To access Grafana use address http://%s:%s@%s:%d
-To access Prometheus use address http://%s:%d.
+
+Grafana:        http://%s:%s@%s:%d
+Prometheus      http://%s:%d.
+
 Enter "quit" or "exit" to exit stroppy and destroy cluster.
 Enter "pop" to start populating deployed DB with accounts.
 Enter "pay" to start transfers test in deployed DB.
@@ -21,4 +23,10 @@ execute command for set environment variables KUBECONFIG before using:
 
 	stroppyBinaryPath = "/usr/local/bin/stroppy"
 	stroppyHomePath   = "/home/stroppy"
+
+    //nolint
+    addToHosts      = `
+%s      prometheus.cluster.picodata.io
+%s	    status.cluster.picodata.io
+    `
 )

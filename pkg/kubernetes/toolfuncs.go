@@ -41,9 +41,10 @@ collections_paths=third_party/.collections/
 
 // monitoring.
 const (
-	grafanaVer    string = "0.17.0"
-	grafanaColVer string = "1.4.0"
-	lokiPort      uint16 = 3100
+	prometheusHostname string = "prometheus.cluster.picodata.io"
+	grafanaVer         string = "0.17.0"
+	grafanaColVer      string = "1.4.0"
+	lokiPort           uint16 = 3100
 )
 
 // another consts.
@@ -197,7 +198,7 @@ func (k *Kubernetes) GenerateMonitoringInventory(shellState *state.State) ([]byt
 						"access": "proxy",
 						"url": fmt.Sprintf( //nolint
 							"http://%s:%d",
-							shellState.NodesInfo.IPs.FirstMasterIP.Internal,
+							prometheusHostname,
 							shellState.Settings.DeploymentSettings.PromPort,
 						),
 						"basicAuth": false,
@@ -207,7 +208,8 @@ func (k *Kubernetes) GenerateMonitoringInventory(shellState *state.State) ([]byt
 						"type":   "loki",
 						"access": "proxy",
 						"url": fmt.Sprintf( //nolint
-							"http://prometheus.picodata.io:%d",
+							"http://%s:%d",
+							shellState.NodesInfo.IPs.FirstMasterIP.Internal,
 							lokiPort,
 						),
 						"basicAuth": false,
@@ -254,32 +256,35 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 		childrenAll[name] = map[string]interface{}{}
 
 		switch {
-		// if [master-1, worker-1, worker-2, worker-3] -> etcd[worker-1, worker-2, worker-3]
-		case strings.Contains(name, "worker") &&
-			len(shellState.NodesInfo.NodesParams) >= etcdNormalCnt &&
-			len(childrenETCD) < etcdNormalCnt:
-			llog.Tracef("node %s added to etcd hosts", name)
-
-			childrenETCD[name] = map[string]interface{}{}
-
-			continue
-
 		case strings.Contains(name, "master"):
 			childrenControlPlane[name] = map[string]interface{}{}
 
 			supplementaryAddr = append(supplementaryAddr, node.Internal, node.External)
 
-		// if [master-1] -> etcd[master-1]
-		case len(shellState.NodesInfo.NodesParams) == 1|2 &&
-			len(childrenETCD) == 0:
-			childrenETCD[name] = map[string]interface{}{}
+			switch {
+			case shellState.NodesInfo.WorkersCnt < 3 &&
+				shellState.NodesInfo.WorkersCnt+shellState.NodesInfo.MastersCnt >= 3 &&
+				len(childrenETCD) < 3:
+				childrenETCD[name] = map[string]interface{}{}
+			case shellState.NodesInfo.WorkersCnt == 0 &&
+				shellState.NodesInfo.MastersCnt >= 3 &&
+				len(childrenETCD) < 3:
+				childrenETCD[name] = map[string]interface{}{}
+			case shellState.NodesInfo.WorkersCnt == 0 &&
+				shellState.NodesInfo.MastersCnt < 3 &&
+				len(childrenETCD) == 0:
+				childrenETCD[name] = map[string]interface{}{}
+			}
 
-			continue
-		// if [master-1, worker-1, worker-2] -> etcd[master-1, worker-1, worker-2]
-		case len(shellState.NodesInfo.NodesParams) >= etcdNormalCnt:
-			childrenETCD[name] = map[string]interface{}{}
-
-			continue
+		case strings.Contains(name, "worker"):
+			switch {
+			case shellState.NodesInfo.WorkersCnt >= 3 &&
+				len(childrenETCD) < 3:
+				childrenETCD[name] = map[string]interface{}{}
+			case shellState.NodesInfo.MastersCnt+shellState.NodesInfo.WorkersCnt >= 3 &&
+				len(childrenETCD) < 3:
+				childrenETCD[name] = map[string]interface{}{}
+			}
 		}
 	}
 
@@ -289,6 +294,7 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 		All: All{
 			Vars: map[string]interface{}{
 				"kube_version":                        "v1.23.7",
+				"kube_disk_device_name":               "virtio-database",
 				"ansible_user":                        SSHUser,
 				"ansible_ssh_common_args":             "-F .ssh/config",
 				"ignore_assert_errors":                "yes",

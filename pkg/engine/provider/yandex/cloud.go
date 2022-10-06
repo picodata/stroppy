@@ -130,8 +130,8 @@ func (yandexProvider *Provider) GetSubnet() string {
 	return resources[0].Instances[0].Attributes.V4CidrBlock[0]
 }
 
-func (yandexProvider *Provider) GetNodes() map[string]*provider.Node {
-	nodes := make(map[string]*provider.Node)
+func (yandexProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
+	nodes := make(map[string]*provider.NodeParams)
 	resources := yandexProvider.tfState.GetResourcesByType("yandex_compute_instance_group")
 
 	index := 0
@@ -140,7 +140,8 @@ func (yandexProvider *Provider) GetNodes() map[string]*provider.Node {
 		for _, instance := range resource.Instances { //nolint
 			for _, innerInstance := range instance.Attributes.InnerInstances {
 				index++
-				node := provider.Node{
+
+				node := provider.NodeParams{
 					Index: index,
 					Fqdn:  innerInstance.Fqdn,
 					Resources: provider.Resources{
@@ -148,8 +149,10 @@ func (yandexProvider *Provider) GetNodes() map[string]*provider.Node {
 							Resources[0].Cores,
 						Memory: instance.Attributes.InstanceTemplate[0].
 							Resources[0].Memory,
-						Disk: instance.Attributes.InstanceTemplate[0].
+						BootDisk: instance.Attributes.InstanceTemplate[0].
 							BootDisk[0].DiskInitParams[0].Size,
+						SecondaryDisk: instance.Attributes.InstanceTemplate[0].
+							SecondaryDisk[0].DiskInitParams[0].Size,
 					},
 				}
 

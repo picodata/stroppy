@@ -88,6 +88,7 @@ func (attributes *Attributes) GetInnerInstance(name string) *InnerInstance {
 // Hold part of parameters for resources like `yandex_compute_instance_group`.
 type InstanceTemplate struct {
 	BootDisk         []Disk              `json:"boot_disk"`
+	SecondaryDisk    []Disk              `json:"secondary_disk"`
 	Metadata         Metadata            `json:"metadata"`
 	NetworkInterface []NetworkInterface  `json:"network_interface"`
 	Resources        []ResourcesTemplate `json:"resources"`

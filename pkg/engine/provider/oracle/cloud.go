@@ -338,16 +338,18 @@ func (oracleProvider *Provider) GetSubnet() string {
 }
 
 // TODO: should be refactored in future after tests on oracle cloud.
-func (oracleProvider *Provider) GetNodes() map[string]*provider.Node {
-	nodes := make(map[string]*provider.Node)
+func (oracleProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
+	nodes := make(map[string]*provider.NodeParams)
 
 	for index, fqdn := range oracleProvider.tfState.Outputs.InstancePublicIps.Value[0] {
-		node := provider.Node{
-			Fqdn: fqdn,
+		node := provider.NodeParams{
+			Index: 0,
+			Fqdn:  fqdn,
 			Resources: provider.Resources{
-				CPU:    0,
-				Memory: 0,
-				Disk:   0,
+				CPU:           0,
+				Memory:        0,
+				BootDisk:      0,
+				SecondaryDisk: 0,
 			},
 		}
 		nodes[fmt.Sprintf("node-%d", index)] = &node

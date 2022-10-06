@@ -110,13 +110,13 @@ func (sh *shell) prepareEngine() error {
 	instanceAddresses := sh.tf.Provider.GetInstancesAddresses()
 
 	sh.state.NodesInfo = state.NodesInfo{
-		MastersCnt: instanceAddresses.MastersCnt(),
-		WorkersCnt: instanceAddresses.WorkersCnt(),
+		MastersCnt: instanceAddresses.MastersCnt(sh.state.Settings.DeploymentSettings.AllMasters),
+		WorkersCnt: instanceAddresses.WorkersCnt(sh.state.Settings.DeploymentSettings.AllWorkers),
 		IPs: state.IPs{
 			FirstMasterIP: instanceAddresses.GetFirstMaster(),
 			FirstWokerIP:  instanceAddresses.GetFirstWorker(),
 		},
-		NodesParams: sh.tf.Provider.GetNodes(),
+		NodesParams: sh.tf.Provider.GetNodesInfo(),
 	}
 
 	sh.state.InstanceAddresses = instanceAddresses

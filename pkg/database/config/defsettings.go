@@ -7,9 +7,8 @@ package config
 import (
 	"time"
 
-	"gitlab.com/picodata/stroppy/pkg/engine/provider"
-
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
+	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 
 	llog "github.com/sirupsen/logrus"
 )
@@ -136,6 +135,7 @@ type DeploymentSettings struct {
 	PromPort         uint16
 	PromSPort        uint16
 	AllWorkers       bool
+	AllMasters       bool
 }
 
 // DefaultsDeploy заполняет параметры развертывания значениями по умолчанию.

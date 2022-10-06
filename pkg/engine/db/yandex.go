@@ -271,7 +271,7 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 	persistentVolumeFilesystem := v1.PersistentVolumeFilesystem
 
 	if err = k8sYaml.Unmarshal([]byte(
-		fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.Disk-5)), //nolint
+		fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.SecondaryDisk)), //nolint
 		&storageQuantity,
 	); err != nil {
 		return merry.Prepend(err, "failed to deserialize storageQuantity")
@@ -428,7 +428,7 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 		}
 	}
 
-	switch len(shellState.NodesInfo.NodesParams) {
+	switch shellState.NodesInfo.WorkersCnt {
 	case 8: //nolint
 		stateStorage[0] = map[string]interface{}{
 			"ring": map[string]interface{}{
