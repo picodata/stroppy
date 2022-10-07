@@ -25,6 +25,7 @@ type Provider interface {
 	AddNetworkDisks(int) error
 	GetInstancesAddresses() *InstanceAddresses
 	GetSubnet() string
+	WaitNodes() error
 	GetNodesInfo() map[string]*NodeParams
 	CheckSSHPrivateKey(string) error
 	CheckSSHPublicKey(string) error
@@ -108,9 +109,10 @@ type AddrPair struct {
 }
 
 type NodeParams struct {
-	Index     int
-	Fqdn      string
-	Resources Resources
+	Index      int
+	InstanceID string
+	Fqdn       string
+	Resources  Resources
 }
 
 type Resources struct {

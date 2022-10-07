@@ -15,7 +15,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gitlab.com/picodata/stroppy/pkg/engine/provider/oracle"
@@ -34,15 +33,10 @@ func CreateTerraform(
 	settings *config.DeploymentSettings,
 	exeFolder, cfgFolder string,
 ) *Terraform {
-	var tfobj *Terraform
-
-	addressMap := make(map[string]map[string]string)
-
-	tfobj = &Terraform{
+	tfobj := &Terraform{
 		settings:      settings,
 		exePath:       filepath.Join(exeFolder, "terraform"),
 		stateFilePath: "",
-		addressMap:    addressMap,
 		isInit:        false,
 		WorkDirectory: cfgFolder,
 		version: &version{
@@ -108,19 +102,36 @@ func (t *Terraform) LoadState() error {
 	return nil
 }
 
-func (t *Terraform) Run() (err error) {
-	err = t.init()
-	if err != nil {
+func (t *Terraform) Run() error {
+	var err error
+
+	if err = t.init(); err != nil {
 		return merry.Prepend(err, "failed to init terraform")
 	}
 
-	err = t.apply()
-	if err != nil {
+	if err = t.apply(); err != nil {
 		return merry.Prepend(err, "failed to apply terraform")
 	}
 
-	err = t.LoadState()
-	return
+	if err = t.LoadState(); err != nil {
+		return merry.Prepend(err, "failed to load state")
+	}
+
+	if err = t.Wait(); err != nil {
+		return merry.Prepend(err, "failed to wait running state")
+	}
+
+	return nil
+}
+
+func (t *Terraform) Wait() error {
+	var err error
+
+	if err = t.Provider.WaitNodes(); err != nil {
+		return merry.Prepend(err, "failed to wait nodes")
+	}
+
+	return nil
 }
 
 // Destroy - уничтожить кластер
@@ -183,11 +194,7 @@ func (t *Terraform) apply() (err error) {
 			string(result))
 	}
 
-	llog.Debug("Waiting for terraform to form a state")
-
-	time.Sleep(pauseAfterTFApply * time.Second)
-
-	llog.Printf("Terraform applied\n")
+	llog.Info("Terraform script successefully applied")
 
 	return
 }

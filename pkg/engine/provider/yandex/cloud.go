@@ -8,13 +8,18 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
+	"sync"
 
 	"gitlab.com/picodata/stroppy/pkg/database/config"
 	"gitlab.com/picodata/stroppy/pkg/engine"
 	"gitlab.com/picodata/stroppy/pkg/engine/provider"
 	"gitlab.com/picodata/stroppy/pkg/tools"
 
+	"atomicgo.dev/cursor"
 	"github.com/ansel1/merry"
+	"github.com/olekukonko/tablewriter"
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 )
 
@@ -142,8 +147,9 @@ func (yandexProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
 				index++
 
 				node := provider.NodeParams{
-					Index: index,
-					Fqdn:  innerInstance.Fqdn,
+					Index:      index,
+					Fqdn:       innerInstance.Fqdn,
+					InstanceID: innerInstance.InstanceID,
 					Resources: provider.Resources{
 						CPU: instance.Attributes.InstanceTemplate[0].
 							Resources[0].Cores,
@@ -162,6 +168,54 @@ func (yandexProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
 	}
 
 	return nodes
+}
+
+func (yandexProvider *Provider) WaitNodes() error {
+	// Create request and return response.
+	var (
+		iamToken *IAMResponse
+		nodesWg  sync.WaitGroup
+		mutex    sync.RWMutex
+		err      error
+	)
+
+	if iamToken, err = getIamToken(); err != nil {
+		return merry.Prepend(err, "failed to get IAM token")
+	}
+
+	llog.Debugln("IAM token received successefully")
+	llog.Infoln("Start waiting for hosts to be ready")
+
+	statusStrings := &strings.Builder{}
+	statusTable := tablewriter.NewWriter(statusStrings)
+	printArea := cursor.NewArea()
+	statusPrinter := createStatusPrinter(yandexProvider, statusStrings, statusTable, &printArea)
+
+	printArea.Update(statusStrings.String())
+	statusTable.SetHeader([]string{"Name", "Id", "Status", "Internal", "External"})
+
+	if err = statusPrinter.updateStatus(0, &NodeStatus{Status: ""}); err != nil {
+		return errors.Wrap(err, "failed to update status first time")
+	}
+
+	errs := make(chan error, 1)
+
+	for index := 0; index < len(*statusPrinter.NodesRows); index++ {
+		nodesWg.Add(1)
+
+		go retrieveStatus(
+			index,
+			iamToken,
+			&statusPrinter,
+			&mutex,
+			&nodesWg,
+			errs,
+		)
+	}
+
+	nodesWg.Wait()
+
+	return nil
 }
 
 // Check ssh key files and directory existence

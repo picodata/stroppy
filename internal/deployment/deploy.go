@@ -206,7 +206,6 @@ func (sh *shell) deploy() error {
 	// 1. Deploy monitoring via grafana stack
 	// 2. Deploy kubernetes cluster
 	// 3. Deploy stroppy pod
-	// TODO: rename to deploy infrastructure
 	if err = sh.k.DeployK8SWithInfrastructure(&sh.state); err != nil {
 		return merry.Prepend(err, "Failed to deploy kubernetes and infrastructure")
 	}

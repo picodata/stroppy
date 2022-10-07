@@ -10,11 +10,13 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	llog "github.com/sirupsen/logrus"
 
 	"github.com/ansel1/merry"
 	"gitlab.com/picodata/stroppy/pkg/sshtunnel"
+	"gitlab.com/picodata/stroppy/pkg/tools"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -95,13 +97,17 @@ func (sc *client) GetNewSession() (session Session, err error) {
 	return
 }
 
-/// Parse client.keyFileBytes to private key and returning ssh.Client
-/// if client returned successfully, connection is ok.
-func (sc *client) getClientInstance(address string) (client *ssh.Client, err error) {
-	var signer ssh.Signer
+// / Parse client.keyFileBytes to private key and returning ssh.Client
+// / if client returned successfully, connection is ok.
+func (sc *client) getClientInstance(address string) (*ssh.Client, error) {
+	var (
+		err    error
+		signer ssh.Signer
+		client *ssh.Client
+	)
+
 	if signer, err = ssh.ParsePrivateKey(sc.keyFileBytes); err != nil {
-		err = merry.Prepend(err, "failed to parse private key for ssh client")
-		return
+		return nil, merry.Prepend(err, "failed to parse private key for ssh client")
 	}
 
 	config := &ssh.ClientConfig{
@@ -111,6 +117,7 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 		},
 		//nolint:gosec
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         time.Minute,
 	}
 
 	llog.Traceln("Ssh private key successfully parsed")
@@ -118,10 +125,20 @@ func (sc *client) getClientInstance(address string) (client *ssh.Client, err err
 	addr := fmt.Sprintf("%s:%d", address, 22)
 	llog.Tracef("Target address for ssh connection %v", addr)
 
-	if client, err = ssh.Dial("tcp", addr, config); err != nil {
-		err = merry.Prepend(err, "failed to start ssh connection for ssh client")
+	if err = tools.Retry("ssh client Dial", func() error {
+		if client, err = ssh.Dial("tcp", addr, config); err != nil {
+			return merry.Prepend(err, "failed to start ssh connection for ssh client")
+		}
+
+		return nil
+	},
+		tools.RetryStandardRetryCount,
+		tools.RetryStandardWaitingTime,
+	); err != nil {
+		return nil, merry.Prepend(err, "all retries left")
 	}
-	return
+
+	return client, nil
 }
 
 func (sc *client) GetPrivateKeyInfo() (string, string) {
