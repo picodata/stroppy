@@ -55,6 +55,10 @@ func (np *neutralProvider) GetInternalSubnet() (string, error) {
 	return "", nil
 }
 
+func (np *neutralProvider) WaitNodes() error {
+	return nil
+}
+
 func (np *neutralProvider) IsPrivateKeyExist(_ string) bool {
 	return true
 }

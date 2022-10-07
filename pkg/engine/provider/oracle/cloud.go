@@ -343,8 +343,9 @@ func (oracleProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
 
 	for index, fqdn := range oracleProvider.tfState.Outputs.InstancePublicIps.Value[0] {
 		node := provider.NodeParams{
-			Index: 0,
-			Fqdn:  fqdn,
+			Index:      0,
+			InstanceID: "",
+			Fqdn:       fqdn,
 			Resources: provider.Resources{
 				CPU:           0,
 				Memory:        0,
@@ -356,6 +357,10 @@ func (oracleProvider *Provider) GetNodesInfo() map[string]*provider.NodeParams {
 	}
 
 	return nodes
+}
+
+func (oracleProvider *Provider) WaitNodes() error {
+	return nil
 }
 
 func (op *Provider) IsPrivateKeyExist(workingDirectory string) bool {

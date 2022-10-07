@@ -26,7 +26,6 @@ type Terraform struct {
 	exePath       string
 	stateFilePath string
 
-	addressMap map[string]map[string]string
 	isInit     bool
 
 	WorkDirectory string
