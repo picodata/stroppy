@@ -17,6 +17,7 @@ import (
 	v1 "k8s.io/api/core/v1"
 	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 )
 
@@ -204,6 +205,9 @@ func (e *Engine) AddNodeLabels(shellState *state.State) error { //nolint
 		}
 
 		nodesList.Items[index].SetLabels(nodeLabels)
+		nodesList.Items[index].CreationTimestamp = metav1.Time{} //nolint
+		nodesList.Items[index].ResourceVersion = ""
+		nodesList.Items[index].UID = types.UID("")
 
 		llog.Tracef("Cluster node %s now has new lables: %v", node.Name, nodeLabels)
 	}
