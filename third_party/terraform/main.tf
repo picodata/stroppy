@@ -64,6 +64,7 @@ resource "yandex_compute_instance_group" "masters" {
         }
         boot_disk {
           mode = "READ_WRITE"
+          device_name = "system"
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
             size     = var.masters_boot_disk
@@ -118,6 +119,7 @@ resource "yandex_compute_instance_group" "workers" {
         }
         boot_disk {
           mode = "READ_WRITE"
+          device_name = "system"
           initialize_params {
             image_id = data.yandex_compute_image.ubuntu_image.id
             size     = var.workers_boot_disk

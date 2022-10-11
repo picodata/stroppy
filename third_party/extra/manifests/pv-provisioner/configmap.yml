@@ -1,0 +1,30 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: local-storage-provisioner-config
+  namespace: default
+  labels:
+    helm.sh/chart: provisioner-2.6.0-alpha.1
+    app.kubernetes.io/name: provisioner
+    app.kubernetes.io/instance: local-storage-provisioner
+data:
+  storageClassMap: |
+    network-ssd-nonreplicated:
+      hostDir: /mnt/network-ssd-nonreplicated
+      mountDir: /mnt/network-ssd-nonreplicated
+      blockCleanerCommand:
+        - "/scripts/dd_zero.sh"
+        - "2"
+      volumeMode: Block
+      fsType: ext4
+      namePattern: "*"
+    filesystem-monitoring:
+      hostDir: /data/monitoring
+      mountDir: /data/monitoring
+      blockCleanerCommand:
+        - "/scripts/shred.sh"
+        - "2"
+      volumeMode: Filesystem
+      fsType: ext4
+      namePattern: "*"

@@ -294,7 +294,8 @@ func (k *Kubernetes) generateK8sInventory(shellState *state.State) ([]byte, erro
 		All: All{
 			Vars: map[string]interface{}{
 				"kube_version":                        "v1.23.7",
-				"kube_disk_device_name":               "virtio-database",
+				"kube_database_disk_device_name":      "virtio-database",
+				"kube_mon_disk_device_name":           "virtio-system",
 				"ansible_user":                        SSHUser,
 				"ansible_ssh_common_args":             "-F .ssh/config",
 				"ignore_assert_errors":                "yes",

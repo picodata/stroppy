@@ -225,7 +225,7 @@ func retrieveStatus(
 		mutex.Unlock()
 		nodeWg.Done()
 
-		if nodeResp.Body != nil {
+		if nodeResp != nil && nodeResp.Body != nil {
 			nodeResp.Body.Close()
 		}
 	}()

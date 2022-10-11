@@ -2,12 +2,6 @@
   become: true
   any_errors_fatal: false
   tasks:
-      - name: Create prometheus mount directory
-        ansible.builtin.file:
-          path: /data/volumes/local-pv-mon/prometheus
-          state: directory
-          recurse: yes
-
       - name: Install/update Grafana grafana-image-renderer plugin
         community.grafana.grafana_plugin:
           name: grafana-image-renderer

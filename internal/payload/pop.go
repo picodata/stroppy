@@ -47,6 +47,8 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 
 	stats := PopStats{}
 
+	llog.Tracef("%#v %#v", p.config.Count, p.config.Seed) // TODO: remove
+
 	if err = p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed)); err != nil {
 		return merry.Prepend(err, "cluster bootstrap failed")
 	}
@@ -94,9 +96,10 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 							Code: 1037,
 						}) || errors.Is(err, fdb.Error{
 						Code: 1009,
-					}) || errors.Is(err, mongo.CommandError{
-						Code: 133,
 					}) ||
+						errors.Is(err, mongo.CommandError{ //nolint
+							Code: 133, //nolint
+						}) ||
 						errors.Is(err, cluster.ErrTxRollback) ||
 						mongo.IsNetworkError(err) ||
 						// временная мера до стабилизации mongo

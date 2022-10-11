@@ -1,0 +1,51 @@
+common:
+  rbac:
+    create: true
+    # rbac.pspEnabled: `true` if PodSecurityPolicy resources should be created
+    pspEnabled: false
+  serviceAccount:
+    create: true
+    name: "local-storage-admin"
+  useJobForCleaning: false
+classes:
+- name: network-ssd-nonreplicated
+  hostDir: /mnt/network-ssd-nonreplicated
+  volumeMode: Block
+  fsType: ext4
+  namePattern: "*"
+  blockCleanerCommand:
+    - "/scripts/dd_zero.sh"
+    - "2"
+  storageClass:
+    reclaimPolicy: Delete
+    isDefaultClass: true
+- name: filesystem-monitoring
+  hostDir: /data/monitoring
+  volumeMode: Filesystem
+  fsType: ext4
+  namePattern: "*"
+  blockCleanerCommand:
+    - "/scripts/shred.sh"
+    - "2"
+  storageClass:
+    reclaimPolicy: Delete
+    isDefaultClass: false
+daemonset:
+  image: k8s.gcr.io/sig-storage/local-volume-provisioner:v2.5.0
+serviceMonitor:
+  enabled: false
+  ## Interval at which Prometheus scrapes the provisioner
+  interval: 10s
+  # Namespace Prometheus is installed in defaults to release namespace
+  namespace:
+  ## Defaults to whats used if you follow CoreOS [Prometheus Install Instructions](https://github.com/coreos/prometheus-operator/tree/master/helm#tldr)
+  ## [Prometheus Selector Label](https://github.com/coreos/prometheus-operator/blob/master/helm/prometheus/templates/prometheus.yaml#L65)
+  ## [Kube Prometheus Selector Label](https://github.com/coreos/prometheus-operator/blob/master/helm/kube-prometheus/values.yaml#L298)
+  additionalLabels: {}
+  relabelings: []
+  # - sourceLabels: [__meta_kubernetes_pod_node_name]
+  #   separator: ;
+  #   regex: ^(.*)$
+  #   targetLabel: nodename
+  #   replacement: $1
+  #   action: replace
