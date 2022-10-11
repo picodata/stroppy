@@ -11,6 +11,7 @@ import (
 	"os"
 	"path"
 	"reflect"
+	"strings"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/state"
@@ -94,7 +95,7 @@ func (k8sEngine *Engine) DeployAndWaitObject(
 	)
 
 	llog.Infof(
-		"Start deploying new %s namespace object %s with %d attempts",
+		"Start deploying new %s object %s with %d attempts",
 		objectType,
 		objectName,
 		tools.RetryStandardRetryCount,
@@ -188,9 +189,11 @@ func (k8sEngine *Engine) DeployChart(
 		kubeConfig []byte
 	)
 
-	switch shellState.Settings.LogLevel {
+	switch strings.ToLower(shellState.Settings.LogLevel) {
 	case "trace", "debug":
 		debug = true
+	case "info", "warn", "error":
+		debug = false
 	}
 
 	if kubeConfig, err = os.ReadFile(k8sEngine.clusterConfigFile); err != nil {

@@ -1,0 +1,15 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: network-ssd-nonreplicated
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+  labels:
+    helm.sh/chart: provisioner-2.6.0-alpha.1
+    app.kubernetes.io/name: provisioner
+    app.kubernetes.io/instance: network-ssd-nonreplicated
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete
+

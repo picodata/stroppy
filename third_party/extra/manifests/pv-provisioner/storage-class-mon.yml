@@ -1,0 +1,12 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: filesystem-monitoring
+  labels:
+    helm.sh/chart: provisioner-2.6.0-alpha.1
+    app.kubernetes.io/name: provisioner
+    app.kubernetes.io/instance: local-storage-provisioner
+provisioner: kubernetes.io/no-provisioner
+volumeBindingMode: WaitForFirstConsumer
+reclaimPolicy: Delete

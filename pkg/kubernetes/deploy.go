@@ -24,9 +24,9 @@ import (
 
 	"github.com/ansel1/merry"
 	llog "github.com/sirupsen/logrus"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
+	aconfig "k8s.io/client-go/applyconfigurations/apps/v1"
 	cconfig "k8s.io/client-go/applyconfigurations/core/v1"
+	rconfig "k8s.io/client-go/applyconfigurations/rbac/v1"
 	sconfig "k8s.io/client-go/applyconfigurations/storage/v1"
 	"k8s.io/client-go/kubernetes"
 	"sigs.k8s.io/yaml"
@@ -154,8 +154,8 @@ func (k *Kubernetes) DeployK8SWithInfrastructure(shellState *state.State) error 
 		return merry.Prepend(err, "failed to deploy ingress")
 	}
 
-	/// 11. Deploy storage class and persistent volume
-	if err = k.deployStorageClassAndPV(shellState); err != nil {
+	// 11. Deploy storage class and persistent volume
+	if err = k.deployLocalStorageProvisioner(shellState); err != nil {
 		return merry.Prepend(err, "failed to create storageClass and PV")
 	}
 
@@ -289,7 +289,8 @@ func (k *Kubernetes) deploySelf(shellState *state.State) error {
 		Playbooks: []string{
 			path.Join(workDir, "cluster.yml"),
 			path.Join(workDir, "kubeconfig.yml"),
-			path.Join(workDir, "cluster_additional.yml"),
+			path.Join(workDir, "cluster_resolve_mon.yml"),
+			path.Join(workDir, "cluster_disks.yml"),
 		},
 		Options:                    PBOpts,
 		ConnectionOptions:          connOpts,
@@ -307,17 +308,79 @@ func (k *Kubernetes) deploySelf(shellState *state.State) error {
 	return nil
 }
 
-func (k *Kubernetes) deployStorageClassAndPV(shellState *state.State) error {
+func (k *Kubernetes) deployLocalStorageProvisioner(shellState *state.State) error {
 	var err error
 
-	storageClass := sconfig.StorageClass("local-storage")
+	if err = k.deployStorageClass(
+		"network-ssd-nonreplicated",
+		"storage-class-db.yml",
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy storage class")
+	}
 
-	manifestDir := path.Join(
-		shellState.Settings.WorkingDirectory, "third_party", "extra", "manifests",
-	)
+	if err = k.deployStorageClass(
+		"filesystem-monitoring",
+		"storage-class-mon.yml",
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy storage class")
+	}
+
+	llog.Infoln("Local storage classes creation: success")
+
+	if err = k.deployClusterRole(
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy cluster role")
+	}
+
+	if err = k.deployClusterRoleBinding(
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy cluster role binding")
+	}
+
+	llog.Infoln("RbacV1 settings creation: success")
+
+	if err = k.deployServiceAccount(
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy provisioner service accout")
+	}
+
+	llog.Infoln("Service account creation: success")
+
+	if err = k.deployConfigmap(
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy provisioner configMap")
+	}
+
+	if err = k.deployProvisioner(
+		shellState,
+	); err != nil {
+		return merry.Prepend(err, "failed to deploy provisioner daemonset")
+	}
+
+	llog.Infoln("Provisioner daemonset creation: success")
+
+	return nil
+}
+
+func (k *Kubernetes) deployStorageClass(
+	clasName, manifestName string,
+	shellState *state.State,
+) error {
+	var err error
+
+	storageClass := sconfig.StorageClass(clasName)
 
 	if err = k.Engine.ToEngineObject(
-		path.Join(manifestDir, "local-storage-class.yml"),
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", manifestName,
+		),
 		&storageClass,
 	); err != nil {
 		return merry.Prepend(err, "failed to cast manifest into storageClass")
@@ -339,117 +402,235 @@ func (k *Kubernetes) deployStorageClassAndPV(shellState *state.State) error {
 	}
 
 	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
-		return merry.Prepend(err, fmt.Sprintln("Error then deploying storageClass"))
-	}
-
-	llog.Infoln("Local storage class creation: success")
-
-	if err = k.deployPV(
-		"local-pv-mon",
-		"default",
-		path.Join(manifestDir, "local-pv.yml"),
-		kubeengine.NodeNameMonitoring,
-		path.Join("/data", "volumes", "local-pv-mon"),
-		"2Gi", //nolint
-		shellState,
-	); err != nil {
-		return merry.Prepend(err, "failed to deploy PV local-pv-mon")
-	}
-
-	for name, node := range shellState.NodesInfo.NodesParams {
-		if strings.Contains(name, "master") {
-			continue
-		}
-
-		if err = k.deployPV(
-			fmt.Sprintf("local-pv-database-%d", node.Index),
-			"default",
-			path.Join(manifestDir, "local-pv.yml"),
-			kubeengine.NodeNameDBMS,
-			"/dev/disk/by-id/virtio-database",
-			fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.SecondaryDisk), //nolint
-			shellState,
-		); err != nil {
-			return merry.Prepend(err, fmt.Sprintf("failed to deploy PV %s-%d", name, node.Index))
-		}
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
 	}
 
 	return nil
 }
 
-func (k *Kubernetes) deployPV(
-	name, namespace, manifestPath, nodeName, filesystemPath string,
-	storageQantity string,
+func (k *Kubernetes) deployClusterRole( //nolint:dupl // TODO: extend deploy_object module
 	shellState *state.State,
 ) error {
-	var (
-		err          error
-		diskQuantity resource.Quantity
-	)
+	var err error
 
-	if err = yaml.Unmarshal([]byte(storageQantity), &diskQuantity); err != nil {
-		return merry.Prepend(err, "failed to deserialize resources into Quantity")
-	}
-
-	persistentVolume := cconfig.PersistentVolume(name)
+	clusterRole := rconfig.ClusterRole("local-storage-provisioner-clusterrole")
 
 	if err = k.Engine.ToEngineObject(
-		manifestPath,
-		&persistentVolume,
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", "cluster-role.yml",
+		),
+		&clusterRole,
 	); err != nil {
-		return merry.Prepend(err, "failed to cast manifest into persistentVolume")
-	}
-
-	inSelector := v1.NodeSelectorOpIn
-
-	persistentVolume.Name = &name
-	persistentVolume.Namespace = &namespace
-	persistentVolume.Spec.Capacity = &v1.ResourceList{
-		v1.ResourceName("storage"): diskQuantity,
-	}
-	persistentVolume.Spec.Local.Path = &filesystemPath
-	persistentVolume.Spec.NodeAffinity.Required.NodeSelectorTerms = []cconfig.
-		NodeSelectorTermApplyConfiguration{
-		{
-			MatchExpressions: []cconfig.NodeSelectorRequirementApplyConfiguration{
-				{
-					Key:      &nodeName,
-					Operator: &inSelector,
-					Values:   []string{"true"},
-				},
-			},
-		},
+		return merry.Prepend(err, "failed to cast manifest into ClusterRole")
 	}
 
 	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
-		if _, err = clientSet.CoreV1().PersistentVolumes().Apply(
+		if _, err = clientSet.RbacV1().ClusterRoles().Apply(
 			kubeContext,
-			persistentVolume,
+			clusterRole,
 			k.Engine.GenerateDefaultMetav1(),
 		); err != nil {
-			return merry.Prepend(err, "failed to apply persistentVolume manifest")
+			return merry.Prepend(err, "failed to apply cluster role manifest")
 		}
 
 		return nil
 	}
 
-	if err = k.Engine.DeployObject(
-		kubeContext, objectApplyFunc,
-	); err != nil {
-		return merry.Prepend(err, fmt.Sprintln("Error then deploying persistentVolume"))
+	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
 	}
 
-	llog.Infof("Local persistent volume %s creation: success", name)
+	return nil
+}
+
+func (k *Kubernetes) deployClusterRoleBinding( //nolint:dupl // TODO: extend deploy_object module
+	shellState *state.State,
+) error {
+	var err error
+
+	roleBinging := rconfig.ClusterRoleBinding("local-storage-provisioner-clusterrole-binding")
+
+	if err = k.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", "cluster-role-binding.yml",
+		),
+		&roleBinging,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into ClusterRoleBinding")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.RbacV1().ClusterRoleBindings().Apply(
+			kubeContext,
+			roleBinging,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply cluster role binding manifest")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployConfigmap( //nolint:dupl // TODO: extend deploy_object module
+	shellState *state.State,
+) error {
+	var err error
+
+	configMap := cconfig.ConfigMap(
+		"local-storage-provisioner-config",
+		"default",
+	)
+
+	if err = k.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", "configmap.yml",
+		),
+		&configMap,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into ConfigMap")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.CoreV1().ConfigMaps("default").Apply(
+			kubeContext,
+			configMap,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply configmap manifest")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployServiceAccount( //nolint:dupl // TODO: extend deploy_object module
+	shellState *state.State,
+) error {
+	var err error
+
+	serviceAccout := cconfig.ServiceAccount(
+		"local-storage-admin",
+		"default",
+	)
+
+	if err = k.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", "service-account.yml",
+		),
+		&serviceAccout,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into ServiceAccount")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.CoreV1().ServiceAccounts("default").Apply(
+			kubeContext,
+			serviceAccout,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply serivce account manifest")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployObject(kubeContext, objectApplyFunc); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
+	}
+
+	return nil
+}
+
+func (k *Kubernetes) deployProvisioner(
+	shellState *state.State,
+) error {
+	var err error
+
+	daemonSet := aconfig.DaemonSet(
+		"local-storage-provisioner",
+		"default",
+	)
+
+	if err = k.Engine.ToEngineObject(
+		path.Join(
+			shellState.Settings.WorkingDirectory,
+			"third_party", "extra", "manifests", "pv-provisioner", "daemonset.yml",
+		),
+		&daemonSet,
+	); err != nil {
+		return merry.Prepend(err, "failed to cast manifest into DaemonSet")
+	}
+
+	kubeContext, ctxCloseFn := context.WithCancel(context.Background())
+	defer ctxCloseFn()
+
+	objectApplyFunc := func(clientSet *kubernetes.Clientset) error {
+		if _, err = clientSet.AppsV1().DaemonSets("default").Apply(
+			kubeContext,
+			daemonSet,
+			k.Engine.GenerateDefaultMetav1(),
+		); err != nil {
+			return merry.Prepend(err, "failed to apply provisioner daemonset")
+		}
+
+		return nil
+	}
+
+	objectDeleteFunc := func(clientSet *kubernetes.Clientset) error {
+		if err = clientSet.AppsV1().DaemonSets("default").Delete(
+			kubeContext,
+			"local-storage-provisioner",
+			k.Engine.GenerateDefaultDeleteOptions(),
+		); err != nil {
+			return merry.Prepend(err, "failed to delete provisioner daemonset")
+		}
+
+		return nil
+	}
+
+	if err = k.Engine.DeployAndWaitObject(
+		kubeContext,
+		"local-storage-provisioner",
+		"daemonset",
+		objectApplyFunc,
+		objectDeleteFunc,
+	); err != nil {
+		return merry.Prepend(err, fmt.Sprintln("failed to deploy kubernetes object"))
+	}
 
 	return nil
 }
 
 // Deploy monitoring (grafana, node_exporter, promtail)
-//
-//nolint:funlen // deploy all monitoring components
 func (k *Kubernetes) deployGrafana(shellState *state.State) error {
 	// create monitoring inventory
 	var (
@@ -516,6 +697,7 @@ func (k *Kubernetes) deployGrafana(shellState *state.State) error {
 			Playbooks: []string{
 				path.Join(workDir, "grafana.yml"),
 				path.Join(workDir, "grafana_additional.yml"),
+				path.Join(workDir, "prometheus_disks.yml"),
 			},
 			Options:                    PBOpts,
 			ConnectionOptions:          connOpts,

@@ -41,10 +41,9 @@ server:
     enabled: true
     accessModes:
       - ReadWriteOnce
-    mountPath: /data/volumes/local-pv-mon/prometheus
+    mountPath: /data/monitoring
     size: 2Gi
-    storageClass: "local-storage"
-    volumeName: "local-pv-mon"
+    storageClass: "filesystem-monitoring"
   statefulSet:
     enabled: false
   resources: {}

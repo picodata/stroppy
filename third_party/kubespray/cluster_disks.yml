@@ -1,0 +1,15 @@
+- name: Addtional actions for kubernetes cluster
+  hosts: k8s_cluster
+  tasks:
+    - name: Create directory /mnt/network-ssd-nonreplicated
+      ansible.builtin.file:
+        path: /mnt/network-ssd-nonreplicated
+        state: directory
+
+    - name: Create a symbolic link
+      ansible.builtin.file:
+        src: "/dev/disk/by-id/{{ kube_database_disk_device_name }}"
+        dest: "/mnt/network-ssd-nonreplicated/{{ kube_database_disk_device_name }}"
+        state: link
+
+

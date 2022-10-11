@@ -268,7 +268,7 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 
 	ydbStorage.Namespace = stroppyNamespaceName
 
-	persistentVolumeFilesystem := v1.PersistentVolumeFilesystem
+	persistentVolumeFilesystem := v1.PersistentVolumeBlock
 
 	if err = k8sYaml.Unmarshal([]byte(
 		fmt.Sprintf("%dGi", shellState.NodesInfo.GetFirstWorker().Resources.SecondaryDisk)), //nolint

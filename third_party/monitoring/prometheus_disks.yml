@@ -1,0 +1,21 @@
+- hosts: master
+  become: true
+  tasks:
+      - name: Create directory /mnt/monitoring/prometheus
+        ansible.builtin.file:
+          path: /mnt/monitoring/prometheus
+          state: directory
+
+      - name: Create directory /data/monitoring/prometheus
+        ansible.builtin.file:
+          path: /data/monitoring/prometheus
+          state: directory
+
+      - name: Mount prometheus folder as bind volume
+        ansible.posix.mount:
+          path: /data/monitoring/prometheus
+          src: /mnt/monitoring/prometheus
+          opts: bind
+          state: mounted
+          fstype: none
+
