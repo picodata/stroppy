@@ -64,6 +64,7 @@ linters-settings:
     ignore-names:
       - err
       - ok
+      - tx
 
 issues:
   new-from-rev: origin/develop
