@@ -11,6 +11,7 @@ import (
 
 	"github.com/ansel1/merry/v2"
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 	"github.com/ydb-platform/ydb-go-genproto/protos/Ydb"
 	environ "github.com/ydb-platform/ydb-go-sdk-auth-environ"
@@ -28,11 +29,16 @@ const (
 	schemeErr    string = "Path does not exist"
 	stroppyDir   string = "stroppy"
 	stroppyAgent string = "stroppy 1.0"
-	// default operation timeout
+	// default operation timeout.
 	defaultTimeout = time.Second * 10
-	// partitioning settings for accounts and transfers tables
+	// partitioning settings for accounts and transfers tables.
 	partitionsMinCount  = 100
 	partitionsMaxMbytes = 256
+	poolSizeOverhead    = 10
+)
+
+var errIllegalNilOutput = errors.New(
+	"Illegal nil output value of balance column for srcdst account statement",
 )
 
 type YandexDBCluster struct {
@@ -48,6 +54,7 @@ func envExists(key string) bool {
 	if value, ok := os.LookupEnv(key); ok {
 		return len(value) > 0
 	}
+
 	return false
 }
 
@@ -57,7 +64,11 @@ func envConfigured() bool {
 		envExists("YDB_ACCESS_TOKEN_CREDENTIALS"))
 }
 
-func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) (*YandexDBCluster, error) {
+func NewYandexDBCluster(
+	ydbContext context.Context,
+	dbURL string,
+	poolSize int,
+) (*YandexDBCluster, error) {
 	llog.Infof("Establishing connection to YDB on %s with poolSize %d", dbURL, poolSize)
 
 	var (
@@ -67,9 +78,10 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) 
 
 	if envConfigured() {
 		llog.Infoln("NOTE: YDB connection credentials are configured through the environment")
+
 		database, err = ydb.Open(ydbContext, dbURL,
 			ydb.WithUserAgent(stroppyAgent),
-			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolSizeLimit(poolSize+poolSizeOverhead),
 			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
 			ydb.WithDiscoveryInterval(defaultTimeout),
 			environ.WithEnvironCredentials(ydbContext),
@@ -77,14 +89,14 @@ func NewYandexDBCluster(ydbContext context.Context, dbURL string, poolSize int) 
 	} else {
 		database, err = ydb.Open(ydbContext, dbURL,
 			ydb.WithUserAgent(stroppyAgent),
-			ydb.WithSessionPoolSizeLimit(poolSize+10),
+			ydb.WithSessionPoolSizeLimit(poolSize+poolSizeOverhead),
 			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
 			ydb.WithDiscoveryInterval(defaultTimeout),
 		)
 	}
 
 	if err != nil {
-		return nil, merry.Prepend(err, "Error creating YDB connection holder")
+		return nil, errors.Wrap(err, "Error creating YDB connection holder")
 	}
 
 	return &YandexDBCluster{
@@ -120,7 +132,7 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 				ydbContext,
 				tableFullPath,
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to reading table in stream")
 			}
 
 			llog.Traceln("Settings successfully fetched from ydb")
@@ -140,16 +152,16 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 						named.OptionalWithDefault("key", &key),
 						named.OptionalWithDefault("value", &value),
 					); err != nil {
-						return err
+						return errors.Wrap(err, "failed ot scan parameters")
 					}
 					switch key {
 					case "count":
 						if clusterSettins.Count, err = strconv.Atoi(value); err != nil {
-							return merry.Prepend(err, "failed to convert count into integer")
+							return errors.Wrap(err, "failed to convert count into integer")
 						}
 					case "seed":
 						if clusterSettins.Seed, err = strconv.Atoi(value); err != nil {
-							return merry.Prepend(err, "failed to convert seed into integer")
+							return errors.Wrap(err, "failed to convert seed into integer")
 						}
 					}
 					llog.Tracef(
@@ -161,13 +173,13 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 			}
 
 			if err = queryResult.Err(); err != nil {
-				return err
+				return errors.Wrap(err, "failed retrieve query result")
 			}
 
 			return nil
 		},
 	); err != nil {
-		return clusterSettins, merry.Prepend(err, "Error fetching data from settings table")
+		return clusterSettins, errors.Wrap(err, "Error fetching data from settings table")
 	}
 
 	return clusterSettins, nil
@@ -177,17 +189,19 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 	transfer *model.Transfer, //nolint
 	clientID uuid.UUID,
 ) error {
+	var err error
+
 	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
 	amount := transfer.Amount.UnscaledBig().Int64()
 
-	return ydbCluster.ydbConnection.Table().DoTx(
+	if err = ydbCluster.ydbConnection.Table().DoTx(
 		ydbContext,
-		func(ctx context.Context, tx table.TransactionActor) (err error) {
+		func(ctx context.Context, tx table.TransactionActor) error {
 			// Select from account table
-			var qr result.Result
-			qr, err = tx.Execute(
+			var query result.Result
+			query, err = tx.Execute(
 				ctx, ydbCluster.yqlSelectSrcDstAcc,
 				table.NewQueryParameters(
 					table.ValueParam("src_bic",
@@ -202,45 +216,49 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 				options.WithKeepInCache(true),
 			)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute transaction")
 			}
 			defer func() {
-				_ = qr.Close()
+				_ = query.Close()
 			}()
 
-			for qr.NextResultSet(ctx) {
+			for query.NextResultSet(ctx) {
 				// Expect to have 2 rows - source and destination accounts.
 				// In case of 0 or 1 rows something is missing.
-				if qr.CurrentResultSet().RowCount() != 2 {
+				if query.CurrentResultSet().RowCount() != 2 { //nolint:gomnd // not magic number
 					llog.Tracef(
 						"missing transfer: src_bic: %s, src_ban: %s dst_bic: %s, dst_ban: %s",
 						transfer.Acs[0].Bic, transfer.Acs[0].Ban,
 						transfer.Acs[1].Bic, transfer.Acs[1].Ban,
 					)
+
 					return ErrNoRows
 				}
-				for qr.NextRow() {
+				for query.NextRow() {
 					var srcdst int32
 					var balance *int64
-					if err := qr.Scan(&srcdst, &balance); err != nil {
-						return merry.Prepend(err, "failed to scan account balance")
+					if err = query.Scan(&srcdst, &balance); err != nil {
+						return errors.Wrap(err, "failed to scan account balance")
 					}
 					if balance == nil {
-						return merry.New("Illegal nil output value of balance column for srcdst account statement")
+						return errIllegalNilOutput
 					}
 					switch srcdst {
 					case 1: // need to check the source account balance
 						if *balance < amount {
 							return ErrInsufficientFunds
 						}
-					case 2: // nothing to do on the destination account
+					case 2: //nolint:gomnd // nothing to do on the destination account
 					default: // something strange to be reported
-						return merry.Errorf("Illegal srcdst value %d for srcdst account statement", srcdst)
+						return merry.Errorf(
+							"Illegal srcdst value %d for srcdst account statement",
+							srcdst,
+						)
 					}
 				}
 			}
-			if err = qr.Err(); err != nil {
-				return err
+			if err = query.Err(); err != nil {
+				return errors.Wrap(err, "failed to retrieve query status")
 			}
 
 			// Upsert the new row to the transfer table
@@ -265,7 +283,7 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 				options.WithKeepInCache(true),
 			)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute transaction")
 			}
 
 			// Update two balances in the account table.
@@ -286,17 +304,23 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 				options.WithKeepInCache(true),
 			)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute transaction")
 			}
 
 			return nil
 		},
 		// Mark the transaction idempotent to allow retries.
 		table.WithIdempotent(),
-	)
+	); err != nil {
+		return errors.Wrap(err, "failed to execute 'Do' procedure")
+	}
+
+	return nil
 }
 
 func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
+	var err error
+
 	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
@@ -305,12 +329,15 @@ func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
 
 	var accs []model.Account
 
-	err := ydbCluster.ydbConnection.Table().Do(
+	if err = ydbCluster.ydbConnection.Table().Do(
+
 		ydbContext,
-		func(ctx context.Context, sess table.Session) (err error) {
-			rows, err := sess.StreamExecuteScanQuery(ctx, selectStmnt, nil)
+		func(ctx context.Context, sess table.Session) error {
+			var rows result.StreamResult
+
+			rows, err = sess.StreamExecuteScanQuery(ctx, selectStmnt, nil)
 			if err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute scan query")
 			}
 			defer func() {
 				_ = rows.Close()
@@ -319,8 +346,8 @@ func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
 				for rows.NextRow() {
 					var Balance int64
 					var acc model.Account
-					if err := rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
-						return err
+					if err = rows.Scan(&acc.Bic, &acc.Ban, &Balance); err != nil {
+						return errors.Wrap(err, "failed to scan columns values")
 					}
 					dec := new(inf.Dec)
 					dec.SetUnscaled(Balance)
@@ -328,11 +355,11 @@ func (ydbCluster *YandexDBCluster) FetchAccounts() ([]model.Account, error) {
 					accs = append(accs, acc)
 				}
 			}
+
 			return nil
 		},
-	)
-	if err != nil {
-		return nil, merry.Prepend(err, "failed to fetch accounts")
+	); err != nil {
+		return nil, errors.Wrap(err, "failed to fetch accounts")
 	}
 
 	return accs, nil
@@ -362,29 +389,33 @@ func (ydbCluster *YandexDBCluster) FetchBalance(
 				),
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute query")
 			}
+
 			return nil
 		},
 	); err != nil {
-		return nil, nil, err
+		return nil, nil, errors.Wrap(err, "failed to execute 'Do' procedure")
 	}
+
 	defer func() {
 		_ = rows.Close()
 	}()
 
 	var balance, pendingAmount inf.Dec
+
 	if rows.NextResultSet(ydbContext) {
 		if rows.NextRow() {
 			err = rows.Scan(&balance, &pendingAmount)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, errors.Wrap(err, "failed to scan columns values")
 			}
+
 			return &balance, &pendingAmount, nil
 		}
 	}
 
-	return nil, nil, merry.Errorf("No amount for bic %s and ban %s", bic, ban)
+	return nil, nil, errors.Errorf("No amount for bic %s and ban %s", bic, ban)
 }
 
 func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
@@ -406,12 +437,12 @@ func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
 				nil,
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute 'Do' procedure")
 			}
 			return nil
 		},
 	); err != nil {
-		return nil, merry.Prepend(err, "failed to select totals from checksum table")
+		return nil, errors.Wrap(err, "failed to select totals from checksum table")
 	}
 	defer func() {
 		_ = queryResult.Close()
@@ -422,7 +453,7 @@ func (ydbCluster *YandexDBCluster) FetchTotal() (*inf.Dec, error) {
 			if err = queryResult.ScanNamed(
 				named.Required("amount", &amount),
 			); err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "failed to scan columns values")
 			}
 		}
 	}
@@ -455,13 +486,13 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 				nil,
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute 'Do' procedure")
 			}
 
 			return nil
 		},
 	); err != nil {
-		return nil, merry.Prepend(err, "failed to compute the total balance on the account table")
+		return nil, errors.Wrap(err, "failed to compute the total balance on the account table")
 	}
 	defer func() {
 		_ = queryResult.Close()
@@ -473,7 +504,7 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 			if err = queryResult.ScanNamed(
 				named.OptionalWithDefault("total", &totalBalance),
 			); err != nil {
-				return nil, err
+				return nil, errors.Wrap(err, "failed to scan columns values")
 			}
 
 			llog.Tracef("Account{ totalBalance: %d }", totalBalance)
@@ -483,7 +514,9 @@ func (ydbCluster *YandexDBCluster) CheckBalance() (*inf.Dec, error) {
 	return inf.NewDec(totalBalance, 0), nil
 }
 
-func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) (err error) {
+func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) error {
+	var err error
+
 	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
@@ -504,18 +537,21 @@ func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) (err error) {
 				),
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to scan columns values")
 			}
 			return nil
 		},
 		table.WithIdempotent(),
 	); err != nil {
-		return merry.Prepend(err, "Error when inserting data into checksum table")
+		return errors.Wrap(err, "failed to insert data into checksum table")
 	}
+
 	return nil
 }
 
-func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) (err error) {
+func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
+	var err error
+
 	llog.Infof("Creating the folders and tables...")
 
 	ydbContext, cancel := context.WithCancel(context.Background())
@@ -575,33 +611,45 @@ func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) (err error) {
 	return nil
 }
 
-// nolint // functions is not same
-func createSettingsTable(ydbContext context.Context,
-	ydbClient table.Client, prefix string) (err error) {
+func createSettingsTable( //nolint:dupl // because it golang
+	ydbContext context.Context,
+	ydbClient table.Client, prefix string,
+) error {
+	var err error
+
 	tabname := path.Join(prefix, "settings")
 	if err = recreateTable(
 		ydbContext, ydbClient, tabname,
 		func(ctx context.Context, session table.Session) error {
-			return session.CreateTable(
-				ydbContext, tabname,
+			if err = session.CreateTable(
+				ctx, tabname,
 				options.WithColumn("key", types.Optional(types.TypeString)),
 				options.WithColumn("value", types.Optional(types.TypeString)),
 				options.WithPrimaryKeyColumn("key"),
-			)
+			); err != nil {
+				return errors.Wrap(err, "failed to create table")
+			}
+
+			return nil
 		},
 	); err != nil {
-		return err
+		return errors.Wrap(err, "failed to recreate settings table")
 	}
+
 	return nil
 }
 
-func createAccountTable(ydbContext context.Context,
-	ydbClient table.Client, prefix string) (err error) {
+func createAccountTable(
+	ydbContext context.Context,
+	ydbClient table.Client, prefix string,
+) error {
+	var err error
+
 	tabname := path.Join(prefix, "account")
 	if err = recreateTable(
 		ydbContext, ydbClient, tabname,
 		func(ctx context.Context, session table.Session) error {
-			return session.CreateTable(
+			if err = session.CreateTable(
 				ctx, tabname,
 				options.WithColumn("bic", types.Optional(types.TypeString)),
 				options.WithColumn("ban", types.Optional(types.TypeString)),
@@ -613,21 +661,30 @@ func createAccountTable(ydbContext context.Context,
 					options.WithMinPartitionsCount(partitionsMinCount),
 					options.WithPartitionSizeMb(partitionsMaxMbytes),
 				),
-			)
+			); err != nil {
+				return errors.Wrap(err, "failed to create table")
+			}
+
+			return nil
 		},
 	); err != nil {
-		return err
+		return errors.Wrap(err, "failed to recreate account table")
 	}
+
 	return nil
 }
 
-func createTransferTable(ydbContext context.Context,
-	ydbClient table.Client, prefix string) (err error) {
+func createTransferTable(
+	ydbContext context.Context,
+	ydbClient table.Client, prefix string,
+) error {
+	var err error
+
 	tabname := path.Join(prefix, "transfer")
 	if err = recreateTable(
 		ydbContext, ydbClient, tabname,
 		func(ctx context.Context, session table.Session) error {
-			return session.CreateTable(
+			if err = session.CreateTable(
 				ctx, tabname,
 				options.WithColumn("transfer_id", types.Optional(types.TypeString)),
 				options.WithColumn("src_bic", types.Optional(types.TypeString)),
@@ -645,31 +702,44 @@ func createTransferTable(ydbContext context.Context,
 					options.WithMinPartitionsCount(partitionsMinCount),
 					options.WithPartitionSizeMb(partitionsMaxMbytes),
 				),
-			)
+			); err != nil {
+				return errors.Wrap(err, "failed to create table")
+			}
+
+			return nil
 		},
 	); err != nil {
-		return err
+		return errors.Wrap(err, "failed to recreate account table")
 	}
+
 	return nil
 }
 
-// nolint // functions createChecksumTable and createSettingsTable is not same
-func createChecksumTable(ydbContext context.Context,
-	ydbClient table.Client, prefix string) (err error) {
+func createChecksumTable( //nolint:dupl // because it golang
+	ydbContext context.Context,
+	ydbClient table.Client, prefix string,
+) error {
+	var err error
+
 	tabname := path.Join(prefix, "checksum")
 	if err = recreateTable(
 		ydbContext, ydbClient, tabname,
 		func(ctx context.Context, session table.Session) error {
-			return session.CreateTable(
-				ydbContext, tabname,
+			if err = session.CreateTable(
+				ctx, tabname,
 				options.WithColumn("name", types.Optional(types.TypeString)),
 				options.WithColumn("amount", types.Optional(types.TypeInt64)),
 				options.WithPrimaryKeyColumn("name"),
-			)
+			); err != nil {
+				return errors.Wrap(err, "failed to create table")
+			}
+
+			return nil
 		},
 	); err != nil {
-		return err
+		return errors.Wrap(err, "failed to recreate checksum table")
 	}
+
 	return nil
 }
 
@@ -678,7 +748,9 @@ func recreateTable(
 	ydbClient table.Client,
 	tablePath string,
 	createFunc func(ctx context.Context, session table.Session) error,
-) (err error) {
+) error {
+	var err error
+
 	if err = ydbClient.Do(
 		ydbContext,
 		func(ctx context.Context, session table.Session) error {
@@ -689,17 +761,18 @@ func recreateTable(
 						tablePath,
 					)
 				} else {
-					return err
+					return errors.Wrap(err, "failed to execute 'Do' procedure")
 				}
 			}
+
 			return nil
 		},
 	); err != nil {
-		return merry.Prepend(err, fmt.Sprintf("Error droping table %s", tablePath))
+		return errors.Wrap(err, fmt.Sprintf("Error droping table %s", tablePath))
 	}
 
 	if err = ydbClient.Do(ydbContext, createFunc); err != nil {
-		return merry.Prepend(err, fmt.Sprintf("Error creating table %s", tablePath))
+		return errors.Wrap(err, fmt.Sprintf("Error creating table %s", tablePath))
 	}
 
 	llog.Infof("Table created: %s", tablePath)
@@ -722,7 +795,7 @@ func createStroppyDirectory(
 		ydbContext,
 		ydbDirPath,
 	); err != nil {
-		return merry.Prepend(
+		return errors.Wrap(
 			err,
 			fmt.Sprintf("Error creating directory %s", ydbDirPath),
 		)
@@ -761,21 +834,24 @@ func upsertSettings(
 				),
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed execute execute query")
 			}
 
 			return nil
 		},
 		table.WithIdempotent(),
 	); err != nil {
-		return merry.Prepend(err, "Error inserting data into settings table")
+		return errors.Wrap(err, "failed to execute 'Do' procedure")
 	}
 
 	llog.Infoln("Settings successfully inserted")
+
 	return nil
 }
 
-func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) (err error) {
+func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) error {
+	var err error
+
 	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
 
@@ -792,16 +868,17 @@ func (ydbCluster *YandexDBCluster) InsertAccount(acc model.Account) (err error) 
 				),
 				options.WithKeepInCache(true),
 			); err != nil {
-				return err
+				return errors.Wrap(err, "failed to execute 'Do' procedure")
 			}
 			return nil
 		},
 		table.WithIdempotent(),
 	); err != nil {
-		if ydb.IsOperationError(err, Ydb.StatusIds_PRECONDITION_FAILED) {
-			return merry.Wrap(ErrDuplicateKey)
+		if ydb.IsOperationError(err, Ydb.StatusIds_PRECONDITION_FAILED) { //nolint
+			return ErrDuplicateKey
 		}
-		return merry.Prepend(err, "Error inserting data into account table")
+
+		return errors.Wrap(err, "Error inserting data into account table")
 	}
 
 	return nil
@@ -894,5 +971,6 @@ func (ydbCluster *YandexDBCluster) StartStatisticsCollect(_ time.Duration) error
 func expandYql(query string) string {
 	retval := strings.ReplaceAll(query, "&{stroppyDir}", stroppyDir)
 	retval = strings.ReplaceAll(retval, `"`, "`")
+
 	return retval
 }
