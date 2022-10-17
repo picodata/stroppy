@@ -13,7 +13,7 @@ import (
 func Execute() {
 	settings := config.DefaultSettings()
 	dbSettings := settings.DatabaseSettings
-	statistics.StatsSetTotal(dbSettings.Count)
+	statistics.StatsSetTotal(int(dbSettings.Count))
 
 	rootCmd := &cobra.Command{
 		Use:   "stroppy [pop|pay|deploy|shell]",
@@ -44,10 +44,6 @@ bandwidth along the way.`,
 	rootCmd.PersistentFlags().BoolVar(&settings.UseChaos, "use-chaos",
 		settings.UseChaos,
 		"install and run chaos-mesh on target cluster")
-
-	rootCmd.PersistentFlags().BoolVar(&settings.Local, "local",
-		settings.Local,
-		"operate with local cluster")
 
 	rootCmd.PersistentFlags().StringVarP(&settings.ChaosParameter,
 		"chaos-parameter", "c",
@@ -96,7 +92,7 @@ than we saved during DB population process (that is achieved if brm > 1).
 The recommended range of brm is from 1.01 to 1.1. 
 The default value of banRangeMultipluer is 1.1.`)
 
-	rootCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Workers,
+	rootCmd.PersistentFlags().Uint64VarP(&settings.DatabaseSettings.Workers,
 		"workers", "w",
 		settings.DatabaseSettings.Workers,
 		"Number of workers, 4 * NumCPU if not set.")
@@ -105,15 +101,12 @@ The default value of banRangeMultipluer is 1.1.`)
 		"stat-interval", "s",
 		settings.DatabaseSettings.StatInterval,
 		"interval by seconds for gettings db stats. Only fdb yet.")
-	rootCmd.PersistentFlags().IntVar(&settings.DatabaseSettings.ConnectPoolSize,
+	rootCmd.PersistentFlags().Uint64Var(
+		&settings.DatabaseSettings.ConnectPoolSize,
 		"pool-size",
 		settings.DatabaseSettings.ConnectPoolSize,
-		"count of connection in db pool. Equal workers count by default.")
-
-	rootCmd.PersistentFlags().BoolVarP(&settings.TestSettings.UseCloudStroppy,
-		"enable-profilier", "",
-		false,
-		"specify to use pprof for diagnostic")
+		"count of connection in db pool. Equal workers count by default.",
+	)
 
 	rootCmd.AddCommand(newPopCommand(settings),
 		newPayCommand(settings),

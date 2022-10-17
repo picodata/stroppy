@@ -4,13 +4,13 @@ metadata:
   name: stroppy-ydb-database
 spec:
   image:
-    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.47
+    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.4.30
   nodes: 1
   domain: root
   resources:
     containerResources:
       limits:
-        cpu: 500m
+        cpu: 6
     storageUnits:
       - count: 1
         unitKind: ssd

@@ -6,6 +6,7 @@ package cluster
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/jackc/pgerrcode"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	"github.com/pkg/errors"
 
 	"gitlab.com/picodata/stroppy/internal/model"
 
@@ -49,8 +51,11 @@ func (cockroach *CockroachDatabase) InsertTransfer(transfer *model.Transfer) err
 	return nil
 }
 
-func (cockroach *CockroachDatabase) DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), deleteTransfer, transferId, clientId)
+func (cockroach *CockroachDatabase) DeleteTransfer(
+	transferID model.TransferId,
+	clientID uuid.UUID,
+) error {
+	res, err := cockroach.pool.Exec(context.Background(), deleteTransfer, transferID, clientID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return ErrNoRows
@@ -64,8 +69,11 @@ func (cockroach *CockroachDatabase) DeleteTransfer(transferId model.TransferId, 
 	return nil
 }
 
-func (cockroach *CockroachDatabase) SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error {
-	res, err := cockroach.pool.Exec(context.Background(), setTransferClient, clientId, transferId)
+func (cockroach *CockroachDatabase) SetTransferClient(
+	clientID uuid.UUID,
+	transferID model.TransferId,
+) error {
+	res, err := cockroach.pool.Exec(context.Background(), setTransferClient, clientID, transferID)
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -76,11 +84,13 @@ func (cockroach *CockroachDatabase) SetTransferClient(clientId uuid.UUID, transf
 	return nil
 }
 
-func (cockroach *CockroachDatabase) FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error) {
-	row := cockroach.pool.QueryRow(context.Background(), fetchTransferClient, transferId)
+func (cockroach *CockroachDatabase) FetchTransferClient(
+	transferID model.TransferId,
+) (*uuid.UUID, error) {
+	row := cockroach.pool.QueryRow(context.Background(), fetchTransferClient, transferID)
 
-	var clientId uuid.UUID
-	err := row.Scan(&clientId)
+	var clientID uuid.UUID
+	err := row.Scan(&clientID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrNoRows
@@ -88,11 +98,14 @@ func (cockroach *CockroachDatabase) FetchTransferClient(transferId model.Transfe
 		return nil, merry.Wrap(err)
 	}
 
-	return &clientId, nil
+	return &clientID, nil
 }
 
-func (cockroach *CockroachDatabase) ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), clearTransferClient, transferId, clientId)
+func (cockroach *CockroachDatabase) ClearTransferClient(
+	transferID model.TransferId,
+	clientID uuid.UUID,
+) error {
+	res, err := cockroach.pool.Exec(context.Background(), clearTransferClient, transferID, clientID)
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -105,8 +118,18 @@ func (cockroach *CockroachDatabase) ClearTransferClient(transferId model.Transfe
 	return nil
 }
 
-func (cockroach *CockroachDatabase) SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error {
-	res, err := cockroach.pool.Exec(context.Background(), setTransferState, state, transferId, clientId)
+func (cockroach *CockroachDatabase) SetTransferState(
+	state string,
+	transferID model.TransferId,
+	clientID uuid.UUID,
+) error {
+	res, err := cockroach.pool.Exec(
+		context.Background(),
+		setTransferState,
+		state,
+		transferID,
+		clientID,
+	)
 	if err != nil {
 		return merry.Wrap(err)
 	}
@@ -117,10 +140,12 @@ func (cockroach *CockroachDatabase) SetTransferState(state string, transferId mo
 	return nil
 }
 
-func (cockroach *CockroachDatabase) FetchTransfer(transferId model.TransferId) (*model.Transfer, error) {
+func (cockroach *CockroachDatabase) FetchTransfer( //nolint:dupl // TODO: remove duplication
+	transferID model.TransferId,
+) (*model.Transfer, error) {
 	t := new(model.Transfer)
-	t.InitEmptyTransfer(transferId)
-	row := cockroach.pool.QueryRow(context.Background(), fetchTransfer, transferId)
+	t.InitEmptyTransfer(transferID)
+	row := cockroach.pool.QueryRow(context.Background(), fetchTransfer, transferID)
 	// Ignore possible error, we will retry
 	var amount int64
 	if err := row.Scan(&t.Acs[0].Bic, &t.Acs[0].Ban, &t.Acs[1].Bic,
@@ -157,25 +182,43 @@ func (cockroach *CockroachDatabase) FetchDeadTransfers() ([]model.TransferId, er
 	return transferIds, nil
 }
 
-func (cockroach *CockroachDatabase) UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error {
+func (cockroach *CockroachDatabase) UpdateBalance(
+	balance *inf.Dec,
+	bic string,
+	ban string,
+	transferID model.TransferId,
+) error {
 	panic("implement me")
 }
 
-func (cockroach *CockroachDatabase) LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error) {
+func (cockroach *CockroachDatabase) LockAccount(
+	transferID model.TransferId,
+	pendingAmount *inf.Dec,
+	bic string,
+	ban string,
+) (*model.Account, error) {
 	panic("implement me")
 }
 
-func (cockroach *CockroachDatabase) UnlockAccount(bic string, ban string, transferId model.TransferId) error {
+func (cockroach *CockroachDatabase) UnlockAccount(
+	bic string,
+	ban string,
+	transferID model.TransferId,
+) error {
 	panic("implement me")
 }
 
-func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *CockroachDatabase, err error) {
+func NewCockroachCluster(
+	dbURL string,
+	connectionPoolSize uint64,
+) (*CockroachDatabase, error) {
+	var err error
+
 	llog.Infof("Establishing connection to cockroach on %v", dbURL)
 
 	var poolConfig *pgxpool.Config
 	if poolConfig, err = pgxpool.ParseConfig(dbURL); err != nil {
-		err = merry.Prepend(err, "parse url parameter")
-		return
+		return nil, merry.Prepend(err, "parse url parameter")
 	}
 
 	if !strings.Contains(dbURL, "pool_max_conns") {
@@ -188,25 +231,27 @@ func NewCockroachCluster(dbURL string, connectionPoolSize int) (cluster *Cockroa
 
 	var pgPool *pgxpool.Pool
 	if pgPool, err = pgxpool.ConnectConfig(ctxt, poolConfig); err != nil {
-		err = merry.Prepend(err, "connection")
-		return
+		return nil, merry.Prepend(err, "connection")
 	}
 
-	cluster = &CockroachDatabase{
+	return &CockroachDatabase{
 		pool: pgPool,
 		ctxt: ctxt,
-	}
-	return
+	}, nil
 }
 
-func (cockroach *CockroachDatabase) BootstrapDB(count int, seed int) (err error) {
+func (cockroach *CockroachDatabase) BootstrapDB(count uint64, seed int) error {
+	var err error
+
 	llog.Infof("Bootstrapping cluster...")
 	if _, err = cockroach.pool.Exec(cockroach.ctxt, bootstrapScript); err != nil {
 		return merry.Prepend(err, "failed to execute bootstrap script")
 	}
 
 	llog.Infof("Loading settings...")
-	_, err = cockroach.pool.Exec(cockroach.ctxt, insertSetting, "count", strconv.Itoa(count))
+
+	_, err = cockroach.pool.Exec(
+		cockroach.ctxt, insertSetting, "count", fmt.Sprintf("%d", count))
 	if err != nil {
 		return merry.Prepend(err, "failed to load count setting")
 	}
@@ -216,7 +261,7 @@ func (cockroach *CockroachDatabase) BootstrapDB(count int, seed int) (err error)
 		return merry.Prepend(err, "failed to load seed setting")
 	}
 
-	return
+	return nil
 }
 
 func (cockroach *CockroachDatabase) GetClusterType() DBClusterType {
@@ -241,7 +286,7 @@ func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, e
 	var fetchSettings []string
 	for rows.Next() {
 		var clusterSetting string
-		if err := rows.Scan(&clusterSetting); err != nil {
+		if err = rows.Scan(&clusterSetting); err != nil {
 			return clusterSettings, merry.Prepend(err, "failed to scan setting for FetchSettings")
 		}
 		fetchSettings = append(fetchSettings, clusterSetting)
@@ -269,7 +314,13 @@ func (cockroach *CockroachDatabase) FetchSettings() (clusterSettings Settings, e
 }
 
 func (cockroach *CockroachDatabase) InsertAccount(acc model.Account) (err error) {
-	_, err = cockroach.pool.Exec(cockroach.ctxt, upsertAccount, acc.Bic, acc.Ban, acc.Balance.UnscaledBig().Int64())
+	_, err = cockroach.pool.Exec(
+		cockroach.ctxt,
+		upsertAccount,
+		acc.Bic,
+		acc.Ban,
+		acc.Balance.UnscaledBig().Int64(),
+	)
 	if err != nil {
 		if pgErr, ok := err.(*pgconn.PgError); ok {
 			if pgErr.Code == pgerrcode.UniqueViolation {
@@ -324,7 +375,10 @@ func (cockroach *CockroachDatabase) CheckBalance() (*inf.Dec, error) {
 
 const cockroachTxTimeout = 45 * time.Second
 
-func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer, clientId uuid.UUID) error {
+func (cockroach *CockroachDatabase) MakeAtomicTransfer( //nolint
+	transfer *model.Transfer,
+	clientID uuid.UUID,
+) error {
 	ctx, cancel := context.WithTimeout(context.Background(), cockroachTxTimeout)
 	defer cancel()
 
@@ -339,11 +393,12 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 
 	// Rollback is safe to call even if the tx is already closed, so if
 	// the tx commits successfully, this is a no-op
-	defer func() {
-		if err := tx.Rollback(ctx); err != nil && err != pgx.ErrTxClosed {
-			llog.Errorf("failed to rollback transaction: '%v'", err)
-			panic(ErrConsistencyViolation)
+	defer func() error {
+		if err = tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
+			return errors.Wrap(err, "failed to rollback transaction: '%v'")
 		}
+
+		return nil
 	}()
 
 	sourceAccount := transfer.Acs[0]
@@ -421,7 +476,10 @@ func (cockroach *CockroachDatabase) MakeAtomicTransfer(transfer *model.Transfer,
 }
 
 func (cockroach *CockroachDatabase) FetchAccounts() ([]model.Account, error) {
-	rows, err := cockroach.pool.Query(context.Background(), `SELECT bic, ban, balance FROM account;`)
+	rows, err := cockroach.pool.Query(
+		context.Background(),
+		`SELECT bic, ban, balance FROM account;`,
+	)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to fetch accounts")
 	}
@@ -440,7 +498,10 @@ func (cockroach *CockroachDatabase) FetchAccounts() ([]model.Account, error) {
 	return accs, nil
 }
 
-func (cockroach *CockroachDatabase) FetchBalance(bic string, ban string) (*inf.Dec, *inf.Dec, error) {
+func (cockroach *CockroachDatabase) FetchBalance( //nolint
+	bic string,
+	ban string,
+) (*inf.Dec, *inf.Dec, error) {
 	row := cockroach.pool.QueryRow(context.Background(), fetchBalance, bic, ban)
 	var balance, pendingAmount inf.Dec
 	err := row.Scan(&balance, &pendingAmount)

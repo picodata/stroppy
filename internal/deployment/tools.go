@@ -6,11 +6,13 @@ package deployment
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 
 	"gitlab.com/picodata/stroppy/pkg/engine/stroppy"
@@ -19,37 +21,39 @@ import (
 	"github.com/ansel1/merry"
 	"github.com/tidwall/gjson"
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
-	"gitlab.com/picodata/stroppy/pkg/database/config"
 )
 
 const dateFormat = "02-01-2006_15_04_05"
 
 //nolint:nonamedreturns // should be fixed in future
-func (sh *shell) executeRemotePay(
-	settings *config.DatabaseSettings,
-) (beginTime, endTime int64, err error) {
-	llog.Debugf("DBURL: %s", settings.DBURL)
+func (sh *shell) executeRemotePay() (beginTime, endTime int64, err error) {
+	llog.Debugf("DBURL: %s", sh.state.Settings.DatabaseSettings.DBURL)
 
 	payTestCommand := []string{
 		stroppyBinaryPath,
 		"pay",
 		"--dir",
 		stroppyHomePath,
-		"--run-as-pod",
-		"--url", fmt.Sprintf("%v", settings.DBURL),
+		"--run-type", "client",
+		"--url", sh.state.Settings.DatabaseSettings.DBURL,
 		"--check",
-		"--count", fmt.Sprintf("%v", settings.Count),
-		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-		"-w", fmt.Sprintf("%v", settings.Workers),
+		"--count", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.Count),
+		"-r", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.BanRangeMultiplier),
+		"-w", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.Workers),
 		"--dbtype", sh.state.Settings.DatabaseSettings.DBType,
 		"--log-level", sh.state.Settings.LogLevel,
 	}
 
 	llog.Tracef("Stroppy remote command '%s'", strings.Join(payTestCommand, " "))
 
-	logFileName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.log",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.Zipfian, time.Now().Format(dateFormat))
+	logFileName := fmt.Sprintf(
+		"%v_pay_%v_%v_zipfian_%v_%v.log",
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
+		time.Now().Format(dateFormat),
+	)
 
 	beginTime, endTime, err = sh.k.ExecuteRemoteCommand(
 		stroppy.StroppyClientPodName,
@@ -67,19 +71,16 @@ func (sh *shell) executeRemotePay(
 
 // executePay - выполнить тест переводов внутри удаленного пода stroppy
 func (sh *shell) executePay(shellState *state.State) error {
-	var (
-		settings *config.DatabaseSettings
-		err      error
-	)
+	var err error
 
-	if settings, err = sh.readDatabaseConfig("pay"); err != nil {
+	if err = sh.readDatabaseConfig("pay"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
 	var beginTime, endTime int64
 
-	if sh.state.Settings.TestSettings.UseCloudStroppy {
-		if beginTime, endTime, err = sh.executeRemotePay(settings); err != nil {
+	if sh.state.Settings.TestSettings.IsController() {
+		if beginTime, endTime, err = sh.executeRemotePay(); err != nil {
 			return merry.Prepend(err, "failed to executeRemotePay")
 		}
 	} else {
@@ -91,9 +92,14 @@ func (sh *shell) executePay(shellState *state.State) error {
 	}
 	llog.Infof("pay test start time: '%d', end time: '%d'", beginTime, endTime)
 
-	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.Zipfian, time.Now().Format(dateFormat))
+	monImagesArchName := fmt.Sprintf(
+		"%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
+		time.Now().Format(dateFormat),
+	)
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -113,24 +119,21 @@ func (sh *shell) executePay(shellState *state.State) error {
 
 // executePop - выполнить загрузку счетов в указанную БД внутри удаленного пода stroppy
 func (sh *shell) executePop(shellState *state.State) error {
-	var (
-		settings *config.DatabaseSettings
-		err      error
-	)
+	var err error
 
-	if settings, err = sh.readDatabaseConfig("pop"); err != nil {
+	if err = sh.readDatabaseConfig("pop"); err != nil {
 		return merry.Prepend(err, "failed to read config")
 	}
 
 	llog.Debugf(
 		"Stroppy executed on remote host: %v",
-		sh.state.Settings.TestSettings.UseCloudStroppy,
+		sh.state.Settings.TestSettings.IsController(),
 	)
 
 	var beginTime, endTime int64
 
-	if sh.state.Settings.TestSettings.UseCloudStroppy {
-		if beginTime, endTime, err = sh.executeRemotePop(settings); err != nil {
+	if sh.state.Settings.TestSettings.IsController() {
+		if beginTime, endTime, err = sh.executeRemotePop(); err != nil {
 			return merry.Prepend(err, "failed to executeRemotePop")
 		}
 	} else {
@@ -143,9 +146,14 @@ func (sh *shell) executePop(shellState *state.State) error {
 
 	llog.Infof("Pop test start time: '%d', end time: '%d'", beginTime, endTime)
 
-	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.Zipfian, time.Now().Format(dateFormat))
+	monImagesArchName := fmt.Sprintf(
+		"%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
+		time.Now().Format(dateFormat),
+	)
 
 	// таймаут, чтобы не получать пустое место на графиках
 	time.Sleep(20 * time.Second)
@@ -164,34 +172,37 @@ func (sh *shell) executePop(shellState *state.State) error {
 }
 
 //nolint:nonamedreturns // should be fixed in future
-func (sh *shell) executeRemotePop(
-	settings *config.DatabaseSettings,
-) (beginTime, endTime int64, err error) {
-	llog.Debugf("DBURL: %s", settings.DBURL)
+func (sh *shell) executeRemotePop() (beginTime, endTime int64, err error) {
+	llog.Debugf("DBURL: %s", sh.state.Settings.DatabaseSettings.DBURL)
 
 	popTestCommand := []string{
 		stroppyBinaryPath,
 		"pop",
 		"--dir",
 		stroppyHomePath,
-		"--run-as-pod",
-		"--url", settings.DBURL,
-		"--count", fmt.Sprintf("%v", settings.Count),
-		"-r", fmt.Sprintf("%v", settings.BanRangeMultiplier),
-		"-w", fmt.Sprintf("%v", settings.Workers),
+		"--run-type", "client",
+		"--url", sh.state.Settings.DatabaseSettings.DBURL,
+		"--count", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.Count),
+		"-r", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.BanRangeMultiplier),
+		"-w", fmt.Sprintf("%v", sh.state.Settings.DatabaseSettings.Workers),
 		"--dbtype", sh.state.Settings.DatabaseSettings.DBType,
 		"--log-level", sh.state.Settings.LogLevel,
 	}
 
 	llog.Tracef("Stroppy remote command '%s'", strings.Join(popTestCommand, " "))
 
-	if settings.Sharded {
+	if sh.state.Settings.DatabaseSettings.Sharded {
 		popTestCommand = append(popTestCommand, "sharded")
 	}
 
-	logFileName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.log",
-		settings.DBType, settings.Count, settings.BanRangeMultiplier,
-		settings.Zipfian, time.Now().Format(dateFormat))
+	logFileName := fmt.Sprintf(
+		"%v_pop_%v_%v_zipfian_%v_%v.log",
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
+		time.Now().Format(dateFormat),
+	)
 
 	if beginTime, endTime, err = sh.k.ExecuteRemoteCommand(
 		stroppy.StroppyClientPodName,
@@ -208,63 +219,76 @@ func (sh *shell) executeRemotePop(
 
 // readDatabaseConfig
 // прочитать конфигурационный файл test_config.json
-func (sh *shell) readDatabaseConfig(cmdType string) (settings *config.DatabaseSettings, err error) {
-	var data []byte
+func (sh *shell) readDatabaseConfig(cmdType string) error {
+	var (
+		err  error
+		data []byte
+	)
 
 	llog.Debugf(
 		"Expected test config file path %s",
 		filepath.Join(sh.workingDirectory, testConfDir, configFileName),
 	)
 
-	configFilePath := filepath.Join(sh.workingDirectory, testConfDir, configFileName)
-	if data, err = ioutil.ReadFile(configFilePath); err != nil {
-		err = merry.Prepend(err, "failed to read config file")
-		return
+	if data, err = os.ReadFile(path.Join(
+		sh.state.Settings.WorkingDirectory,
+		testConfDir,
+		configFileName,
+	)); err != nil {
+		return errors.Wrap(err, "failed to read config file")
 	}
 
-	settings = config.DatabaseDefaults()
-	settings.BanRangeMultiplier = gjson.Parse(string(data)).Get("banRangeMultiplier").Float()
-	settings.DBType = sh.state.Settings.DatabaseSettings.DBType
+	sh.state.Settings.DatabaseSettings.BanRangeMultiplier = gjson.Parse(string(data)).
+		Get("banRangeMultiplier").
+		Float()
 
 	switch sh.state.Settings.DatabaseSettings.DBType {
 	case cluster.Postgres:
-		settings.DBURL = "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable"
-
+		sh.state.Settings.DatabaseSettings.DBURL = pgDefaultURI
 	case cluster.Foundation:
-		settings.DBURL = "fdb.cluster"
-
+		sh.state.Settings.DatabaseSettings.DBURL = fdbDefultURI
 	case cluster.MongoDB:
-		settings.DBURL = "mongodb://stroppy:stroppy@sample-cluster-name-mongos.default.svc.cluster.local/admin?ssl=false"
-
+		sh.state.Settings.DatabaseSettings.DBURL = mongoDefaultURI
 	case cluster.Cockroach:
-		settings.DBURL = "postgres://stroppy:stroppy@/stroppy?sslmode=disable"
-
+		sh.state.Settings.DatabaseSettings.DBURL = crDefaultURI
 	case cluster.Cartridge:
-		settings.DBURL = "http://routers:8081"
-
+		sh.state.Settings.DatabaseSettings.DBURL = cartDefaultURI
 	case cluster.YandexDB:
-		settings.DBURL = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
-
+		sh.state.Settings.DatabaseSettings.DBURL = ydbDefaultURI
 	default:
-		err = merry.Errorf("unknown db type '%s'", sh.state.Settings.DatabaseSettings.DBType)
-		return
+		return errors.Errorf("unknown db type '%s'", sh.state.Settings.DatabaseSettings.DBType)
 	}
 
 	switch cmdType {
 	case "pop":
-		settings.Count = int(gjson.Parse(string(data)).Get("cmd.0").Get("pop").Get("count").Int())
+		sh.state.Settings.DatabaseSettings.Count = gjson.Parse(string(data)).
+			Get("cmd.0").
+			Get("pop").
+			Get("count").
+			Uint()
 	case "pay":
-		settings.Count = int(
-			gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("count").Int(),
-		)
-		settings.Check = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("Check").Bool()
-		settings.Zipfian = gjson.Parse(string(data)).
+		sh.state.Settings.DatabaseSettings.Count = gjson.Parse(string(data)).
+			Get("cmd.1").
+			Get("pay").
+			Get("count").
+			Uint()
+
+		sh.state.Settings.DatabaseSettings.Check = gjson.Parse(string(data)).
+			Get("cmd.1").
+			Get("pay").
+			Get("Check").
+			Bool()
+		sh.state.Settings.DatabaseSettings.Zipfian = gjson.Parse(string(data)).
 			Get("cmd.1").
 			Get("pay").
 			Get("zipfian").
 			Bool()
-		settings.Oracle = gjson.Parse(string(data)).Get("cmd.1").Get("pay").Get("oracle").Bool()
+		sh.state.Settings.DatabaseSettings.Oracle = gjson.Parse(string(data)).
+			Get("cmd.1").
+			Get("pay").
+			Get("oracle").
+			Bool()
 	}
 
-	return
+	return nil
 }

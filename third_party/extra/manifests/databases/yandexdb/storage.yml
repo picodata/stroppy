@@ -12,7 +12,7 @@ spec:
         requests:
           storage: 80Gi
   image:
-    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.47
+    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.4.30
   nodes: 8
   domain: root
   erasure: block-4-2
@@ -53,7 +53,7 @@ spec:
             type: BASIC
           - name: User
             spin_threshold: 0
-            threads: 3
+            threads: 4
             type: BASIC
           - name: Batch
             spin_threshold: 0

@@ -48,7 +48,6 @@ func (cartridge *cartridgeCluster) Connect() (cluster interface{}, err error) {
 	cluster, err = clusterImplementation.NewCartridgeCluster(
 		cartridge.DBUrl,
 		connectionPool,
-		cartridge.commonCluster.sharded,
 	)
 	if err != nil {
 		return nil, merry.Prepend(err, "failed to init connect to cartridge cluster")

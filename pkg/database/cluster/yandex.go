@@ -33,7 +33,7 @@ const (
 	defaultTimeout = time.Second * 10
 	// partitioning settings for accounts and transfers tables.
 	partitionsMinCount  = 100
-	partitionsMaxMbytes = 256
+	partitionsMaxMbytes = 12
 	poolSizeOverhead    = 10
 )
 
@@ -67,7 +67,7 @@ func envConfigured() bool {
 func NewYandexDBCluster(
 	ydbContext context.Context,
 	dbURL string,
-	poolSize int,
+	poolSize uint64,
 ) (*YandexDBCluster, error) {
 	llog.Infof("Establishing connection to YDB on %s with poolSize %d", dbURL, poolSize)
 
@@ -81,7 +81,7 @@ func NewYandexDBCluster(
 
 		database, err = ydb.Open(ydbContext, dbURL,
 			ydb.WithUserAgent(stroppyAgent),
-			ydb.WithSessionPoolSizeLimit(poolSize+poolSizeOverhead),
+			ydb.WithSessionPoolSizeLimit(int(poolSize+poolSizeOverhead)),
 			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
 			ydb.WithDiscoveryInterval(defaultTimeout),
 			environ.WithEnvironCredentials(ydbContext),
@@ -89,7 +89,7 @@ func NewYandexDBCluster(
 	} else {
 		database, err = ydb.Open(ydbContext, dbURL,
 			ydb.WithUserAgent(stroppyAgent),
-			ydb.WithSessionPoolSizeLimit(poolSize+poolSizeOverhead),
+			ydb.WithSessionPoolSizeLimit(int(poolSize+poolSizeOverhead)),
 			ydb.WithSessionPoolIdleThreshold(defaultTimeout),
 			ydb.WithDiscoveryInterval(defaultTimeout),
 		)
@@ -549,7 +549,7 @@ func (ydbCluster *YandexDBCluster) PersistTotal(total inf.Dec) error {
 	return nil
 }
 
-func (ydbCluster *YandexDBCluster) BootstrapDB(count, seed int) error {
+func (ydbCluster *YandexDBCluster) BootstrapDB(count uint64, seed int) error {
 	var err error
 
 	llog.Infof("Creating the folders and tables...")

@@ -91,9 +91,13 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID
 				Code: 1009,
 			}) || errors.Is(err, fdb.Error{
 				Code: 1007,
-			}) || errors.Is(err, cluster.ErrCockroachTxClosed) || errors.Is(err, cluster.ErrCockroachUnexpectedEOF) || errors.Is(err, mongo.CommandError{
-				Code: 133,
-			}) || errors.Is(err, cluster.ErrTxRollback) ||
+			}) ||
+				errors.Is(err, cluster.ErrCockroachTxClosed) ||
+				errors.Is(err, cluster.ErrCockroachUnexpectedEOF) ||
+				errors.Is(err, mongo.CommandError{ //nolint
+					Code: 133, //nolint
+				}) ||
+				errors.Is(err, cluster.ErrTxRollback) ||
 				mongo.IsNetworkError(err) ||
 				// временная мера до стабилизации mongo
 				mongo.IsTimeout(err) ||
@@ -137,7 +141,7 @@ func (c *ClientBasicTx) MakeAtomicTransfer(t *model.Transfer, clientId uuid.UUID
 
 func payWorkerBuiltinTx(
 	settings *config.DatabaseSettings,
-	nTransfers int,
+	nTransfers uint64,
 	zipfian bool,
 	dbCluster CustomTxTransfer,
 	oracle *database.Oracle,
@@ -155,7 +159,8 @@ func payWorkerBuiltinTx(
 	}
 
 	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.BanRangeMultiplier)
-	for i := 0; i < nTransfers; {
+
+	for i := uint64(0); i < nTransfers; { //nolint
 		t := new(model.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
 		cookie := statistics.StatsRequestStart()
@@ -190,7 +195,7 @@ func payBuiltinTx(
 	// is recovery needed for builtin? Maybe after x retries for Tx
 	// TODO: implement recovery
 
-	for i := 0; i < settings.Workers; i++ {
+	for i := uint64(0); i < settings.Workers; i++ {
 		wg.Add(1)
 		nTransfers := transfersPerWorker
 

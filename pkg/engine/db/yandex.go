@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/ansel1/merry"
 	helmclient "github.com/mittwald/go-helm-client"
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 	ydbApi "github.com/ydb-platform/ydb-kubernetes-operator/api/v1alpha1"
 	goYaml "gopkg.in/yaml.v3"
@@ -42,6 +42,8 @@ const (
 	stroppyNamespaceName string = "stroppy"
 	erasureSpecies       string = "block-4-2"
 )
+
+const logLevelTrace = "trace"
 
 type yandexCluster struct {
 	commonCluster *commonCluster
@@ -307,6 +309,16 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 		return merry.Prepend(err, "failed to parameterize storage configuration")
 	}
 
+	if shellState.Settings.LogLevel == logLevelTrace {
+		var data []byte
+
+		if data, err = k8sYaml.Marshal(ydbStorage); err != nil {
+			return errors.Wrap(err, "failed to serialize storage manifest")
+		}
+
+		llog.Tracef("YDB storage manifest:\n%s\n", string(data))
+	}
+
 	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {
 		return merry.Prepend(err, "failed to get kube config")
 	}
@@ -543,7 +555,7 @@ func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error 
 
 	switch len(shellState.NodesInfo.NodesParams) {
 	case 8, 9: //nolint
-		ydbDatabase.Spec.Nodes = 6 //nolint
+		ydbDatabase.Spec.Nodes = int32(shellState.NodesInfo.WorkersCnt)
 	default:
 		ydbDatabase.Spec.Nodes = 1 //nolint
 	}
@@ -554,8 +566,13 @@ func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error 
 	case shellState.NodesInfo.GetFirstWorker().Resources.CPU == 1|2|3:
 		cpu = "100m"
 	default:
-		cpu = strconv.Itoa(int(shellState.NodesInfo.GetFirstWorker().Resources.CPU / 2)) //nolint
+		cpu = fmt.Sprintf(
+			"%dm",
+			int(shellState.NodesInfo.GetFirstWorker().Resources.CPU/2)*1000, //nolint
+		)
 	}
+
+	llog.Debugf("Database CPU: %v", cpu)
 
 	if err = k8sYaml.Unmarshal([]byte(cpu), databaseCPULimits); err != nil {
 		return merry.Prepend(err, "failed to deserialize storageQuantity")
@@ -563,6 +580,16 @@ func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error 
 
 	ydbDatabase.Spec.Resources.ContainerResources.Limits = v1.ResourceList{
 		v1.ResourceCPU: databaseCPULimits,
+	}
+
+	if shellState.Settings.LogLevel == logLevelTrace {
+		var data []byte
+
+		if data, err = k8sYaml.Marshal(ydbDatabase); err != nil {
+			return errors.Wrap(err, "failed to serialize database manifest")
+		}
+
+		llog.Tracef("YDB database manifest:\n%s\n", string(data))
 	}
 
 	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {

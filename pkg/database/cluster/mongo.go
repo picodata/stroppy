@@ -184,7 +184,7 @@ func (cluster *MongoDBCluster) addSharding() error {
 }
 
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
-func (cluster *MongoDBCluster) BootstrapDB(count int, seed int) error {
+func (cluster *MongoDBCluster) BootstrapDB(count uint64, seed int) error {
 	llog.Infof("Populating settings...")
 	var insertResult *mongo.InsertOneResult
 	var indexName string

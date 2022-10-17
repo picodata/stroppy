@@ -122,13 +122,21 @@ func (sh *shell) prepareEngine() error {
 	sh.state.InstanceAddresses = instanceAddresses
 	sh.state.Subnet = sh.tf.Provider.GetSubnet()
 
-	sh.state.Settings.DatabaseSettings.Workers = int(
-		sh.state.NodesInfo.GetFirstMaster().Resources.CPU * 4, //nolint
-	)
+	if sh.state.Settings.DatabaseSettings.Workers == 0 {
+		llog.Debugln("Number of workers defined for db test is: 0")
+
+		//nolint
+		databaseTestWorkers := sh.state.NodesInfo.GetFirstMaster().Resources.CPU * uint64(4)
+		sh.state.Settings.DatabaseSettings.Workers = databaseTestWorkers
+
+		llog.Debugf(
+			"Set the number of workers defined for db test to: %d\n", databaseTestWorkers,
+		)
+	}
 
 	// string var (like `remote` or `local`) which will be used to create ssh the client
 	commandClientType := engineSsh.RemoteClient
-	if sh.state.Settings.Local {
+	if sh.state.Settings.TestSettings.IsLocal() {
 		commandClientType = engineSsh.LocalClient
 	}
 
