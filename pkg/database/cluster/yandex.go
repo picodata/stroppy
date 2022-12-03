@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ansel1/merry/v2"
@@ -113,11 +114,29 @@ func (*YandexDBCluster) GetClusterType() DBClusterType {
 	return YandexDBClusterType
 }
 
+var (
+	globalYandexDBClusterSettings    *Settings
+	globalYandexDBClusterSettingsMtx sync.Mutex
+)
+
 func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
+	globalYandexDBClusterSettingsMtx.Lock()
+	defer globalYandexDBClusterSettingsMtx.Unlock()
+
+	if globalYandexDBClusterSettings != nil {
+		return *globalYandexDBClusterSettings, nil
+	}
+
 	var (
-		err            error
-		clusterSettins Settings
+		err             error
+		clusterSettings Settings
 	)
+
+	defer func() {
+		if err == nil {
+			globalYandexDBClusterSettings = &clusterSettings
+		}
+	}()
 
 	ydbContext, ctxCloseFn := context.WithCancel(context.Background())
 	defer ctxCloseFn()
@@ -156,11 +175,11 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 					}
 					switch key {
 					case "count":
-						if clusterSettins.Count, err = strconv.Atoi(value); err != nil {
+						if clusterSettings.Count, err = strconv.Atoi(value); err != nil {
 							return errors.Wrap(err, "failed to convert count into integer")
 						}
 					case "seed":
-						if clusterSettins.Seed, err = strconv.Atoi(value); err != nil {
+						if clusterSettings.Seed, err = strconv.Atoi(value); err != nil {
 							return errors.Wrap(err, "failed to convert seed into integer")
 						}
 					}
@@ -178,11 +197,12 @@ func (ydbCluster *YandexDBCluster) FetchSettings() (Settings, error) {
 
 			return nil
 		},
+		table.WithIdempotent(),
 	); err != nil {
-		return clusterSettins, errors.Wrap(err, "Error fetching data from settings table")
+		return clusterSettings, errors.Wrap(err, "Error fetching data from settings table")
 	}
 
-	return clusterSettins, nil
+	return clusterSettings, nil
 }
 
 func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
