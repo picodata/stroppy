@@ -216,13 +216,16 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 
 	amount := transfer.Amount.UnscaledBig().Int64()
 
-	if err = ydbCluster.ydbConnection.Table().DoTx(
-		ydbContext,
-		func(ctx context.Context, tx table.TransactionActor) error {
+	if err = ydbCluster.ydbConnection.Table().Do(ydbContext,
+		func(ctx context.Context, s table.Session) (err error) {
 			// Select from account table
-			var query result.Result
-			query, err = tx.Execute(
-				ctx, ydbCluster.yqlSelectSrcDstAcc,
+			var (
+				query result.Result
+				tx    table.Transaction
+			)
+			tx, query, err = s.Execute(ctx,
+				table.TxControl(table.BeginTx(table.WithSerializableReadWrite())),
+				ydbCluster.yqlSelectSrcDstAcc,
 				table.NewQueryParameters(
 					table.ValueParam("src_bic",
 						types.BytesValueFromString(transfer.Acs[0].Bic)),
@@ -240,6 +243,11 @@ func (ydbCluster *YandexDBCluster) MakeAtomicTransfer(
 			}
 			defer func() {
 				_ = query.Close()
+				if err == nil {
+					_, err = tx.CommitTx(ctx)
+				} else {
+					_ = tx.Rollback(ctx)
+				}
 			}()
 
 			for query.NextResultSet(ctx) {
