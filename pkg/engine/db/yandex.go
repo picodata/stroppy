@@ -173,7 +173,7 @@ func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error {
 // Connect to freshly deployed cluster.
 func (yc *yandexCluster) Connect() (interface{}, error) {
 	var (
-		connection *cluster.YandexDBCluster
+		connection *cluster.YdbCluster
 		err        error
 	)
 
@@ -186,7 +186,7 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
 	defer ctxCloseFn()
 
-	if connection, err = cluster.NewYandexDBCluster(
+	if connection, err = cluster.NewYdbCluster(
 		ydbContext,
 		yc.commonCluster.DBUrl,
 		yc.commonCluster.connectionPoolSize,

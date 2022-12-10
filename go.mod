@@ -27,7 +27,7 @@ require (
 	github.com/tidwall/gjson v1.8.1
 	github.com/ydb-platform/ydb-go-genproto v0.0.0-20220922065549-66df47a830ba
 	github.com/ydb-platform/ydb-go-sdk-auth-environ v0.1.2
-	github.com/ydb-platform/ydb-go-sdk/v3 v3.38.2
+	github.com/ydb-platform/ydb-go-sdk/v3 v3.40.1
 	github.com/ydb-platform/ydb-kubernetes-operator v0.0.0-20220913070254-59c84ccfc365
 	github.com/zalando/postgres-operator v1.6.3
 	github.com/zclconf/go-cty v1.9.0

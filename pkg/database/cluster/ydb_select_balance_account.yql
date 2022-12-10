@@ -1,0 +1,5 @@
+DECLARE $bic AS String; DECLARE $ban AS String;
+
+SELECT balance, CAST(0 AS Int64) AS pending
+FROM `{{ stroppyDir }}/account`
+WHERE bic = $bic AND ban = $ban
