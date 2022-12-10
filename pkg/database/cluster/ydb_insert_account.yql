@@ -1,0 +1,2 @@
+DECLARE $bic AS String; DECLARE $ban AS String; DECLARE $balance AS Int64;
+INSERT INTO `{{ stroppyDir }}/account` (bic, ban, balance) VALUES ($bic, $ban, $balance);
