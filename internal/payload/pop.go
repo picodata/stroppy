@@ -6,6 +6,7 @@ package payload
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -140,7 +141,7 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 		"Creating %d accounts using %d workers on %d cores \n",
 		p.config.Count,
 		p.config.Workers,
-		p.config.Workers,
+		runtime.NumCPU(),
 	)
 
 	var wg sync.WaitGroup
