@@ -17,44 +17,39 @@
   - [Environment preparation](#environment-preparation)
   - [Building Stroppy](#building Stroppy)
 - [Commands](#commands)
-  - [Base options](#base-options)
+  - [Basic options](#base-options)
   - [Deploy options](#deploy-options)
   - [Basic pop and pay keys](#basic-pop-and-pay-keys)
   - [Basic chaos test keys](#basic-chaos-test-keys)
 - [Test scenario](#test-scenario)
 - [The data model](#the-data-model)
 - [Managed Faults](#managed-faults)
-- [Specific of use](#specific-of-use)
+- [Special notice](#special-notice)
 
 ---
 ## Introduction
 
-[Stroppy](http://github.com/picodata/stroppy) is a framework for testing 
-various databases. It allows you to deploy a cluster in the cloud, run load 
-tests and simulate, for example, network unavailability of one of the nodes 
-in the cluster.
+[Stroppy](http://github.com/picodata/stroppy) is a framework for
+testing various types of databases. It allows you to deploy a cluster in
+the cloud, run load tests and simulate different failures, such as
+network unavailability of one of the nodes in the cluster.
 
-How does all this allow you to test reliability? The fact is that there is a 
-very elegant "banking" test to verify the integrity of the data. We fill the 
-database with a number of records about certain "accounts" with money. Then 
-we simulate a series of transfers from one account to another within the 
-framework of transactions provided by the DBMS. As a result of any number of 
-transactions, the total amount of money in the accounts should not change.
+To complicate the task for the DBMS, Stroppy may try to deliberately
+break the DB cluster, because in the real world failures happen much
+more often than we want. And for horizontally scalable databases this
+happens even more often, since a larger number of physical nodes gives
+more points of failure.
 
-To complicate the task for the DBMS, Stroppy may try to break the DB cluster, 
-because in the real world failures happen much more often than we want. And 
-for horizontally scalable databases, this happens even more often, since a 
-larger number of physical nodes gives more points of failure.
-
-At the moment, we have implemented support for FoundationDB, MongoDB, 
-CockroachDB, YandexDB and PostgreSQL (for comparison with other DBMS from the 
-list).
-In addition, in order to make it easier to analyze test results, stroppy is 
-integrated with Grafana and after each run automatically collects an archive 
-with monitoring data scaled by run time. Also, for FoundationDB and MongoDB, 
-we have implemented support  internal statistic collecting with a specified 
-frequency - for FoundationDB, data from the status json console command is 
-collected, for MongoDB, data from the db.serverStatus() command is collected.
+At the moment, we have implemented support for FoundationDB, MongoDB,
+CockroachDB and PostgreSQL (which we use a system-wide measure to
+compare everything else with). In addition, Stroppy makes it easier to
+analyze test results since it is integrated with Grafana. After each run
+it automatically collects an archive with the database metrics, which
+are scaled by the time of running. Also, you can collect even more
+statistics with the desired frequency. In particular, Stroppy collects
+the following data for FoundationDB and MongoDB: for FoundationDB it is
+the ‘status json’ console command output, and for MongoDB it is the
+‘db.serverStatus()’ command output.
 
 ---
 > **Note:** This instruction is relevant for use on Ubuntu OS >=18.04 and 
@@ -63,26 +58,28 @@ collected, for MongoDB, data from the db.serverStatus() command is collected.
 
 ## Main features
 
-- Deployment of a cluster of virtual machines in the selected cloud via 
-terraform. Yandex.Cloud and Oracle are supported Clouds.
-- Deploying kubernetes cluster in a deployed cluster of virtual machines.
-- Deployment of the selected DBMS in this cluster.
-- Collecting statistics from Grafana k8s cluster metrics and system metrics 
-of virtual machines (CPU, RAM, storage, etc.).
-- Managing the parameters of tests and the deployment itself - from the number 
-of VMs to the load supplied and managed problems.
-- Running tests on command from the console.
-- Logging of the test progress - current and final latency and RPS.
+- Deployment of a cluster of virtual machines in the selected cloud via
+  Terraform. Supported options are Yandex.Cloud and Oracle.Cloud.
+- Deployment of a Kubernetes cluster inside a running cluster of virtual
+  machines.
+- Deployment of the selected DBMS in a running cluster.
+- Collecting statistics from Grafana k8s cluster metrics and system
+  metrics of virtual machines (CPU, RAM, storage, etc.).
+- Managing test parameters and the deployment in general - from the
+  number of VMs to the supplied load and managed problems.
+- Running tests on demand from CLI.
+- Logging of the test progress - current and final latency, and RPS.
 - Deleting a cluster of virtual machines.
-- Deployment of multiple clusters from a single local machine with isolated 
-monitoring and a startup console.
+- Deployment of multiple clusters from a single local machine with
+  isolated monitoring and a startup console.
 
 ---
 ## Start the Stroppy
 
-For example, we want to check how much load a FoundationDB cluster consisting 
-of 3 nodes with 1 core and 8 GB of RAM per node will withstand, while the 
-cluster will be deployed by the corresponding [k8s operator](https://github.com/FoundationDB/fdb-kubernetes-operator).
+For example, we want to check how much load a FoundationDB cluster
+consisting of 3 nodes with 1 core and 8 GB of RAM per node will
+withstand, while the cluster will be deployed by the corresponding [k8s
+operator](https://github.com/FoundationDB/fdb-kubernetes-operator).
 
 ---
 
@@ -93,18 +90,18 @@ go two different ways:
 - Run tests manually.
     - Deploy virtual machines.
     - Deploy k8s cluster and DBMS manually.
-    - Raise next to Stroppy from the manifest.
-    - Mount in the database connection file (if required by the database).
-    - Mount to the pod file with the test configuration.
-    - Start downloading invoices and then test translations using
+    - Build and run a Stroppy pod using the manifest.
+    - Attach the database connection file to the pod (if required by the database).
+    - Attach the test configuration file to the pod.
+    - Start downloading accounts and then test transactions using the
       commands from [Commands](#commands).
 - Run tests and deployment automatically.
     - Configure the infrastructure if necessary (or skip this step)
-    - Configure test parameters, or pass them on the command line at startup.
+    - Configure test parameters, or pass them as CLI flags at startup.
 
-Next, regardless of the option chosen, you need to set the necessary
-launch options via appropriate command line flags. As well as
-files prepare the following configuration files.
+Next, regardless of the option chosen you need to set the necessary
+startup options via appropriate command line flags. Also make sure you
+have prepared the following configuration files.
 
 ---
 
@@ -326,7 +323,7 @@ stroppy deploy --cloud yandex --dbtype fdb
 
 #### Stroppy deploy
 
-Regardless of whether we run `Stroppy` in docker or by locally building from
+Regardless of whether we run `Stroppy` in Docker or build locally from
 sources, the arguments that we can pass at startup are the same. For example:
 
 ```shell
@@ -338,27 +335,30 @@ stroppy deploy --cloud oracle --dbtype fdb
 ```
 
 ---
-> **Note:** A description of the command keys can be found in the section -
-> [Commands](#commands)
+> **Note:** A description of the command keys can be found in the 
+> [Commands](#commands) section.
 ---
 
-In order to deploy a `Kubernetes` cluster in the cloud infrastructure in the 
-root directory with the project should be:
+In order to deploy a `Kubernetes` cluster in the cloud infrastructure,
+we need the following files in the project root directory:
+
 **Yandex.Cloud:**
 - Private and public keys. Be sure to name them like `id_rsa` and `id_rsa.pub` 
-to avoid problems. You can create keys with command 
-`ssh-keygen -b 4096 -f id_rsa`.
-- A file with credentials and attributes for accessing the cloud, it's better 
+to avoid problems. You can create keys with the 
+`ssh-keygen -b 4096 -f id_rsa` command.
+- A file with credentials and attributes for accessing the cloud. It's better 
 to name it `vars.tf`, for guaranteed compatibility.
 
 **Oracle Cloud:**
-- Private key `private_key.pem`. This key must be obtained from
-  using the provider's web interface.
+- The `private_key.pem` provate key. This key must be obtained using the
+  provider's web interface.
 
 ---
 
-After outputting a certain amount of debugging information to the console and passing
-about 10-20 minutes, the result of the command execution should be a message like:
+After filling the console with a certain amount of debugging information
+for about 10-20 minutes, the result of the command execution should
+looke like this:
+
 ```sh
 Started ssh tunnel for kubernetes cluster and port-forward for monitoring.
 To access Grafana use address localhost:3000.
@@ -372,12 +372,12 @@ execute command for set environment variables KUBECONFIG before using:
 >                               
 ```
 
-The `>` prompt string means that the infrastructure deployment,
-deployment of monitoring and database was successful. Our cluster is ready for
-testing. Below the message, a console will open to select commands.
-To start the invoice loading test, enter the command ```pop``` and
-wait for execution. The result of a successful test run will be approximately
-following output:
+The `>` prompt string means that the deployment of infrastructure,
+monitoring and database was successful. Our cluster is ready for
+testing. Below the message you'll find a command prompt where you can
+ inpout some commands. To start the accounts loading test, enter the
+ ```pop``` command and wait for its execution to complete. The result of
+a successful run looks roughly like this:
 
 ```shell
 [Nov 17 15:23:07.334] Done 10000 accounts, 0 errors, 16171 duplicates 
@@ -390,11 +390,12 @@ following output:
 [Nov 17 15:23:07.494] Total balance: 4990437743 
 ```
 
-After executing `pop` we will again see the console for entering commands, and 
-we can enter the `pay` command to start the translation test. `Pay` test will 
-be run with the parameters that we set at the configuration stage in the file
-`test_config.json`, or in the arguments when running `deploy`. An example of 
-a successful execution would be the output of something like this:
+After `pop` is complete, we will return to the command prompt, which
+means that it's now time to enter the `pay` command and start the
+transaction test. The `pay` test will run using the parameters we set at
+the configuration stage in the `test_config.json` file, or with the
+arguments that were provided for the `deploy` command. The result of
+a successful run looks roughly like this:
 
 ```shell
 [Nov 17 15:23:07.334] Done 10000 accounts, 0 errors, 16171 duplicates 
@@ -408,21 +409,24 @@ a successful execution would be the output of something like this:
 ```
 
 ---
-> **Note:** Specified ports in interactive mode (Stroppy mode in which it's 
-> waiting for the next command) these are the default ports to access 
-> monitoring (port 3000) and access to the k8s cluster API (6443). Because 
+> **Note:** The ports used in the interactive mode (the one where
+> Stroppy is waiting for the next command) are the default ports to
+> access monitoring (3000) and the k8s cluster API (6443). Because
 > Stroppy supports deployment of multiple clusters on one local machine,
-> then the ports for clusters launched after the first one will be incremented.
+> then the ports for clusters launched after the first one will be
+> incremented.
 
-> **Note:** For the FoundationDB test case we planned
-> after a successful deployment and displaying a message, you need to do a little 
-> manual manipulations from paragraph 2 of the "Peculiarities of use" section.
+> **Note:** For the FoundationDB test case that we planned to perform
+> after successful deployment, you'll need to do a few manual
+> manipulations as described in paragraph 2 of the "Special notice"
+> section.
 ---
 
 ### Test results
 
-The result of the commands will be several files in the root of the directory 
-with configuration. For example, for our case:
+The commands that we mentioned above will generate several new files in
+the current directory, which is supposedly the root directory of our
+configuration set. Here is an example:
 
 `pop_test_run_2021-10-15T16:09:51+04:00.log` - file with `pop` test logs.
 `pay_test_run_2021-10-15T16:10:46+04:00.log` - file with `pay` test logs.  
@@ -431,25 +435,26 @@ with configuration. For example, for our case:
 `fdb_pay_5000_1.1_zipfian_false_2021-10-15T16_10_46.tar.gz` - archive with 
 `pay` test metrics.
 
-If an error occurs instead of a console message that cannot be resolved
-restart (no more than 3 repetitions), then we start an issue with a description 
-of the error in <https://github.com/picodata/stroppy/issues>. The test can be 
-repeated by running `pop` first and then `pay`.
+If you don't get dropped into the command promt but get an error, which
+ does not go away after multiple (but no more than 3) restart attempts,
+ then we encourage you to file an issue in
+ <https://github.com/picodata/stroppy/issues> and provide a detailed
+ description of the error. You can always start the test once again by
+ consequently executing `pop` and then `pay`.
 
-Retry is idempotent for VM cluster and K8S cluster, so when retry will not 
-create new VMs and Kubernetes cluster.
+A retry attempt is idempotent for VM cluster and K8S cluster, so that it
+will not create any new VMs or another Kubernetes cluster.
 
-> **Note** Stroppy is not yet guaranteed to be idempotent with respect to 
-> deployment selected DBMS. This behavior is left unchanged including to give
-> the ability to fix a database configuration error without redeploying the 
-> entire cluster.
+> **Note** Stroppy is not yet guaranteed to be idempotent to a deployed
+> DBMS. This behavior is explicitly preserved for fixing database
+> configuration errors without redeploying the entire cluster.
 
 ---
 
-## Deploy Stroppy in minikube
+## Deploy Stroppy in Minikube
 
-For local testing of any new features, (or just for something try it) `Stroppy`
-supports running in `Minikube`.
+ `Stroppy` supports running in `Minikube`, which is useful for local
+testing and trying out new features.
 
 ---
 
@@ -503,7 +508,7 @@ switched to the Running state.
 minikube status && kubectl get pods && kubectl cluster-info
 ```
 
-If everything is fine with the cluster, and it works, you should see something 
+If everything is fine and the cluster works as it should, you will see something 
 like this:
 ```
 minikube
@@ -522,10 +527,10 @@ stroppy-client                      1/1     Running   0          16m
 Kubernetes control plane is running at https://192.168.49.2:8443
 CoreDNS is running at https://192.168.49.2:8443/api/v1/namespaces/kube-system/services/kube-dns:dns/proxy
 
-To further debug and diagnose cluster problems, use 'kubectl cluster-info dump'.
+Use the 'kubectl cluster-info dump' command for further debug and diagnostics.
 ```
 
-4. Connect to `Stroppy` pod.
+4. Connect to the `Stroppy` pod.
 ```shell
 kubectl exec --stdin --tty stroppy-client -- /bin/bash
 ```
@@ -540,28 +545,32 @@ stroppy pay --url postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmo
 
 ## Commands
 
-To use `Stroppy` effectively, you need to study the set of available
-commands and options.
+We recommend exploring the available options and arguments in order to
+use `Stroppy` more efficiently.
 
 ---
 
-### Base options
+### Basic options
 
-`run-type` - `Stroppy` startup type. If you do not need deployment
-infrastructure, then the option can be omitted. To run Stroppy in client, 
-you need to specify `client`. To run integration tests `local`.
-`log-level` - logging level. Supports trace, debug, info, warn, error, fatal, 
-panic.
-`dbtype` - the name of the tested DBMS. Supported by postgres (PostgreSQL), 
-fdb(FoundationDB), mongodb(MongoDB), cockroach(cockroach), ydb(YandexDB).
-`url` - connection string to the tested database.
+`run-type` - defines the `Stroppy` startup type. If you do not need to
+deploy an infrastructure, feel free to omit this option. Otherwise
+provide the `client` value to run `Stroppy` as a client, Provide `local`
+to run integration tests. 
+
+`log-level` - defines the logging level. Supported values are `trace`,
+`debug`, `info`, `warn`, `error`, `fatal`, `panic`.
+
+`dbtype` - the type of the DB being tested. Supported values are `postgres` (PostgreSQL), `fdb` (FoundationDB),
+`mongodb` (MongoDB), `cockroach` (cockroach), `ydb` (YandexDB). 
+
+`url` - provide a connection string for the DB.
 
 ---
 
 ### Deploy options
 
-`cloud` - cloud provider name. Now supported `yandex` and `oracle`.  
-`dir` - configuration files directory. By default, is a current directory.
+`cloud` - cloud provider name. So far the supported values are `yandex` and `oracle`.  
+`dir` - configuration files directory. By default it is the current directory.
 
 **Example of running a cluster deployment in the cloud**:
 
@@ -573,68 +582,70 @@ stroppy deploy --cloud oracle --dir . --log-level debug
 
 ### Basic pop and pay keys
 
-`count, n` - number of loaded accounts, default 100000;
-`workers, w` - number of load workers (goroutine threads), by default
+`count, n` - number of loaded accounts, default is 100000;
+
+`workers, w` - number of load workers (goroutine threads), by default is
 `4 * runtime.NumCPU()`;
-`banRangeMultiplier, r` - coefficient defining the BIC/BAN ratio
-in the process of generation, details below;
-`stat-interval, s` - statistics collection interval, 10 seconds by default;
-`pool-size` - the size of the database connection pool. Relevant for 
-PostgreSQL, MongoDB and CockroachDB. If the key is not set, then the pool size 
-is equal to the number of workers. For PostgreSQL and CockroachDB, the pool 
-size can also be set via the parameter
-`max_pool_size` in the connection string. In this case, the `pool-size` 
-parameter ignored.
+
+`banRangeMultiplier, r` - the BIC/BAN ratio used during the generation
+proces (more below);
+
+`stat-interval, s` - statistics collection interval, default is 10 seconds;
+
+`pool-size` - the size of the database connection pool. Applies to
+PostgreSQL, MongoDB and CockroachDB. If the argument is not provided,
+then the pool size is equal to the number of workers. For PostgreSQL and
+CockroachDB, the pool size can also be set via the `max_pool_size`
+argument in the connection string. In such case, the `pool-size`
+argument is ignored.
 
 ***Important note***:
 
-`banRangeMultiplier` (hereinafter brm) is a number that determines the BAN 
-ratio (Bank Identification Number) to BIC (Bank Identification Code).
-The number of bits generated is approximately equal to the square root of
-number of accounts (parameter `count`).
-The number of BANs is determined by the following formula:
+`banRangeMultiplier` (also reffered to as `brm`) is a number that determines the ratio of BAN 
+ (Bank Identification Number) to BIC (Bank Identification Code).
+The number of bits generated is approximately equal to the square root of the
+number of accounts (the `count` parameter).
+The number of BANs is calculated by the following formula:
 `Nban = (Nbic *brm)/square(count)`.
-If Nban* Nbic > count, we generate more combinations (BIC, BAN) than we
-saved during the database seeding process (this is achieved if brm > 1).
-The recommended range for brm is 1.01 to 1.1. Increase reduces quantity
-not found on the translation test, but increases the number of duplicates 
-at the stage downloading invoices.
+If Nban* Nbic > count, then we generate more combinations (BIC, BAN) than we
+saved during the database seeding process (this is achieved if `brm` > 1).
+The recommended range for `brm` is 1.01 to 1.1. Larger values reduce the number of `not found` 
+occurrences during the transaction test, but also produce more `duplicates` 
+at the accounts downloading stage.
 The default value for the banRangeMultiplier parameter is 1.1.
 
-**An example command to run an invoice download test**:
+**An example command to run an accounts download test**:
 
 ```shell
 stroppy pop --run-type client --url fdb.cluster --count 5000 --w 512 --dbtype=fdb
 ```
 
 Additional options for the `pop` command:
-`sharded` - flag for using sharding when creating a data schema.
-Relevant only for MongoDB, false by default;
+`sharded` - enables sharding when creating a data schema.
+Relevant only for MongoDB, the default is `false`.
 
-**An example command to run a translation test**:
+**An example command to run a transaction test**:
 
 ```sh
 stroppy pay --run-type client --url fdb.cluster --check --count=100000
 ```
 
 Additional options for the `pay` command:
-`zipfian` - flag for using data distribution according to Zipf's law, the 
+`zipfian` - enables data distribution according to the Zipf law, the 
 default is `false`.
-`oracle` - flag for internal checking of translations. While not in use
-specified for compatibility with `oracle`.
-`check` - flag for checking test results. The essence of the check is counting
-total account balance after the test and comparing this value with the saved
+`oracle` - enables internal checking of transactions. Not used so far, but reserved for compatibility with `oracle`.
+`check` - enables checking test results. The check implies comparing the total account balance after the test with the saved
 total balance after the account loading test. The default is `true`.
 
 ---
 
 ### Basic chaos test keys
 
-`kube-master-addr` - internal ip-address of the deployed master node
-kubernetes cluster.
+`kube-master-addr` - internal IP address of the deployed master node in the
+Kubernetes cluster.
 `chaos-parameter` - filenames of chaos-mesh scripts located in
-folder `deploy/databases/name of DBMS under test/chaos`. Specified without
-.yaml extensions
+folder `deploy/databases/name of DBMS under test/chaos`. Specified without the
+.yaml extension.
 
 ---
 
@@ -647,7 +658,7 @@ integrity without resorting to oracle (that is, without comparison with the
 canonical result), is that no money transfers can change the total balance of 
 all accounts. Thus, the test consists of three main stages:
 
-1) Loading invoices. The total balance is calculated and saved separately as
+1) Loading accounts. The total balance is calculated and saved separately as
 canonical/expected result.
 
 To create records, a self-written generator is used, which over time can 
@@ -659,9 +670,11 @@ successfully loaded records matched the specified number.
 and can use the same source or destination account.
 
 3) Calculation of the total balance of accounts and its comparison with the total 
-balance, received at the stage of loading invoices.
+balance, received at the stage of loading accounts.
 
-An example of a log of successful completion of the invoice loading test:
+Below are few examples of logs that indicate the successful completion of various tests.
+
+Accounts loading test:
 
 ```shell
 [Nov 17 15:23:07.334] Done 10000 accounts, 0 errors, 16171 duplicates 
@@ -674,7 +687,7 @@ An example of a log of successful completion of the invoice loading test:
 [Nov 17 15:23:07.494] Total balance: 4990437743 
 ```
 
-An example of a successful translation test completion log:
+Transaction test:
 
 ```shell
 [Oct 15 16:11:12.872] Total time: 26.486s, 377 t/sec             
@@ -686,7 +699,8 @@ An example of a successful translation test completion log:
 [Oct 15 16:11:12.922] Final balance: 4930494048 
 ```
 
-An example of the end of the log in case of a discrepancy in the final balance:
+Example of the final balance disrepancy:
+
 ```shell
 Calculating the total balance...             
 Check balance mismatch:
@@ -694,30 +708,37 @@ before: 748385757108.0000000000
 after:  4999928088923.9300000000
 ```
 
-While running tests, Stroppy workers may get various errors due to 
-infrastructure problems or the state of the DBMS. For sustainability test 
-worker that received an error from some pool of errors detected at the stage 
-debugging and testing, stops for a certain period (up to 10 milliseconds), 
-increments the ```Retries``` counter - the number of repetitions, and performs 
-the operation with new generated invoice. The pool consists of both general 
-errors and specific to the tested DBMS. To study the list, it is recommended
-to refer to [payload package](https://github.com/picodata/stroppy/tree/main/internal/payload).
-If the worker receives an error that is not in the pool, it stops its work
-with output to the log of a fatal error and increment of the `Errors` counter.
+While running tests, Stroppy workers may encounter various errors due to
+infrastructure problems or issues with the DBMS state. To retain the
+manageability of the test or debug run, Stroppy can handle certain
+errors provided they are listed and described in a special pool of
+errors. If so, Stroppy temporarily stops the faulty worker for a small
+period of time (up to 10 ms), increments the ```Retries``` (the number
+of repetitions) counter and repeats the operation with newly generated
+account. The pool of known errors consists of both general errors and
+errors specific to the DBMS being tested. Learn more about the error pool
+by referring to the [payload
+package](https://github.com/picodata/stroppy/tree/main/internal/payload).
+If the worker receives an error that is not in the pool, it stops
+itself, outputs the `fatal error` to the log, and increments the
+`Errors` counter.
 
-Also, inside Stroppy there are several counters for "logical" errors, which is 
-regular behavior in the general sense, but are fixed separately from the total 
-number of operations:
+Also Stroppy has got some extra internal counters for 'logical' errors
+that are considered acceptable and treated as warnings. These errors are
+counted and stored apart from the general list of operations. Namely,
+they are:
 
-`duplicates` - number of operations that received a data duplication error.
-Relevant for the invoice loading test.
-`Not found` - the number of operations that ended with an error due to that 
-the record with the transferred accounts was not found in the database. 
-Relevant for the translation test.
-`Overdraft` - the number of operations that ended with an error due to
-that the balance of the source account is insufficient for the transfer with 
-the transferred amount. Those. Stroppy doesn't perform transfers that can 
-steal balance source account in the negative.
+`duplicates` - number of operations that received a data duplication
+error. Relevant for the accounts loading test. 
+
+`Not found` - number of operations finished with an error as the record
+with the transferred accounts was not found in the database. Relevant
+for the transaction test. 
+
+`Overdraft` - number of operations finished with an error as the
+balance of the source account is insufficient for the transfer with the
+transferred amount. That said, Stroppy will not perform a transfer that
+can render the source account balance negative.
 
 ---
 
@@ -801,22 +822,22 @@ Using the example of PostgreSQL:
 </tbody>
 </table>
 
-The primary key of the accounts' table is a pair of BIC and BAN values, tables
-transfer - transfer_id whose value is generated by the package 
-[github.com/google/uuid](github.com/google/uuid). For other DBMS, use a similar 
-data model, taking into account the nuances of the implementation of the DBMS 
-itself. Also, worth note that for PostgreSQL and MongoDB, in the method that 
-does the translation, implemented lock order management to exclude deadlocks.
-Management is carried out by lexicographic comparison of BIC and BAN pairs
-source and recipient accounts.
+The primary key of the `accounts` table is a pair of BIC and BAN values.
+The `transfers` table has `transfer_id` as its primary key (the value is
+generated by the [github.com/google/uuid](github.com/google/uuid)
+package). A similar data model is used for other DBMS with applicable
+adjustments. Also it's worth noting that the transaction method used for
+PostgreSQL and MongoDB supports lock order management in order to exclude
+deadlocks. This mechanism implies lexicographic comparison of BIC
+and BAN pairs for source and recipient accounts.
 
 ---
 
 ## Managed Faults
 
-The use of managed faults in Stroppy is implemented with
-[chaos-mesh](https://chaos-mesh.org/) - Chaos test management solutions, which 
-introduces bugs at every layer of the Kubernetes system.
+Managed faults in Stroppy are implemented with
+[chaos-mesh](https://chaos-mesh.org/), a Chaos test management solution, which 
+emulates bugs at every layer of the Kubernetes system.
 
 **An example of running a test using the chaos-mesh script**:
 
@@ -826,46 +847,48 @@ stroppy pay --run-type client --url fdb.cluster --check --count=100000 --kube-ma
 
 ---
 
-## Specific of use
+## Special notice
 
-1. Launching in Oracle.Cloud and Yandex.Cloud has differences:
+1. Below are some differences in launching between Oracle.Cloud and Yandex.Cloud:
 
-- to deploy three worker machines and one master in yandex.cloud, specify
-nodes=3, in Oracle.Cloud = 4, i.e. for deployment to Oracle Cloud, the master 
-is taken into account in the number of nodes created, in the case of 
-Yandex.Cloud, it is created by default.
+- to deploy three worker machines and one master to Yandex.Cloud,
+specify `nodes=3`, while with Oracle.Cloud it should be `nodes=4`. I.e.
+deploying to Oracle.Cloud means that the master is counted as a regular
+node, while is taken into account in the number of nodes created, in the
+case of Yandex.Cloud takes care of creating the master by default.
 
 - there is an additional step in the Oracle.Cloud deployment - mounting 
 individual network storages using the iSCSI protocol. Yandex.Cloud uses local
 virtual machine disks.
 
-> **Note:** Oracle.Cloud has a peculiarity, the reasons for which are not yet known.
-> installed: when manually deleting a cluster via the GUI, you must explicitly remove
-> block volumes in the relevant section. Together with the cluster
-> may NOT REMOVE!!!
+> **Note:** Oracle.Cloud has a quirk, ther origins of which hasn't been
+> discovered yet: when manually deleting a cluster via the GUI, you must
+> explicitly remove block volumes in the relevant section. They will NOT
+> get removed automatically when deleting a cluster!
+ 
 
-2. To run FoundationDB tests, you must first copy the contents of the file or 
-the fdb.cluster file itself, located in the directory `/var/dynamic-conf` 
-inside the sample-cluster-client pod (the pod name may have an additional 
-alphanumeric postfix) and paste it into the directory `/root/` inside the 
-Stroppy-client pod. This is required to access the cluster and, at the moment, 
-not yet automated.
+2. To run FoundationDB tests, you must first copy the `fdb.cluster` file
+located in `/var/dynamic-conf` of the `sample-cluster-client` pod (the
+pod name may have an additional alphanumeric postfix) into the `/root/`
+directory inside the `Stroppy-client` pod. This is required to access
+the cluster and, at the moment, not yet automated.
 
-3. An archive with monitoring graphs is created on the local machine, in the 
-directory `monitoring/grafana-on-premise` directory with configuration files. 
-Average archive creation time - 30 minutes (more for Yandex, less for Oracle).
-The archive is created after the end of the tests.
+3. An archive with monitoring graphs is created on the local machine in 
+ `monitoring/grafana-on-premise` inside the directory with configuration files. 
+Average archive creation time is 30 minutes (more for Yandex, less for Oracle).
+The archive is created after the tests are completed.
 
-4. Statistics status json for FoundationDB is collected in a file that
-lies inside the Stroppy pod in the k8s cluster, in the `/root/` directory, 
-file name generated by the mask 
-`status_json_statistics_collection_start_time.json`. Collection statistics 
-starts before the test and ends when it ends. So far, statistics collection is 
-implemented only for FoundationDB, in the future support for collecting 
-specific statistics for other DBMS. The statistics files are stored inside 
-the `Stroppy` pod, they're copying to a working machine is not yet automated.
+4. The `status json` statistics for FoundationDB are stored in a file
+inside the Stroppy pod in the k8s cluster, specifically in the `/root/`
+directory. The name of the file is generated using the
+`status_json_<statistics_collection_start_time>.json`. Statistics
+collection starts before the test and ends when it is completed. So far
+the statistics collection is implemented only for FoundationDB, but we
+plan to support other DBMS in the future as well. The statistics files
+are stored inside the `Stroppy` pod, therefore you'll likely need to
+manually copy it to the host machine as that is not automated yet.
 
-5. To deploy multiple clusters in the cloud from one local machine, it is 
-recommended that you make multiple copies of the Stroppy repository with your 
-configuration file directories. This will avoid overlaps and flexibly manage 
-each of the clusters.
+5. To deploy multiple clusters in the cloud from one local machine, it
+is recommended that you make multiple copies of the Stroppy repository,
+each with its own directory for configuration files. This will avoid
+overlaps and maintain flexible cluster management.
