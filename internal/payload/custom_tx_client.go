@@ -36,18 +36,23 @@ type CustomTxTransfer interface {
 	CheckableCluster
 	ClusterPopulatable
 
-	InsertTransfer(transfer *model.Transfer) error
-	DeleteTransfer(transferId model.TransferId, clientId uuid.UUID) error
-	SetTransferClient(clientId uuid.UUID, transferId model.TransferId) error
-	FetchTransferClient(transferId model.TransferId) (*uuid.UUID, error)
-	ClearTransferClient(transferId model.TransferId, clientId uuid.UUID) error
-	SetTransferState(state string, transferId model.TransferId, clientId uuid.UUID) error
-	FetchTransfer(transferId model.TransferId) (*model.Transfer, error)
+	InsertTransfer(*model.Transfer) error
+	DeleteTransfer(model.TransferId, uuid.UUID) error
+	SetTransferClient(uuid.UUID, model.TransferId) error
+	FetchTransferClient(model.TransferId) (*uuid.UUID, error)
+	ClearTransferClient(model.TransferId, uuid.UUID) error
+	SetTransferState(string, model.TransferId, uuid.UUID) error
+	FetchTransfer(model.TransferId) (*model.Transfer, error)
 	FetchDeadTransfers() ([]model.TransferId, error)
 
-	UpdateBalance(balance *inf.Dec, bic string, ban string, transferId model.TransferId) error
+	UpdateBalance(balance *inf.Dec, bic string, ban string, transferID model.TransferId) error
 
-	LockAccount(transferId model.TransferId, pendingAmount *inf.Dec, bic string, ban string) (*model.Account, error)
+	LockAccount(
+		transferID model.TransferId,
+		pendingAmount *inf.Dec,
+		bic string,
+		ban string,
+	) (*model.Account, error)
 	UnlockAccount(bic string, ban string, transferId model.TransferId) error
 	StartStatisticsCollect(statInterval time.Duration) error
 }
@@ -60,10 +65,14 @@ type ClientCustomTx struct {
 	payStats *PayStats
 }
 
-func (c *ClientCustomTx) Init(cluster CustomTxTransfer, oracle *database.Oracle, payStats *PayStats) {
+func (c *ClientCustomTx) Init(
+	dbCluster CustomTxTransfer,
+	oracle *database.Oracle,
+	payStats *PayStats,
+) {
 	c.clientId = uuid.New()
 	c.shortId = atomic.AddUint64(&nClients, 1)
-	c.cluster = cluster
+	c.cluster = dbCluster
 	c.oracle = oracle
 	c.payStats = payStats
 
@@ -164,14 +173,22 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 	i := 0
 	for i < 2 {
 		account := t.LockOrder[i]
-		receivedAccount, err := c.cluster.LockAccount(t.Id, account.PendingAmount, account.Bic, account.Ban)
+		receivedAccount, err := c.cluster.LockAccount(
+			t.Id,
+			account.PendingAmount,
+			account.Bic,
+			account.Ban,
+		)
 		if err != nil || t.Id.String() != receivedAccount.PendingTransfer.String() {
 			if err != nil {
 				// Remove the pending transfer from the previously
 				// locked account, do not wait with locks.
 				if i == 1 && previousAccount != nil {
 					if unlockErr := c.UnlockAccount(t.Id, previousAccount); unlockErr != nil {
-						return merry.Prepend(merry.WithCause(unlockErr, err), "failed to unlock locked accounts")
+						return merry.Prepend(
+							merry.WithCause(unlockErr, err),
+							"failed to unlock locked accounts",
+						)
 					}
 				}
 				// Check for transient errors, such as query timeout, and retry.
@@ -181,7 +198,10 @@ func (c *ClientCustomTx) LockAccounts(t *model.Transfer, wait bool) error {
 				// No such account. We're not holding locks. CompleteTransfer() will delete
 				// the transfer.
 				if err == cluster.ErrNoRows {
-					return merry.Prepend(c.SetTransferState(t, "locked"), "failed to set transfer state")
+					return merry.Prepend(
+						c.SetTransferState(t, "locked"),
+						"failed to set transfer state",
+					)
 				} else if IsTransientError(err) {
 					llog.Tracef("[%v] [%v] Retrying after error: %v", c.shortId, t.Id, err)
 				} else {
@@ -323,10 +343,10 @@ func (c *ClientCustomTx) DeleteTransfer(transferId model.TransferId) error {
 
 func payWorkerCustomTx(
 	settings config.DatabaseSettings,
-	n_transfers int, zipfian bool, dbCluster CustomTxTransfer,
+	nTransfers uint64, zipfian bool, dbCluster CustomTxTransfer,
 	oracle *database.Oracle, payStats *PayStats,
-	wg *sync.WaitGroup) {
-
+	wg *sync.WaitGroup,
+) {
 	defer wg.Done()
 
 	var client ClientCustomTx
@@ -339,8 +359,7 @@ func payWorkerCustomTx(
 
 	randSource.Init(clusterSettings.Count, clusterSettings.Seed, settings.BanRangeMultiplier)
 
-	for i := 0; i < n_transfers; {
-
+	for i := uint64(0); i < nTransfers; { //nolint
 		t := new(model.Transfer)
 		t.InitRandomTransfer(&randSource, zipfian)
 
@@ -365,28 +384,37 @@ func payWorkerCustomTx(
 
 func payCustomTx(settings *config.DatabaseSettings,
 	cluster CustomTxTransfer,
-	oracle *database.Oracle) (*PayStats, error) {
-
+	oracle *database.Oracle,
+) (*PayStats, error) {
 	var wg sync.WaitGroup
 	var payStats PayStats
 
 	transfersPerWorker := settings.Count / settings.Workers
-	remainder := settings.Count - transfersPerWorker*settings.Workers
+	remainder := int(settings.Count - transfersPerWorker*settings.Workers)
 
 	RecoveryStart(cluster, oracle, &payStats)
 	//nolint:golint,gosimple
-	clusterCustomTx, ok := cluster.(CustomTxTransfer)
+	clusterCustomTx, ok := cluster.(CustomTxTransfer) //nolint
 	if !ok {
 		llog.Fatalf("Custom transactions are not implemented for %s", cluster.GetClusterType())
 	}
 
-	for i := 0; i < settings.Workers; i++ {
+	for i := 0; i < int(settings.Workers); i++ {
 		wg.Add(1)
 		nTransfers := transfersPerWorker
 		if i < remainder {
 			nTransfers++
 		}
-		go payWorkerCustomTx(*settings, nTransfers, settings.Zipfian, clusterCustomTx, oracle, &payStats, &wg)
+
+		go payWorkerCustomTx(
+			*settings,
+			nTransfers,
+			settings.Zipfian,
+			clusterCustomTx,
+			oracle,
+			&payStats,
+			&wg,
+		)
 	}
 
 	wg.Wait()

@@ -147,7 +147,7 @@ func NewFoundationCluster(dbURL string) (*FDBCluster, error) {
 }
 
 // BootstrapDB - заполнить параметры настройки  и инициализировать ключ для хранения итогового баланса.
-func (cluster *FDBCluster) BootstrapDB(count int, seed int) error {
+func (cluster *FDBCluster) BootstrapDB(count uint64, seed int) error {
 	llog.Infof("Populating settings...")
 	_, err := cluster.pool.Transact(func(tx fdb.Transaction) (interface{}, error) {
 		// очищаем cпейсы перед началом загрузки счетов, BootstrapDB вызывается на этом этапе
@@ -158,7 +158,7 @@ func (cluster *FDBCluster) BootstrapDB(count int, seed int) error {
 		countKey := cluster.model.settings.Pack(tuple.Tuple{"count"})
 		seedKey := cluster.model.settings.Pack(tuple.Tuple{"seed"})
 		checkSumTotalKey := cluster.model.checksum.Pack(tuple.Tuple{"total"})
-		tx.Set(countKey, []byte(strconv.Itoa(count)))
+		tx.Set(countKey, []byte(fmt.Sprintf("%d", count)))
 		tx.Set(seedKey, []byte(strconv.Itoa(seed)))
 		// добавляем пустое значение для checksum, чтобы инициировать ключ
 		tx.Set(checkSumTotalKey, []byte{})
