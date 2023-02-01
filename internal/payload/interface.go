@@ -63,9 +63,10 @@ func CreatePayload(
 		payFunc:        nil,
 	}
 
-	llog.Debugf("DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
-		"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
-		"ConnectPoolSize: %d, Sharded: %v",
+	llog.Debugf(
+		"DatabaseSettings: DBType: %s, workers: %d, Zipfian: %v, Oracle: %v, Check: %v, "+
+			"DBURL: %s, UseCustomTx: %v, BanRangeMultiplier: %v, StatInterval: %v, "+
+			"ConnectPoolSize: %d, Sharded: %v",
 		settings.DatabaseSettings.DBType,
 		settings.DatabaseSettings.Workers,
 		settings.DatabaseSettings.Zipfian,
@@ -141,7 +142,7 @@ func (p *BasePayload) Connect() error {
 	}
 
 	if p.Cluster, isOk = dbCluster.(CustomTxTransfer); !isOk {
-		llog.Errorf("Error then casting payload to CustomTxTransfer: %s", err)
+		llog.Errorf("Error then casting payload to CustomTxTransfer")
 
 		return merry.Prepend(
 			err,

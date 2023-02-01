@@ -12,7 +12,6 @@ venv/
 
 benchmark
 terraform*.zip
-config
 
 vendor
 bin

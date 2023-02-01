@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"strconv"
 	"time"
 
 	"gitlab.com/picodata/stroppy/pkg/database/cluster"
@@ -13,9 +12,11 @@ import (
 	engineSsh "gitlab.com/picodata/stroppy/pkg/engine/ssh"
 	"gitlab.com/picodata/stroppy/pkg/kubernetes"
 	"gitlab.com/picodata/stroppy/pkg/state"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ansel1/merry"
 	helmclient "github.com/mittwald/go-helm-client"
+	"github.com/pkg/errors"
 	llog "github.com/sirupsen/logrus"
 	ydbApi "github.com/ydb-platform/ydb-kubernetes-operator/api/v1alpha1"
 	goYaml "gopkg.in/yaml.v3"
@@ -40,8 +41,9 @@ const (
 	castingError         string = "Error then casting type into interface"
 	roAll                int    = 0o644
 	stroppyNamespaceName string = "stroppy"
-	erasureSpecies       string = "block-4-2"
 )
+
+const logLevelTrace = "trace"
 
 type yandexCluster struct {
 	commonCluster *commonCluster
@@ -165,13 +167,15 @@ func (yc *yandexCluster) deployYandexDBOperator(shellState *state.State) error {
 
 	llog.Infof("Release '%s' with YDB operator successfully deployed", rel.Name)
 
+	time.Sleep(time.Second * 30) //nolint
+
 	return nil
 }
 
 // Connect to freshly deployed cluster.
 func (yc *yandexCluster) Connect() (interface{}, error) {
 	var (
-		connection *cluster.YandexDBCluster
+		connection *cluster.YdbCluster
 		err        error
 	)
 
@@ -184,7 +188,7 @@ func (yc *yandexCluster) Connect() (interface{}, error) {
 	ydbContext, ctxCloseFn := context.WithTimeout(context.Background(), time.Second)
 	defer ctxCloseFn()
 
-	if connection, err = cluster.NewYandexDBCluster(
+	if connection, err = cluster.NewYdbCluster(
 		ydbContext,
 		yc.commonCluster.DBUrl,
 		yc.commonCluster.connectionPoolSize,
@@ -243,6 +247,8 @@ func deployStatusIngress(kube *kubernetes.Kubernetes, shellState *state.State) e
 
 // Deploy YDB storage
 // Parse manifest and deploy yandex db storage via kubectl.
+//
+//nolint:gomnd // Magic is legal
 func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error { //nolint
 	var (
 		err             error
@@ -307,6 +313,16 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 		return merry.Prepend(err, "failed to parameterize storage configuration")
 	}
 
+	if shellState.Settings.LogLevel == logLevelTrace {
+		var data []byte
+
+		if data, err = k8sYaml.Marshal(ydbStorage); err != nil {
+			return errors.Wrap(err, "failed to serialize storage manifest")
+		}
+
+		llog.Tracef("YDB storage manifest:\n%s\n", string(data))
+	}
+
 	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {
 		return merry.Prepend(err, "failed to get kube config")
 	}
@@ -334,12 +350,98 @@ func deployStorage(kube *kubernetes.Kubernetes, shellState *state.State) error {
 		return merry.Prepend(err, "failed to apply storage manifers")
 	}
 
+	var clientSet *k8sClient.Clientset
+
+	if clientSet, err = kube.Engine.GetClientSet(); err != nil {
+		return errors.Wrap(err, "failed to get ClientSet")
+	}
+
+	errGroup := new(errgroup.Group)
+
+	kubeStatusContext, ctxStatusCloseFn := context.WithCancel(context.Background())
+	defer ctxStatusCloseFn()
+
+	for index := 0; index < shellState.NodesInfo.WorkersCnt; index++ {
+		storagePodName := fmt.Sprintf("stroppy-ydb-storage-%d", index)
+
+		errGroup.Go(func() error {
+			var (
+				ydbStorageReady bool
+				ydbStorage      *v1.Pod
+				getErr          error
+			)
+
+			retries := 5
+
+			for !ydbStorageReady && retries > 0 {
+				time.Sleep(time.Second * 30)
+
+				kubeGetContext, kubeGetCtxCloseFn := context.WithTimeout(
+					kubeStatusContext,
+					time.Second,
+				)
+
+				ydbStorage, getErr = clientSet.CoreV1().Pods("stroppy").Get(
+					kubeGetContext,
+					storagePodName,
+					metav1.GetOptions{}, //nolint
+				)
+
+				kubeGetCtxCloseFn()
+
+				if getErr != nil {
+					getErr = errors.Wrapf(getErr, "failed to get %s status", storagePodName)
+					llog.Warnln(getErr)
+
+					retries--
+
+					continue
+				}
+
+				if ydbStorage.Status.Phase != "Running" {
+					getErr = errors.Errorf(
+						"storage pod %s still in %s state",
+						storagePodName,
+						ydbStorage.Status.Phase,
+					)
+					llog.Warnln(getErr)
+
+					retries--
+
+					continue
+				}
+
+				llog.Debugf("Storage state %#v", ydbStorage.Status.Phase)
+
+				ydbStorageReady = true
+			}
+
+			if retries == 0 {
+				if deleteErr := ydbRestClient.YDBV1Alpha1().Storages("stroppy").Delete(
+					kubeContext,
+					storagePodName,
+					&metav1.DeleteOptions{}, //nolint
+				); deleteErr != nil {
+					getErr = errors.Wrapf(getErr, "failed to delete %s", storagePodName)
+				}
+			}
+
+			return getErr
+		})
+	}
+
+	if err = errGroup.Wait(); err != nil {
+		return errors.Wrapf(err, "failed to deploy stroppy-ydb-storage")
+	}
+
 	llog.Infof("Storage %s deploy status: success", ydbStorage.Name)
 
 	return nil
 }
 
 // Generate parameters for `storage` CRD.
+//
+//nolint:gomnd // magic is legal
 func parametrizeStorageConfig(storage string, shellState *state.State) (string, error) { //nolint
 	var (
 		err     error
@@ -353,9 +455,35 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 		return "", merry.Prepend(err, "failed to deserialize ydb configuration")
 	}
 
+	hostsFunc := func(start, end int, zone string) []map[string]interface{} {
+		hosts := []map[string]interface{}{}
+
+		for index := start; index < end; index++ {
+			hosts = append(
+				hosts,
+				map[string]interface{}{
+					"host":           fmt.Sprintf("stroppy-ydb-storage-%d", index),
+					"host_config_id": 1,
+					"walle_location": map[string]interface{}{
+						"body":        index,
+						"data_center": zone,
+						"rack":        fmt.Sprintf("%d", index),
+					},
+				},
+			)
+		}
+
+		return hosts
+	}
+
 	domainsConfig, statusOk := confMap["domains_config"].(map[string]interface{})
 	if !statusOk {
 		return "", merry.Prepend(err, castingError)
+	}
+
+	domain, statusOk := domainsConfig["domain"].([]interface{})
+	if !statusOk {
+		return "", errors.Wrap(err, castingError)
 	}
 
 	stateStorage, statusOk := domainsConfig["state_storage"].([]interface{})
@@ -375,10 +503,10 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 
 	serviceSet["availability_domains"] = 1
 
-	failDomainsFunc := func(count int) []map[string]interface{} {
+	failDomainsFunc := func(start, end int) []map[string]interface{} {
 		failDomains := []map[string]interface{}{}
 
-		for index := 1; index < count+1; index++ {
+		for index := start; index < end+1; index++ {
 			failDomains = append(
 				failDomains,
 				map[string]interface{}{
@@ -406,21 +534,26 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 		return "", merry.Prepend(err, castingError)
 	}
 
-	channelProfileFunc := func(erasureSpecies string) map[string]interface{} {
+	actorSystemConfig, statusOk := confMap["actor_system_config"].(map[string]interface{})
+	if !statusOk {
+		return "", errors.Wrap(err, castingError)
+	}
+
+	channelProfileFunc := func(errasureSpecies string) map[string]interface{} {
 		return map[string]interface{}{
 			"channel": []interface{}{
 				map[string]interface{}{
-					"erasure_species":   erasureSpecies,
+					"erasure_species":   errasureSpecies,
 					"pdisk_category":    1,
 					"storage_pool_kind": "ssd",
 				},
 				map[string]interface{}{
-					"erasure_species":   erasureSpecies,
+					"erasure_species":   errasureSpecies,
 					"pdisk_category":    1,
 					"storage_pool_kind": "ssd",
 				},
 				map[string]interface{}{
-					"erasure_species":   erasureSpecies,
+					"erasure_species":   errasureSpecies,
 					"pdisk_category":    1,
 					"storage_pool_kind": "ssd",
 				},
@@ -430,13 +563,15 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 	}
 
 	switch shellState.NodesInfo.WorkersCnt {
-	case 8: //nolint
+	case 8:
+		confMap["static_erasure"] = ydbApi.ErasureBlock42
+
 		stateStorage[0] = map[string]interface{}{
 			"ring": map[string]interface{}{
 				"node": []interface{}{
 					1, 2, 3, 4, 5, 6, 7, 8,
 				},
-				"nto_select": 5, //nolint // nto_select is parameter for nto
+				"nto_select": 5, //nolint
 			},
 			"ssid": 1,
 		}
@@ -445,46 +580,118 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 			map[string]interface{}{
 				"group_id":         0,
 				"group_generation": 1,
-				"erasure_species":  erasureSpecies,
+				"erasure_species":  ydbApi.ErasureBlock42,
 				"rings": []map[string]interface{}{
 					{
-						"fail_domains": failDomainsFunc(8), //nolint
+						"fail_domains": failDomainsFunc(1, 8), //nolint
 					},
 				},
 			},
 		}
 
 		profile[0] = channelProfileFunc(string(ydbApi.ErasureBlock42))
-	case 9: //nolint
-		stateStorage[0] = map[string]interface{}{
-			"ring": map[string]interface{}{
-				"node": []interface{}{
-					1, 2, 3, 4, 5, 6, 7, 8, 9,
-				},
-				"nto_select": 5, //nolint // nto_select is parameter for nto
-			},
-			"ssid": 1,
-		}
+	case 9:
+		confMap["static_erasure"] = ydbApi.ErasureMirror3DC
 
-		serviceSet["groups"] = []interface{}{
-			map[string]interface{}{
-				"group_id":         0,
-				"group_generation": 1,
-				"erasure_species":  erasureSpecies,
-				"rings": []map[string]interface{}{
-					{
-						"fail_domains": failDomainsFunc(9), //nolint
+		domain[0] = map[string]interface{}{
+			"name": "root",
+			"storage_pool_types": []interface{}{
+				map[string]interface{}{
+					"kind": "ssd",
+					"pool_config": map[string]interface{}{
+						"box_id":          1,
+						"erasure_species": ydbApi.ErasureMirror3DC,
+						"kind":            "ssd",
+						"pdisk_filter": []interface{}{
+							map[string]interface{}{
+								"property": []interface{}{
+									map[string]interface{}{
+										"type": "SSD",
+									},
+								},
+							},
+						},
+						"vdisk_kind": "Default",
 					},
 				},
 			},
 		}
 
+		stateStorage[0] = map[string]interface{}{
+			"ring": map[string]interface{}{
+				"node": []interface{}{
+					1, 2, 3, 4, 5, 6, 7, 8, 9,
+				},
+				"nto_select": 5, //nolint
+			},
+			"ssid": 1,
+		}
+
+		if shellState.NodesInfo.GetFirstMaster().Resources.CPU == 16 {
+			actorSystemConfig["executor"] = []interface{}{
+				map[string]interface{}{
+					"name":    "System",
+					"threads": 2,
+					"type":    "BASIC",
+				},
+				map[string]interface{}{
+					"name":    "User",
+					"threads": 8,
+					"type":    "BASIC",
+				},
+				map[string]interface{}{
+					"name":    "Batch",
+					"threads": 1,
+					"type":    "BASIC",
+				},
+				map[string]interface{}{
+					"name":                        "IO",
+					"threads":                     1,
+					"time_per_mailbox_micro_secs": 100,
+					"type":                        "IO",
+				},
+				map[string]interface{}{
+					"name":                        "IC",
+					"spin_threshold":              1,
+					"threads":                     4,
+					"time_per_mailbox_micro_secs": 100,
+					"type":                        "BASIC",
+				},
+			}
+		}
+
+		serviceSet["groups"] = []interface{}{
+			map[string]interface{}{
+				"group_id":         0,
+				"group_generation": 1,
+				"erasure_species":  ydbApi.ErasureMirror3DC,
+				"rings": []map[string]interface{}{
+					{
+						"fail_domains": failDomainsFunc(1, 3),
+					},
+					{
+						"fail_domains": failDomainsFunc(4, 6),
+					},
+					{
+						"fail_domains": failDomainsFunc(7, 9),
+					},
+				},
+			},
+		}
+
+		hosts := append(hostsFunc(0, 3, "zone-a"), hostsFunc(3, 6, "zone-b")...)
+		hosts = append(hosts, hostsFunc(6, 9, "zone-c")...)
+
+		confMap["hosts"] = hosts
+
 		profile[0] = channelProfileFunc(string(ydbApi.ErasureMirror3DC))
 	default:
+		confMap["static_erasure"] = ydbApi.None
+
 		stateStorage[0] = map[string]interface{}{
 			"ring": map[string]interface{}{
 				"node":       []interface{}{1},
-				"nto_select": 1, //nolint // nto_select is parameter for nto
+				"nto_select": 1, //nolint
 			},
 			"ssid": 1,
 		}
@@ -493,10 +700,10 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 			map[string]interface{}{
 				"group_id":         0,
 				"group_generation": 1,
-				"erasure_species":  erasureSpecies,
+				"erasure_species":  ydbApi.None,
 				"rings": []map[string]interface{}{
 					{
-						"fail_domains": failDomainsFunc(1),
+						"fail_domains": failDomainsFunc(1, 1),
 					},
 				},
 			},
@@ -517,11 +724,10 @@ func parametrizeStorageConfig(storage string, shellState *state.State) (string, 
 // Parse manifest and deploy yandex db database via RESTapi.
 func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error {
 	var (
-		err               error
-		ydbDatabase       ydbApi.Database
-		restConfig        *rest.Config
-		ydbRestClient     *kubeengine.YDBV1Alpha1Client
-		databaseCPULimits resource.Quantity
+		err           error
+		ydbDatabase   ydbApi.Database
+		restConfig    *rest.Config
+		ydbRestClient *kubeengine.YDBV1Alpha1Client
 	)
 
 	if err = kube.Engine.ToEngineObject(
@@ -541,28 +747,23 @@ func deployDatabase(kube *kubernetes.Kubernetes, shellState *state.State) error 
 
 	ydbDatabase.Namespace = stroppyNamespaceName
 
-	switch len(shellState.NodesInfo.NodesParams) {
-	case 8, 9: //nolint
-		ydbDatabase.Spec.Nodes = 6 //nolint
+	switch shellState.NodesInfo.WorkersCnt {
+	case 8: //nolint
+		ydbDatabase.Spec.Nodes = 8
+	case 9: //nolint
+		ydbDatabase.Spec.Nodes = 9
 	default:
 		ydbDatabase.Spec.Nodes = 1 //nolint
 	}
 
-	var cpu string
+	if shellState.Settings.LogLevel == logLevelTrace {
+		var data []byte
 
-	switch {
-	case shellState.NodesInfo.GetFirstWorker().Resources.CPU == 1|2|3:
-		cpu = "100m"
-	default:
-		cpu = strconv.Itoa(int(shellState.NodesInfo.GetFirstWorker().Resources.CPU / 2)) //nolint
-	}
+		if data, err = k8sYaml.Marshal(ydbDatabase); err != nil {
+			return errors.Wrap(err, "failed to serialize database manifest")
+		}
 
-	if err = k8sYaml.Unmarshal([]byte(cpu), databaseCPULimits); err != nil {
-		return merry.Prepend(err, "failed to deserialize storageQuantity")
-	}
-
-	ydbDatabase.Spec.Resources.ContainerResources.Limits = v1.ResourceList{
-		v1.ResourceCPU: databaseCPULimits,
+		llog.Tracef("YDB database manifest:\n%s\n", string(data))
 	}
 
 	if restConfig, err = kube.Engine.GetKubeConfig(); err != nil {

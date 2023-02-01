@@ -10,12 +10,12 @@
   "cmd": [
     {
       "pop": {
-        "count": 50000
+        "count": 1000000
       }
     },
     {
       "pay": {
-        "count": 100000,
+        "count": 10000000,
         "zipfian": false,
         "oracle": false,
         "check": true

@@ -24,9 +24,20 @@ execute command for set environment variables KUBECONFIG before using:
 	stroppyBinaryPath = "/usr/local/bin/stroppy"
 	stroppyHomePath   = "/home/stroppy"
 
-    //nolint
-    addToHosts      = `
+	//nolint
+	addToHosts = `
 %s      prometheus.cluster.picodata.io
 %s	    status.cluster.picodata.io
     `
+)
+
+const (
+	pgDefaultURI    = "postgres://stroppy:stroppy@acid-postgres-cluster/stroppy?sslmode=disable"
+	fdbDefultURI    = "fdb.cluster"
+	mongoDefaultURI = "mongodb://stroppy:stroppy@sample-cluster-name-mongos" +
+		".default.svc.cluster.local/admin?ssl=false"
+
+	crDefaultURI   = "postgres://stroppy:stroppy@/stroppy?sslmode=disable"
+	cartDefaultURI = "http://routers:8081"
+	ydbDefaultURI  = "grpc://stroppy-ydb-database-grpc:2135/root/stroppy-ydb-database"
 )

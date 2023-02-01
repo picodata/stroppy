@@ -31,7 +31,7 @@ type ClusterPopulatable interface {
 	//
 	// For now data model for PostgreSQL is copied from lighest, but should be adjusted to correspond
 	// to planned workload in the future
-	BootstrapDB(count int, seed int) error
+	BootstrapDB(count uint64, seed int) error
 	FetchSettings() (cluster.Settings, error)
 
 	InsertAccount(acc model.Account) error
@@ -45,8 +45,6 @@ type PopStats struct {
 func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refactor
 	stats := PopStats{}
 
-	llog.Tracef("%#v %#v", p.config.Count, p.config.Seed) // TODO: remove
-
 	err := p.Cluster.BootstrapDB(p.config.Count, int(p.config.Seed))
 	if err != nil {
 		return merry.Prepend(err, "cluster bootstrap failed")
@@ -57,14 +55,15 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 		return merry.Prepend(err, "cluster settings fetch failed")
 	}
 
-	worker := func(id, nAccounts int, wg *sync.WaitGroup) {
+	worker := func(id, nAccounts uint64, wg *sync.WaitGroup) { //nolint
 		defer wg.Done()
 
 		var rand fixed_random_source.FixedRandomSource
 		rand.Init(clusterSettings.Count, clusterSettings.Seed, p.config.BanRangeMultiplier)
 
 		llog.Tracef("Worker %d inserting %d accounts", id, nAccounts)
-		for i := 0; i < nAccounts; {
+
+		for i := uint64(0); i < nAccounts; { //nolint
 			cookie := statistics.StatsRequestStart()
 			bic, ban := rand.NewBicAndBan()
 			balance := rand.NewStartBalance()
@@ -138,9 +137,12 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 		llog.Tracef("Worker %d done %d accounts", id, nAccounts)
 	}
 
-	llog.Infof("Creating %d accounts using %d workers on %d cores \n",
-		p.config.Count, p.config.Workers,
-		runtime.NumCPU())
+	llog.Infof(
+		"Creating %d accounts using %d workers on %d cores \n",
+		p.config.Count,
+		p.config.Workers,
+		runtime.NumCPU(),
+	)
 
 	var wg sync.WaitGroup
 
@@ -152,7 +154,7 @@ func (p *BasePayload) Pop(shellState *state.State) error { //nolint //TODO: refa
 		return errors.Wrap(err, "failed to execute chaos command")
 	}
 
-	for i := 0; i < p.config.Workers; i++ {
+	for i := uint64(0); i < p.config.Workers; i++ { //nolint
 		nAccounts := accountsPerWorker
 		if i < remainder {
 			nAccounts++

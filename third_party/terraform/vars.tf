@@ -40,13 +40,13 @@ variable "masters_count" {
 variable "masters_cpu" {
     type = number
     description = "Yandex Cloud cpu cores per master"
-    default = 10
+    default = 16
 }
 
 variable "masters_memory" {
     type = number
     description = "Yandex Cloud memory gigabytes per master"
-    default = 40
+    default = 48
 }
 
 variable "masters_boot_disk" {
@@ -65,19 +65,19 @@ variable "masters_secondary_disk" {
 variable "workers_count" {
     type = number
     description = "Yandex Cloud count of workers"
-    default = 8
+    default = 9
 }
 
 variable "workers_cpu" {
     type = number
     description = "Yandex Cloud cpu in cores per worker"
-    default = 10
+    default = 16
 }
 
 variable "workers_memory" {
     type = number
     description = "Yandex Cloud memory in GB per worker"
-    default = 40
+    default = 48
 }
 
 variable "workers_boot_disk" {

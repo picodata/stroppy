@@ -30,7 +30,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		},
 
 		Run: func(cmd *cobra.Command, args []string) {
-			statistics.StatsSetTotal(settings.DatabaseSettings.Count)
+			statistics.StatsSetTotal(int(settings.DatabaseSettings.Count))
 
 			if settings.EnableProfile {
 				go func() {
@@ -38,15 +38,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 				}()
 			}
 
-			if settings.TestSettings.UseCloudStroppy && settings.TestSettings.RunAsPod {
-				llog.Fatalf("--use-cloud-stroppy and --run-as-pod flags specified at the same time")
-			}
-
-			if settings.Local && settings.TestSettings.RunAsPod {
-				llog.Fatalf("--local and --run-as-pod flags specified at the same time")
-			}
-
-			if settings.TestSettings.UseCloudStroppy {
+			if settings.TestSettings.IsController() { //nolint
 				sh, err := deployment.LoadState(settings)
 				if err != nil {
 					llog.Fatalf("deployment load state failed: %v", err)
@@ -62,7 +54,7 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 				}
 
 				if err = dbPayload.Connect(); err != nil {
-					llog.Fatalf("failed to connec to to cluster: %v", err)
+					llog.Fatalf("failed to connect to cluster: %v", err)
 				}
 
 				err = dbPayload.StartStatisticsCollect(settings.DatabaseSettings.StatInterval)
@@ -86,15 +78,10 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		},
 	}
 
-	popCmd.PersistentFlags().IntVarP(&settings.DatabaseSettings.Count,
+	popCmd.PersistentFlags().Uint64VarP(&settings.DatabaseSettings.Count,
 		"count", "n",
 		settings.DatabaseSettings.Count,
 		"Number of accounts to create")
-
-	popCmd.PersistentFlags().BoolVarP(&settings.TestSettings.RunAsPod,
-		"run-as-pod", "",
-		false,
-		"run stroppy as in pod statement")
 
 	popCmd.PersistentFlags().StringVarP(&settings.TestSettings.KubernetesMasterAddress,
 		"kube-master-addr", "k",
@@ -105,6 +92,13 @@ func newPopCommand(settings *config.Settings) *cobra.Command {
 		"sharded", "",
 		false,
 		"Use to populate accounts in sharded MongoDB cluster. Default false - populate accounts in MongoDB replicasets cluster")
+
+	popCmd.PersistentFlags().StringVarP(
+		&settings.TestSettings.RunType,
+		"run-type", "",
+		"controller",
+		"set troppy run type [controller, client, or local]",
+	)
 
 	return popCmd
 }

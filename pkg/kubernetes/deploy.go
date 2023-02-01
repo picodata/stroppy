@@ -831,13 +831,13 @@ func (k *Kubernetes) deployPrometheus(shellState *state.State) error { //nolint
 		bytes []byte
 	)
 
-	if bytes, err = kubeengine.GetPrometheusValues(shellState); err != nil {
+	if bytes, err = kubeengine.GetPrometheusValues(shellState); err != nil || len(bytes) == 0 {
 		return merry.Prepend(err, "failed to get prometheus values")
 	}
 
 	if err = k.Engine.DeployChart(
 		&kubeengine.InstallOptions{ //nolint
-			ChartName:      path.Join(prometheusHelmRepoName, "prometheus"),
+			ChartName:      path.Join(prometheusHelmRepoName, "kube-prometheus-stack"),
 			ChartNamespace: "default",
 			ReleaseName:    "prometheus",
 			RepositoryURL:  prometheusHelmRepoURL,
@@ -928,6 +928,7 @@ func (k *Kubernetes) deployIngress(shellState *state.State) error { //nolint
 	if err = k.Engine.DeployChart(
 		&kubeengine.InstallOptions{ //nolint
 			ChartName:      path.Join(nginxHelmRepoName, "ingress-nginx"),
+			ChartVersion:   "4.2.5",
 			ChartNamespace: "default",
 			ReleaseName:    "ingress-nginx",
 			RepositoryURL:  nginxHelmRepoURL,

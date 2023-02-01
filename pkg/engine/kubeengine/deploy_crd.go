@@ -94,16 +94,20 @@ var (
 func (storageClient *StorageClient) Get(
 	ctx context.Context,
 	name string,
-	options *metav1.GetOptions,
+	getOptions *metav1.GetOptions,
 ) (*ydbApi.Storage, error) {
 	var err error
 	result := &ydbApi.Storage{} //nolint
+
+	if name == "" {
+		return nil, errStorageNameMustNotBeNull
+	}
 
 	if err = storageClient.client.Get().
 		Namespace(storageClient.ns).
 		Resource(storagePluralName).
 		Name(name).
-		VersionedParams(options, scheme.ParameterCodec).
+		VersionedParams(getOptions, scheme.ParameterCodec).
 		Do(ctx).
 		Into(result); err != nil {
 		return nil, errors.Wrap(err, "failed to get storage")

@@ -297,9 +297,8 @@ func GetPromtailValues(shellState *state.State) ([]byte, error) {
 
 func GetPrometheusValues(shellState *state.State) ([]byte, error) {
 	var (
-		bytes  []byte
-		err    error
-		values map[string]interface{}
+		bytes []byte
+		err   error
 	)
 
 	if bytes, err = os.ReadFile(path.Join(
@@ -309,14 +308,6 @@ func GetPrometheusValues(shellState *state.State) ([]byte, error) {
 		"prometheus-values-tpl.yml",
 	)); err != nil {
 		return nil, merry.Prepend(err, "failed to open prometheus values template")
-	}
-
-	if err = k8sYaml.Unmarshal(bytes, &values); err != nil {
-		return nil, merry.Prepend(err, "failed to deserialize values")
-	}
-
-	if bytes, err = goYaml.Marshal(&values); err != nil {
-		return nil, merry.Prepend(err, "failed to serialize values")
 	}
 
 	return bytes, nil
