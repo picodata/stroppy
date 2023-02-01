@@ -191,6 +191,7 @@ func (k *Kubernetes) GenerateMonitoringInventory(shellState *state.State) ([]byt
 				},
 				"grafana_address": shellState.NodesInfo.IPs.FirstMasterIP.Internal,
 				"grafana_port":    grafanaPort,
+                "grafana_manage_repo": false,
 				"grafana_datasources": []interface{}{
 					map[string]interface{}{
 						"name":   "Prometheus",

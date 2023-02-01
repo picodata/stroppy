@@ -14,7 +14,7 @@ data:
       hostDir: /mnt/network-ssd-nonreplicated
       mountDir: /mnt/network-ssd-nonreplicated
       blockCleanerCommand:
-        - "/scripts/dd_zero.sh"
+        - "/scripts/shred.sh"
         - "2"
       volumeMode: Block
       fsType: ext4

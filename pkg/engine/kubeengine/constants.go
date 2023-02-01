@@ -28,7 +28,7 @@ const (
 	ConnectionRetryCount = 3
 
 	// path to monitoring script.
-	GetPngScriptPath = "./get_png.sh"
+	GetPngScriptName = "get_png.sh"
 
 	SSHUserName = "ubuntu"
 )

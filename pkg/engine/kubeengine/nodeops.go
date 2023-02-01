@@ -200,6 +200,8 @@ func (e *Engine) AddNodeLabels(shellState *state.State) error { //nolint
 			newLabels[NodeNameDBMS] = trueVal
 		}
 
+		newLabels["topology.kubernetes.io/zone"] = node.Name
+
 		for key, value := range newLabels {
 			nodeLabels[key] = value
 		}
@@ -209,7 +211,7 @@ func (e *Engine) AddNodeLabels(shellState *state.State) error { //nolint
 		nodesList.Items[index].ResourceVersion = ""
 		nodesList.Items[index].UID = types.UID("")
 
-		llog.Tracef("Cluster node %s now has new lables: %v", node.Name, nodeLabels)
+		llog.Tracef("Cluster node %s now has new labels: %v", node.Name, nodeLabels)
 	}
 
 	if err = applyNodeLabels(clientSet, nodesList); err != nil {

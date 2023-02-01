@@ -22,7 +22,8 @@ import (
 func CreateSystemShell(settings *config.Settings) (sc ssh.Client, err error) {
 	kubernetesMasterAddress := settings.TestSettings.KubernetesMasterAddress
 	commandClientType := ssh.RemoteClient
-	if settings.TestSettings.UseCloudStroppy {
+
+	if settings.TestSettings.IsController() {
 		if kubernetesMasterAddress == "" {
 			err = fmt.Errorf("kubernetes master address is empty")
 			return
@@ -51,7 +52,7 @@ func createKubernetesObject(
 	pObj = &Engine{
 		clusterConfigFile:    filepath.Join(shellState.Settings.WorkingDirectory, "config"),
 		sc:                   sshClient,
-		UseLocalSession:      shellState.Settings.Local,
+		UseLocalSession:      shellState.Settings.TestSettings.IsLocal(),
 		isSshKeyFileOnMaster: false,
 	}
 	return

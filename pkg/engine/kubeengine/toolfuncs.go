@@ -201,12 +201,22 @@ func (e Engine) CollectMonitoringData(
 		"third_party",
 		"monitoring",
 	)
+	getPngScriptPath := filepath.Join(
+		"./third_party", //nolint
+		"monitoring",
+		GetPngScriptName,
+	)
+
+	llog.Debugf("Getting monitoring images script path: %s", getPngScriptPath)
+
 	getImagesCmd := exec.Command(
-		GetPngScriptPath,
+		getPngScriptPath,
 		fmt.Sprintf("%v", startTime),
 		fmt.Sprintf("%v", finishTime),
 		fmt.Sprintf("%v", monitoringPort),
-		monImagesArchName, workersIps)
+		monImagesArchName,
+		workersIps,
+	)
 	getImagesCmd.Dir = workingDirectory
 
 	if result, err := getImagesCmd.CombinedOutput(); err != nil {

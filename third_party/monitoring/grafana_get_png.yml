@@ -1,0 +1,9 @@
+- hosts: master
+  become: true
+  any_errors_fatal: false
+  tasks:
+    - name: Get node-exporter-full png
+      ansible.builtin.get_url:
+        url: "http://{{ grafana_address }}:{{ grafana_port }}/render/d-solo/rYdddlPWk/node-exporter-full?orgId=1&from={{ start_time }}&to={{ end_time }}&var-job=node-exporter&var-node={{ worker_id }}:9100&var-diskdevices=%5Ba-z%5D%2B%7Cnvme%5B0-9%5D%2Bn%5B0-9%5D%2B&theme=$theme&panelId=77&$size&$tz"
+        dest: "tmp/png/$size/$theme/node-exporter/cpu-worker-$i.png"
+
