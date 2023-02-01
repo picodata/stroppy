@@ -4,18 +4,25 @@ metadata:
   name: stroppy-ydb-database
 spec:
   image:
-    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.2.47
+    name: cr.yandex/crptqonuodf51kdj7a7d/ydb:22.4.44
   nodes: 1
   domain: root
   resources:
-    containerResources:
-      limits:
-        cpu: 500m
     storageUnits:
       - count: 1
         unitKind: ssd
   storageClusterRef:
     name: stroppy-ydb-storage
+    namespace: stroppy
   nodeSelector:
     dbms-worker: "true"
-
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: dbms-worker
+                operator: In
+                values:
+                  - "true"
+          topologyKey: "kubernetes.io/hostname"
