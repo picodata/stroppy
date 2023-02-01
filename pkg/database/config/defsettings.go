@@ -43,8 +43,6 @@ func DefaultSettings() (s *Settings) {
 		WorkingDirectory: workingDirectory,
 		UseChaos:         false,
 
-		Local: false,
-
 		DeploymentSettings: deployDefaults(),
 		DatabaseSettings:   DatabaseDefaults(),
 
@@ -67,22 +65,28 @@ func DefaultSettings() (s *Settings) {
 
 type TestSettings struct {
 	KubernetesMasterAddress string
-	UseCloudStroppy         bool
-	RunAsPod                bool
+	RunType                 string
 }
 
 func TestDefaults() *TestSettings {
 	return &TestSettings{
 		KubernetesMasterAddress: "",
-		UseCloudStroppy:         false,
-		RunAsPod:                false,
+		RunType:                 "controler",
 	}
+}
+
+func (testSettings *TestSettings) IsController() bool {
+	return testSettings.RunType == "controller"
+}
+
+func (testSettings *TestSettings) IsLocal() bool {
+	return testSettings.RunType == "local"
 }
 
 type DatabaseSettings struct {
 	DBType   string
-	Workers  int
-	Count    int
+	Workers  uint64
+	Count    uint64
 	User     string
 	Password string
 	Seed     int64
@@ -98,7 +102,7 @@ type DatabaseSettings struct {
 	UseCustomTx        bool
 	BanRangeMultiplier float64
 	StatInterval       time.Duration
-	ConnectPoolSize    int
+	ConnectPoolSize    uint64
 	Sharded            bool
 }
 
@@ -120,6 +124,7 @@ func DatabaseDefaults() *DatabaseSettings {
 		StatInterval:       10,
 		ConnectPoolSize:    0,
 		Sharded:            false,
+		Workers:            0,
 	}
 }
 

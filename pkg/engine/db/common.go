@@ -57,8 +57,8 @@ type commonCluster struct {
 
 	DBUrl string
 
-	connectionPoolSize int
-	addPool            int
+	connectionPoolSize uint64
+	addPool            uint64
 
 	sharded bool
 }

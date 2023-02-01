@@ -3,58 +3,77 @@ package cluster
 import (
 	"context"
 	"fmt"
-	"gopkg.in/inf.v0"
 	"sort"
 	"testing"
 	"time"
 
+	"gopkg.in/inf.v0"
+
 	"gitlab.com/picodata/stroppy/internal/model"
 
 	"github.com/google/uuid"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/assert"
 )
 
 var postgresCluster *PostgresCluster
 
-func (self *PostgresCluster) CheckTableExist(tableName string) (exist bool, err error) {
-	var name string
-	sqlQuery := fmt.Sprintf("SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='%s';", tableName)
-	if err = self.pool.QueryRow(context.TODO(), sqlQuery).Scan(&name); err != nil {
-		return false, err
+func (pgCluster *PostgresCluster) CheckTableExist(tableName string) (bool, error) {
+	var (
+		name string
+		err  error
+	)
+
+	sqlQuery := fmt.Sprintf(
+		"SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME='%s';",
+		tableName,
+	)
+
+	if err = pgCluster.pool.QueryRow(context.TODO(), sqlQuery).Scan(&name); err != nil {
+		return false, errors.Wrap(err, "failed to qery row")
 	}
 	if tableName != name {
 		return false, nil
 	}
+
 	return true, nil
 }
 
-func (self *PostgresCluster) TruncateTable(tableName string) error {
+func (pgCluster *PostgresCluster) TruncateTable(tableName string) error {
 	sqlString := fmt.Sprintf("TRUNCATE %s", tableName)
-	_, err := self.pool.Exec(context.TODO(), sqlString)
+	_, err := pgCluster.pool.Exec(context.TODO(), sqlString)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (self *PostgresCluster) GetAccount(Bic string, Ban string) (Account model.Account, err error) {
-	var Balance int64
+func (pgCluster *PostgresCluster) GetAccount(bic, ban string) (model.Account, error) {
+	var (
+		balance int64
+		account model.Account
+		err     error
+	)
+
 	dec := new(inf.Dec)
 
-	if err := self.pool.QueryRow(
+	if err = pgCluster.pool.QueryRow(
 		context.TODO(),
 		`SELECT bic, ban, balance FROM account WHERE bic = $1 and ban = $2;`,
-		Bic,
-		Ban,
+		bic,
+		ban,
 	).Scan(
-		&Account.Bic,
-		&Account.Ban,
-		&Balance); err != nil {
-		return model.Account{}, err
+		&account.Bic,
+		&account.Ban,
+		&balance); err != nil {
+		return model.Account{}, errors.Wrap(err, "failed to get account")
 	}
-	dec.SetUnscaled(Balance)
-	Account.Balance = dec
-	return Account, nil
+
+	dec.SetUnscaled(balance)
+	account.Balance = dec
+
+	return account, nil
 }
 
 func NewTestPostgresCluster(t *testing.T) {
@@ -113,17 +132,26 @@ func PostgresInsertAccount(t *testing.T) {
 
 	accounts := GenerateAccounts()
 	for _, expectedAccount := range accounts {
-		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
-			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
+		if err = postgresCluster.InsertAccount(expectedAccount); err != nil {
+			t.Errorf(
+				"TestCockroachInsertAccount() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if receivedAccount, err = postgresCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
-			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
+			t.Errorf(
+				"TestCockroachInsertAccount() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if expectedAccount.Ban != receivedAccount.Ban ||
 			expectedAccount.Bic != receivedAccount.Bic ||
-			expectedAccount.Balance.UnscaledBig().Int64() != receivedAccount.Balance.UnscaledBig().Int64() {
+			expectedAccount.Balance.UnscaledBig().
+				Int64() !=
+				receivedAccount.Balance.UnscaledBig().
+					Int64() {
 			t.Fail()
 		}
 	}
@@ -141,17 +169,26 @@ func PostgresMakeAtomicTransfer(t *testing.T) {
 	var Balance int64
 	dec := new(inf.Dec)
 	for _, expectedAccount := range accounts {
-		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
-			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
+		if err = postgresCluster.InsertAccount(expectedAccount); err != nil {
+			t.Errorf(
+				"TestCockroachInsertAccount() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if receivedAccount, err = postgresCluster.GetAccount(expectedAccount.Bic, expectedAccount.Ban); err != nil {
-			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
+			t.Errorf(
+				"TestCockroachInsertAccount() received internal error %v, but expected nil",
+				err,
+			)
 		}
 
 		if expectedAccount.Ban != receivedAccount.Ban ||
 			expectedAccount.Bic != receivedAccount.Bic ||
-			expectedAccount.Balance.UnscaledBig().Int64() != receivedAccount.Balance.UnscaledBig().Int64() {
+			expectedAccount.Balance.UnscaledBig().
+				Int64() !=
+				receivedAccount.Balance.UnscaledBig().
+					Int64() {
 			t.Fail()
 		}
 	}
@@ -172,11 +209,13 @@ func PostgresMakeAtomicTransfer(t *testing.T) {
 		State:     "",
 	}
 
-	if err := postgresCluster.MakeAtomicTransfer(&expectedTransfer, uuid.UUID(rand.NewClientID())); err != nil {
+	if err = postgresCluster.MakeAtomicTransfer(
+		&expectedTransfer, uuid.UUID(rand.NewClientID()),
+	); err != nil {
 		t.Errorf("TestMakeAtomicTransfer() received internal error %v, but expected nil", err)
 	}
 
-	if err := postgresCluster.pool.QueryRow(
+	if err = postgresCluster.pool.QueryRow(
 		context.TODO(),
 		`SELECT src_bic, src_ban, dst_bic, dst_ban, amount FROM transfer WHERE transfer_id = $1;`, expectedTransfer.Id).Scan(
 		&receivedTransfer.Acs[0].Bic,
@@ -190,35 +229,65 @@ func PostgresMakeAtomicTransfer(t *testing.T) {
 	receivedTransfer.Amount = dec
 
 	if receivedTransfer.Acs[0].Bic != expectedTransfer.Acs[0].Bic {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Bic, receivedTransfer.Acs[0].Bic)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[0].Bic,
+			receivedTransfer.Acs[0].Bic,
+		)
 	}
 	if receivedTransfer.Acs[0].Ban != expectedTransfer.Acs[0].Ban {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[0].Ban, receivedTransfer.Acs[0].Ban)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[0].Ban,
+			receivedTransfer.Acs[0].Ban,
+		)
 	}
 
 	if receivedTransfer.Acs[1].Bic != expectedTransfer.Acs[1].Bic {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Bic, receivedTransfer.Acs[1].Bic)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[1].Bic,
+			receivedTransfer.Acs[1].Bic,
+		)
 	}
 	if receivedTransfer.Acs[1].Ban != expectedTransfer.Acs[1].Ban {
-		t.Errorf("TestMakeAtomicTransfer() expected source Bic %v , but received %v", expectedTransfer.Acs[1].Ban, receivedTransfer.Acs[1].Ban)
+		t.Errorf(
+			"TestMakeAtomicTransfer() expected source Bic %v , but received %v",
+			expectedTransfer.Acs[1].Ban,
+			receivedTransfer.Acs[1].Ban,
+		)
 	}
 
 	if receivedAccount, err = postgresCluster.GetAccount(expectedTransfer.Acs[0].Bic, expectedTransfer.Acs[0].Ban); err != nil {
 		t.Errorf("TestInsertAccount() received internal error %v, but expected nil", err)
 	}
 
-	expectedSourceBalance0 := expectedTransfer.Acs[0].Balance.UnscaledBig().Int64() - expectedTransfer.Amount.UnscaledBig().Int64()
+	expectedSourceBalance0 := expectedTransfer.Acs[0].Balance.UnscaledBig().
+		Int64() -
+		expectedTransfer.Amount.UnscaledBig().
+			Int64()
 	if receivedAccount.Balance.UnscaledBig().Int64() != expectedSourceBalance0 {
-		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %v  but received %v", expectedSourceBalance0, receivedAccount.Balance.UnscaledBig().Int64())
+		t.Errorf(
+			"TestMakeAtomicTransfer() mismatched source balance; excepted %v  but received %v",
+			expectedSourceBalance0,
+			receivedAccount.Balance.UnscaledBig().Int64(),
+		)
 	}
 
 	if receivedAccount, err = postgresCluster.GetAccount(expectedTransfer.Acs[1].Bic, expectedTransfer.Acs[1].Ban); err != nil {
 		t.Errorf("TestInsertAccount() received internal error %v, but expected nil", err)
 	}
 
-	expectedSourceBalance1 := expectedTransfer.Acs[1].Balance.UnscaledBig().Int64() + expectedTransfer.Amount.UnscaledBig().Int64()
+	expectedSourceBalance1 := expectedTransfer.Acs[1].Balance.UnscaledBig().
+		Int64() +
+		expectedTransfer.Amount.UnscaledBig().
+			Int64()
 	if receivedAccount.Balance.UnscaledBig().Int64() != expectedSourceBalance1 {
-		t.Errorf("TestMakeAtomicTransfer() mismatched source balance; excepted %v  but received %v", expectedSourceBalance1, receivedAccount.Balance.UnscaledBig().Int64())
+		t.Errorf(
+			"TestMakeAtomicTransfer() mismatched source balance; excepted %v  but received %v",
+			expectedSourceBalance1,
+			receivedAccount.Balance.UnscaledBig().Int64(),
+		)
 	}
 }
 
@@ -232,8 +301,11 @@ func PostgresFetchAccounts(t *testing.T) {
 
 	accounts := GenerateAccounts()
 	for _, expectedAccount := range accounts {
-		if err := postgresCluster.InsertAccount(expectedAccount); err != nil {
-			t.Errorf("TestCockroachInsertAccount() received internal error %v, but expected nil", err)
+		if err = postgresCluster.InsertAccount(expectedAccount); err != nil {
+			t.Errorf(
+				"TestCockroachInsertAccount() received internal error %v, but expected nil",
+				err,
+			)
 		}
 	}
 	receivedAccounts, err = postgresCluster.FetchAccounts()
@@ -243,9 +315,20 @@ func PostgresFetchAccounts(t *testing.T) {
 	sort.Sort(sortAccount(accounts))
 	sort.Sort(sortAccount(receivedAccounts))
 	for i, account := range receivedAccounts {
-		if accounts[i].Bic != account.Bic || accounts[i].Ban != account.Ban || accounts[i].Balance.Cmp(account.Balance) != 0 {
-			fmt.Printf("received: Bic %s, Ban %s, Balance %s\n", account.Bic, account.Ban, account.Balance.String())
-			fmt.Printf("expected: Bic %s, Ban %s, Balance %s\n", accounts[i].Bic, accounts[i].Ban, accounts[i].Balance.String())
+		if accounts[i].Bic != account.Bic || accounts[i].Ban != account.Ban ||
+			accounts[i].Balance.Cmp(account.Balance) != 0 {
+			logrus.Warnf(
+				"received: Bic %s, Ban %s, Balance %s\n",
+				account.Bic,
+				account.Ban,
+				account.Balance.String(),
+			)
+			logrus.Warnf(
+				"expected: Bic %s, Ban %s, Balance %s\n",
+				accounts[i].Bic,
+				accounts[i].Ban,
+				accounts[i].Balance.String(),
+			)
 			t.Fail()
 		}
 	}
