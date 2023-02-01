@@ -164,7 +164,8 @@ func newDeployCommand(settings *config.Settings) *cobra.Command {
 
 	deployCmd.PersistentFlags().BoolVarP(
 		&settings.DatabaseSettings.Sharded,
-		"sharded", "",
+		"sharded",
+		"",
 		false,
 		"Use to populate accounts in sharded MongoDB cluster. "+
 			"Default false - populate accounts in MongoDB replicasets cluster",

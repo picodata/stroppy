@@ -24,6 +24,8 @@ type Shell interface {
 }
 
 func LoadState(settings *config.Settings) (shell Shell, err error) {
+	llog.Traceln("Start loading shell state")
+
 	sh := createShell(settings)
 	if err = sh.LoadState(); err != nil {
 		return
@@ -135,18 +137,17 @@ out:
 }
 
 func (sh *shell) RunRemotePayTest() (err error) {
-	settings := sh.state.Settings.DatabaseSettings
-
 	var beginTime, endTime int64
-	if beginTime, endTime, err = sh.executeRemotePay(settings); err != nil {
+
+	if beginTime, endTime, err = sh.executeRemotePay(); err != nil {
 		return
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pay_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType,
-		settings.Count,
-		settings.BanRangeMultiplier,
-		settings.Zipfian,
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
 		time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
@@ -166,18 +167,17 @@ func (sh *shell) RunRemotePayTest() (err error) {
 }
 
 func (sh *shell) RunRemotePopTest() (err error) {
-	settings := sh.state.Settings.DatabaseSettings
-
 	var beginTime, endTime int64
-	if beginTime, endTime, err = sh.executeRemotePop(settings); err != nil {
+
+	if beginTime, endTime, err = sh.executeRemotePop(); err != nil {
 		return
 	}
 
 	monImagesArchName := fmt.Sprintf("%v_pop_%v_%v_zipfian_%v_%v.tar.gz",
-		settings.DBType,
-		settings.Count,
-		settings.BanRangeMultiplier,
-		settings.Zipfian,
+		sh.state.Settings.DatabaseSettings.DBType,
+		sh.state.Settings.DatabaseSettings.Count,
+		sh.state.Settings.DatabaseSettings.BanRangeMultiplier,
+		sh.state.Settings.DatabaseSettings.Zipfian,
 		time.Now().Format(dateFormat))
 
 	// таймаут, чтобы не получать пустое место на графиках
