@@ -2,7 +2,8 @@
 - hosts: master
   become: true
   roles:
-    - cloudalchemy.grafana
+    - picomon-grafana
+    - ansible-grafana
   tasks:
     - name: Add prometheus datasource dns record to hosts
       lineinfile:

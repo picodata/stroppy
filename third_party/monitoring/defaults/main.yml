@@ -1,5 +1,0 @@
----
-promtail_force_reinstall: false
-nodeexp_force_reinstall: false
-grafana_force_reinstall: false
-loki_force_reintall: false

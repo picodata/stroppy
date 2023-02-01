@@ -1,5 +1,0 @@
----
-- name: Run node_exporter installation
-  when: ansible_facts.services["node_exporter.service"]["state"] | default('none') != 'running' or nodeexp_force_reinstall
-  import_role:
-    name: cloudalchemy.node_exporter
