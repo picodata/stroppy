@@ -8,7 +8,7 @@ env:
 jobs:
   synchronization:
     name: Sync with picogit
-    runs-on: [self-hosted, stroppy]
+    runs-on: [self-hosted, stroppy-runner]
     steps:
       - uses: actions/checkout@v3
         with:
@@ -24,10 +24,12 @@ jobs:
         run: git remote set-url --push origin git@git.picodata.io:github/stroppy.git
       - name: Push files
         run: git push --force
+      - name: Print whoami
+        run: whoami
   tests:
     name: Run integrations test
     needs: synchronization
-    runs-on: [self-hosted, stroppy]
+    runs-on: [self-hosted, stroppy-runner]
     container:
       image: docker.binary.picodata.io/stroppy-builder:latest
       volumes:
@@ -64,7 +66,7 @@ jobs:
   build_docker:
     name: Docker image stroppy
     needs: [ synchronization, tests ]
-    runs-on: [ self-hosted, stroppy ]
+    runs-on: [ self-hosted, stroppy-runner ]
     steps:
       - uses: actions/checkout@v2
       - name: build docker image
@@ -80,9 +82,17 @@ jobs:
   build_cartridge:
     name: Docker image with cartridge app
     needs: [synchronization, tests, build_docker]
-    runs-on: [self-hosted, stroppy]
+    runs-on: [self-hosted, stroppy-runner ]
+    container:
+      image: "docker.binary.picodata.io/tarantool/tarantool:2.11.0-ubuntu20.04"
+      volumes:
+        - foundationdb-volume:/var/fdb/
     steps:
       - uses: actions/checkout@v2
+      - name: install packages
+        run: |
+            apt update
+            apt install -y cmake make lua5.4
       - name: install dependencies
         working-directory: third_party/stroppy-test-cartridge
         run: ./deps.sh
